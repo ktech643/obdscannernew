@@ -9,6 +9,7 @@ import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// B3 — the compatibility gate. Full screen, no tab bar. This is where a user
@@ -229,7 +230,8 @@ class _WifiSetupScreenState extends State<WifiSetupScreen> {
         subtitle: 'Open Wi-Fi Settings',
         leading: const Icn(Lu.wifi, size: 18, color: T.cautionText),
         chevron: true,
-        onTap: () {},
+        onTap: () =>
+            notImplementedHere(context, 'Opens Wi-Fi in iOS Settings.'),
       ),
     ],
   );
@@ -266,7 +268,11 @@ class BluetoothStateScreen extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 18),
-        SecondaryButton('Open Settings', onPressed: () {}),
+        SecondaryButton(
+          'Open Settings',
+          onPressed: () =>
+              notImplementedHere(context, 'Opens Torque in iOS Settings.'),
+        ),
         const SizedBox(height: 14),
         GhostButton(
           'Set up Wi-Fi instead',

@@ -8,6 +8,7 @@ import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// K3 — a rewarded ad. Offered, never required; it unlocks two extra gauge
@@ -90,7 +91,13 @@ class _RewardedAdScreenState extends State<RewardedAdScreen> {
             padding: const EdgeInsets.fromLTRB(T.gutter, 0, T.gutter, 14),
             child: Column(
               children: [
-                SecondaryButton('Learn more', onPressed: () {}),
+                SecondaryButton(
+                  'Learn more',
+                  onPressed: () => notImplementedHere(
+                    context,
+                    "Opens the sponsor's page in Safari.",
+                  ),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   'Never shown mid-scan, over a fault result, or above '
@@ -253,7 +260,10 @@ class RefundCardScreen extends StatelessWidget {
       children: [
         PrimaryButton(
           'Request a refund from Apple',
-          onPressed: () {},
+          onPressed: () => notImplementedHere(
+            context,
+            "Opens Apple's refund form in Safari.",
+          ),
           icon: Lu.externalLink,
         ),
         const SizedBox(height: 8),

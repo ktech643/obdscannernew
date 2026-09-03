@@ -102,7 +102,11 @@ class _TabItem extends StatelessWidget {
 
 /// The quiet 36px connection strip above the dashboard: protocol, voltage,
 /// polling rate. It becomes a 44px banner when something needs saying.
-class ConnectionStrip extends StatelessWidget {
+///
+/// The banner **pushes content down, never overlays it** — 200 ms in, and a
+/// one-shot edge pulse when a fault appears. The pulse never loops: a repeating
+/// alarm in a car is noise the driver learns to ignore.
+class ConnectionStrip extends StatefulWidget {
   const ConnectionStrip({
     super.key,
     required this.text,
@@ -115,7 +119,44 @@ class ConnectionStrip extends StatelessWidget {
   final Widget? trailing;
 
   @override
+  State<ConnectionStrip> createState() => _ConnectionStripState();
+}
+
+class _ConnectionStripState extends State<ConnectionStrip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.tone == Tone.fault) _pulse.forward();
+  }
+
+  @override
+  void didUpdateWidget(ConnectionStrip old) {
+    super.didUpdateWidget(old);
+    // One pulse on the transition into fault, not on every rebuild while the
+    // fault persists.
+    if (widget.tone == Tone.fault && old.tone != Tone.fault) {
+      _pulse.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final text = widget.text;
+    final tone = widget.tone;
+    final trailing = widget.trailing;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final banner = tone != Tone.ink;
     final (Color fg, Color bg, String glyph) = switch (tone) {
       Tone.caution => (T.cautionText, T.cautionTint, Lu.triangleAlert),
@@ -123,7 +164,7 @@ class ConnectionStrip extends StatelessWidget {
       Tone.pass => (T.passText, T.passTint, Lu.circleCheck),
       Tone.ink => (T.neutral700, T.bg, Lu.activity),
     };
-    return Container(
+    final strip = Container(
       height: banner ? T.connectionStripBanner : T.connectionStripQuiet,
       width: double.infinity,
       color: bg,
@@ -154,6 +195,29 @@ class ConnectionStrip extends StatelessWidget {
           ?trailing,
         ],
       ),
+    );
+
+    if (reduceMotion) return strip;
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        // The pulse is a single edge brightening that fades back out. Nothing
+        // moves, and it never repeats.
+        final t = _pulse.value;
+        final edge = t == 0 || t == 1 ? 0.0 : 1 - (t - 0.5).abs() * 2;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: fg.withValues(alpha: edge),
+                width: edge > 0 ? 2 : 0,
+              ),
+            ),
+          ),
+          child: child,
+        );
+      },
+      child: strip,
     );
   }
 }

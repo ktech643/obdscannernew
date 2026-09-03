@@ -7,6 +7,7 @@ import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/blueprint.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// D6 — the health score.
@@ -81,7 +82,8 @@ class HealthScoreScreen extends StatelessWidget {
           title: 'Score history',
           trailing: e.isPro ? null : const Badge('PRO'),
           chevron: true,
-          onTap: () {},
+          onTap: () =>
+              notImplementedHere(context, 'Score history is a Pro feature.'),
         ),
       ],
     );

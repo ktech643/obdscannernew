@@ -7,6 +7,7 @@ import '../../theme/typography.dart';
 import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 void openPaywall(BuildContext context) => Navigator.of(context)
@@ -245,11 +246,28 @@ class _LegalLinks extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisAlignment: MainAxisAlignment.center,
     children: [
-      InlineAction('Restore purchases', color: T.neutral700, onPressed: () {}),
+      InlineAction(
+        'Restore purchases',
+        color: T.neutral700,
+        onPressed: () => notImplementedHere(
+          context,
+          'Checking your Apple ID for existing purchases…',
+        ),
+      ),
       Text('·', style: Type.rowSecondary),
-      InlineAction('Terms', color: T.neutral700, onPressed: () {}),
+      InlineAction(
+        'Terms',
+        color: T.neutral700,
+        onPressed: () =>
+            notImplementedHere(context, 'Opens the Terms in Safari.'),
+      ),
       Text('·', style: Type.rowSecondary),
-      InlineAction('Privacy', color: T.neutral700, onPressed: () {}),
+      InlineAction(
+        'Privacy',
+        color: T.neutral700,
+        onPressed: () =>
+            notImplementedHere(context, 'Opens the Privacy Policy in Safari.'),
+      ),
     ],
   );
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/app_providers.dart';
+import 'providers/persistence.dart';
 import 'providers/connection_provider.dart';
 import 'providers/dashboard_provider.dart';
 import 'providers/diagnostics_provider.dart';
@@ -19,19 +20,23 @@ import 'dev_panel.dart';
 
 /// Root. Every provider is registered once, here; nothing constructs its own.
 class TorqueApp extends StatelessWidget {
-  const TorqueApp({super.key});
+  const TorqueApp({super.key, required this.store});
+
+  /// Opened before the first frame so every provider can restore its state in
+  /// its constructor — no screen renders a default and then flickers.
+  final Persistence store;
 
   @override
   Widget build(BuildContext context) => MultiProvider(
     providers: [
-      ChangeNotifierProvider(create: (_) => OnboardingProvider()),
+      ChangeNotifierProvider(create: (_) => OnboardingProvider(store)),
       ChangeNotifierProvider(create: (_) => ConnectionProvider()),
-      ChangeNotifierProvider(create: (_) => DashboardProvider()),
+      ChangeNotifierProvider(create: (_) => DashboardProvider(store)),
       ChangeNotifierProvider(create: (_) => DiagnosticsProvider()),
-      ChangeNotifierProvider(create: (_) => GarageProvider()),
-      ChangeNotifierProvider(create: (_) => EntitlementProvider()),
-      ChangeNotifierProvider(create: (_) => AccountProvider()),
-      ChangeNotifierProvider(create: (_) => SettingsProvider()),
+      ChangeNotifierProvider(create: (_) => GarageProvider(store)),
+      ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
+      ChangeNotifierProvider(create: (_) => AccountProvider(store)),
+      ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
     ],
     child: MaterialApp(
       title: 'Torque OBD2',

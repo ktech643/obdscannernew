@@ -101,7 +101,19 @@ class Screen extends StatelessWidget {
       color: T.bg,
       child: Column(
         children: [
-          ?above,
+          // A banner pushes content down rather than overlaying it, so the
+          // 200 ms is a size change, not a slide over the top of the data.
+          AnimatedSize(
+            duration: Duration(
+              milliseconds:
+                  (MediaQuery.maybeDisableAnimationsOf(context) ?? false)
+                  ? 0
+                  : 200,
+            ),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: above ?? const SizedBox(width: double.infinity),
+          ),
           Expanded(
             child: scrollable
                 ? SingleChildScrollView(

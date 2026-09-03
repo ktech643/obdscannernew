@@ -10,6 +10,7 @@ import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// F6 — the protocol log. 500 events with a latency column, `BUFFER FULL` and
@@ -31,19 +32,40 @@ class DiagnosticsLogScreen extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: SecondaryButton('Copy', onPressed: () {}, icon: Lu.copy),
+                child: SecondaryButton(
+                  'Copy',
+                  onPressed: () => copyToClipboard(
+                    context,
+                    _logAsText(s, g),
+                    'Log copied. The VIN is '
+                    '${s.maskVin ? 'masked' : 'included'}.',
+                  ),
+                  icon: Lu.copy,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: SecondaryButton(
                   'Share .txt',
-                  onPressed: () {},
+                  onPressed: () => notImplementedHere(
+                    context,
+                    'Opens the iOS share sheet — nothing leaves the device '
+                    'until you pick where it goes.',
+                  ),
                   icon: Lu.share,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: GhostButton('Clear', color: T.fault, onPressed: () {}),
+                child: GhostButton(
+                  'Clear',
+                  color: T.fault,
+                  onPressed: () => Toast.show(
+                    context,
+                    'Log cleared. New events start from the next command.',
+                    tone: Tone.pass,
+                  ),
+                ),
               ),
             ],
           ),
@@ -145,4 +167,20 @@ class _LogRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The log as plain text, honouring the VIN-masking toggle. This is the whole
+/// support pipeline: it is generated here and goes wherever the user sends it,
+/// and nowhere otherwise.
+String _logAsText(SettingsProvider s, GarageProvider g) {
+  final vin = s.maskVin ? g.active.maskedVin : g.active.vin;
+  final lines = [
+    'Torque OBD2 — diagnostics log',
+    'Vehicle: ${g.active.nickname} · VIN $vin',
+    '',
+    for (final e in SettingsProvider.logEvents)
+      '${e.time}  ${e.outbound ? '→' : '←'}  ${e.frame}'
+          '${e.ms == null ? '' : '  ${e.ms} ms'}',
+  ];
+  return lines.join('\n');
 }

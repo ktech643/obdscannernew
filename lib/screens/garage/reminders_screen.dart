@@ -8,6 +8,7 @@ import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// E4 — reminders. Overdue in amber, the timing belt flagged CRITICAL, and an
@@ -23,7 +24,15 @@ class RemindersScreen extends StatelessWidget {
       backLabel: 'Garage',
       onBack: () => Navigator.of(context).pop(),
       footer: ScreenFooter(
-        children: [PrimaryButton('New reminder', onPressed: () {})],
+        children: [
+          PrimaryButton(
+            'New reminder',
+            onPressed: () => notImplementedHere(
+              context,
+              'Reminder editing lands with the next Garage pass.',
+            ),
+          ),
+        ],
       ),
       children: [
         if (!g.notificationsEnabled) ...[
@@ -76,6 +85,9 @@ class _ReminderRow extends StatelessWidget {
         ? const TelltaleChip('Overdue', tone: Tone.caution)
         : null,
     chevron: true,
-    onTap: () {},
+    onTap: () => notImplementedHere(
+      context,
+      'Reminder editing lands with the next Garage pass.',
+    ),
   );
 }

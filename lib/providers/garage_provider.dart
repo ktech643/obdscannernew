@@ -2,11 +2,24 @@ import 'package:flutter/foundation.dart';
 
 import '../models/enums.dart';
 import '../models/models.dart';
+import 'persistence.dart';
 
 /// Vehicles, service history, reminders, fuel and trips.
 ///
 /// All of this is local-first and works with no adapter plugged in at all.
 class GarageProvider extends ChangeNotifier {
+  GarageProvider(this._store) {
+    final stored = _store.getJsonList(Keys.serviceRecords);
+    if (stored != null) {
+      _records
+        ..clear()
+        ..addAll(stored.map(ServiceRecord.fromJson).nonNulls);
+    }
+    _notificationsEnabled = _store.getBool(Keys.notificationsEnabled) ?? false;
+  }
+
+  final Persistence _store;
+
   final List<Vehicle> _vehicles = [
     const Vehicle(
       id: 'golf',
@@ -72,9 +85,13 @@ class GarageProvider extends ChangeNotifier {
 
   /// Free keeps ten records. The count is shown, never enforced silently.
   int get freeRecordCeiling => 10;
-  int get recordCount => 9;
+  int get recordCount => _records.length;
 
-  double get yearTotal => 348.49;
+  /// Summed from the records rather than fixed, so adding one updates the
+  /// total the log prints at its foot.
+  double get yearTotal => _records
+      .where((r) => r.date.year == DateTime.now().year)
+      .fold(0.0, (a, r) => a + r.cost);
 
   /// Grouped newest month first, matching the log's layout.
   Map<String, List<ServiceRecord>> get recordsByMonth {
@@ -134,11 +151,12 @@ class GarageProvider extends ChangeNotifier {
     Reminder(title: 'Cabin filter', detail: 'Paused', paused: true),
   ];
 
-  bool _notificationsEnabled = false;
+  late bool _notificationsEnabled;
   bool get notificationsEnabled => _notificationsEnabled;
 
   void enableNotifications() {
     _notificationsEnabled = true;
+    _store.setBool(Keys.notificationsEnabled, true);
     notifyListeners();
   }
 
@@ -233,11 +251,17 @@ class GarageProvider extends ChangeNotifier {
   // -------------------------------------------------------------- actions
   void addRecord(ServiceRecord record) {
     _records.add(record);
+    _persistRecords();
     notifyListeners();
   }
 
   void deleteRecord(String id) {
     _records.removeWhere((r) => r.id == id);
+    _persistRecords();
     notifyListeners();
   }
+
+  void _persistRecords() => _store.setJson(Keys.serviceRecords, [
+    for (final r in _records) r.toJson(),
+  ]);
 }

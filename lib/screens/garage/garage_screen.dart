@@ -9,6 +9,7 @@ import '../../providers/settings_format.dart';
 import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 import '../diagnostics/readiness_screen.dart';
 import 'fuel_log_screen.dart';
@@ -152,7 +153,10 @@ class GarageScreen extends StatelessWidget {
           title: 'Add a vehicle',
           trailing: e.isPro ? null : const Badge('PRO'),
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(
+            context,
+            'Adding a second vehicle is a Pro feature.',
+          ),
         ),
       ],
     );

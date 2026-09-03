@@ -16,6 +16,7 @@ import '../../widgets/icons.dart';
 import '../../widgets/scaffold.dart';
 import '../connect/compatibility_screens.dart';
 import '../pro/paywall_screen.dart';
+import 'edit_grid.dart';
 import 'graph_screen.dart';
 
 /// Flow C — the Dashboard. C1 (healthy), C2 (one value out of range) and C3
@@ -325,9 +326,12 @@ class _EditMode extends StatelessWidget {
           style: Type.footnote,
         ),
         const SizedBox(height: 18),
-        _ReorderableGrid(tiles: d.tiles, onRemove: d.removeTile),
+        EditGrid(onPickPid: (tile) => showPidPicker(context, replacing: tile)),
         const SizedBox(height: T.gridGutter),
-        _AddTileCell(enabled: !atCeiling),
+        _AddTileCell(
+          enabled: !atCeiling,
+          onTap: atCeiling ? null : () => showPidPicker(context),
+        ),
         const _ThemePicker(),
         if (atCeiling) ...[
           const SizedBox(height: 18),
@@ -359,79 +363,6 @@ class _EditMode extends StatelessWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-class _ReorderableGrid extends StatelessWidget {
-  const _ReorderableGrid({required this.tiles, required this.onRemove});
-
-  final List<GaugeReading> tiles;
-  final void Function(String pid) onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final d = context.watch<DashboardProvider>();
-    return LayoutBuilder(
-      builder: (context, box) {
-        final w = (box.maxWidth - T.gridGutter) / 2;
-        return Wrap(
-          spacing: T.gridGutter,
-          runSpacing: T.gridGutter,
-          children: [
-            for (final t in tiles)
-              SizedBox(
-                width: w,
-                child: Stack(
-                  children: [
-                    GaugeTile(
-                      reading: t,
-                      editing: true,
-                      type: d.typeFor(t.pid),
-                      selected: d.selectedPid == t.pid,
-                      // Tapping a tile aims the picker at it. Tapping it again
-                      // deselects, which puts a pick back on the default.
-                      onTap: () =>
-                          d.selectTile(d.selectedPid == t.pid ? null : t.pid),
-                    ),
-                    // Drag handle and remove affordance, both above the 48pt
-                    // target floor.
-                    Positioned(
-                      top: 0,
-                      right: 0,
-                      child: Row(
-                        children: [
-                          const SizedBox(
-                            width: 34,
-                            height: 34,
-                            child: Center(
-                              child: Icn(
-                                Lu.grip,
-                                size: 16,
-                                color: T.neutral600,
-                              ),
-                            ),
-                          ),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => onRemove(t.pid),
-                            child: const SizedBox(
-                              width: 34,
-                              height: 34,
-                              child: Center(
-                                child: Icn(Lu.x, size: 15, color: T.fault),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
     );
   }
 }
@@ -490,30 +421,39 @@ class _ThemePicker extends StatelessWidget {
 }
 
 class _AddTileCell extends StatelessWidget {
-  const _AddTileCell({required this.enabled});
+  const _AddTileCell({required this.enabled, this.onTap});
 
   final bool enabled;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) => SizedBox(
-      width: (box.maxWidth - T.gridGutter) / 2,
-      height: T.gaugeTileHeight,
-      child: CustomPaint(
-        painter: _DashedBoxPainter(color: enabled ? T.accent : T.neutral400),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icn(Lu.plus, size: 20, color: enabled ? T.accent700 : T.neutral500),
-            const SizedBox(height: 8),
-            Text(
-              'Add tile',
-              style: Type.button(
-                enabled ? T.accent700 : T.neutral500,
-                size: 14,
+    builder: (context, box) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: (box.maxWidth - T.gridGutter) / 2,
+        height: T.gaugeTileHeight,
+        child: CustomPaint(
+          painter: _DashedBoxPainter(color: enabled ? T.accent : T.neutral400),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icn(
+                Lu.plus,
+                size: 20,
+                color: enabled ? T.accent700 : T.neutral500,
               ),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text(
+                'Add tile',
+                style: Type.button(
+                  enabled ? T.accent700 : T.neutral500,
+                  size: 14,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ),

@@ -254,6 +254,37 @@ class ServiceRecord {
   /// Links a repair back to the code it cleared, e.g. `P0301`.
   final String? fixedCode;
   final String? notes;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'title': title,
+    'date': date.toIso8601String(),
+    'odometerKm': odometerKm,
+    'cost': cost,
+    'vendor': vendor,
+    'fixedCode': fixedCode,
+    'notes': notes,
+  };
+
+  /// Returns null on a record that can't be read back, so one bad row costs
+  /// that row rather than the whole log.
+  static ServiceRecord? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final id = raw['id'];
+    final title = raw['title'];
+    final date = DateTime.tryParse('${raw['date']}');
+    if (id is! String || title is! String || date == null) return null;
+    return ServiceRecord(
+      id: id,
+      title: title,
+      date: date,
+      odometerKm: (raw['odometerKm'] as num?)?.toDouble() ?? 0,
+      cost: (raw['cost'] as num?)?.toDouble() ?? 0,
+      vendor: raw['vendor'] as String?,
+      fixedCode: raw['fixedCode'] as String?,
+      notes: raw['notes'] as String?,
+    );
+  }
 }
 
 class Reminder {

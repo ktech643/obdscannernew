@@ -9,6 +9,7 @@ import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// D5 — readiness monitors. Three states, each with a glyph *and* a word:
@@ -325,7 +326,10 @@ class SnapshotHistoryScreen extends StatelessWidget {
               ? const TelltaleChip('Before clear', tone: Tone.ink)
               : null,
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(
+            context,
+            'Opens this snapshot exactly as it was saved.',
+          ),
         ),
       const SizedBox(height: 16),
       Text(

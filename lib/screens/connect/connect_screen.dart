@@ -10,6 +10,7 @@ import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 import 'compatibility_screens.dart';
 
@@ -73,7 +74,10 @@ class ConnectScreen extends StatelessWidget {
           title: 'Other devices (7)',
           leading: const Icn(Lu.bluetooth, size: 18, color: T.neutral600),
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(
+            context,
+            'Lists every nearby BLE device, not just adapters.',
+          ),
         ),
         if (c.isLive)
           Padding(
@@ -212,7 +216,15 @@ class _CurrentConnection extends StatelessWidget {
             child: SecondaryButton('Disconnect', onPressed: c.disconnect),
           ),
           const SizedBox(width: 10),
-          Expanded(child: GhostButton('Adapter info', onPressed: () {})),
+          Expanded(
+            child: GhostButton(
+              'Adapter info',
+              onPressed: () => notImplementedHere(
+                context,
+                'Shows the fingerprint we recorded for this adapter.',
+              ),
+            ),
+          ),
         ],
       ),
     ],

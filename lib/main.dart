@@ -2,8 +2,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app.dart';
+import 'providers/persistence.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // iPhone, portrait only — the layout is drawn against a 390-wide frame and
   // the gauge grid has no landscape design.
@@ -11,5 +12,8 @@ void main() {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  runApp(const TorqueApp());
+  // Storage opens before the first frame: the app is local-first, so the
+  // stored state *is* the state.
+  final store = await Persistence.open();
+  runApp(TorqueApp(store: store));
 }

@@ -7,6 +7,7 @@ import '../../theme/typography.dart';
 import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// J1 — report export. Generated on the device: no upload, no server render.
@@ -34,7 +35,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
       backLabel: 'Garage',
       onBack: () => Navigator.of(context).pop(),
       footer: ScreenFooter(
-        children: [PrimaryButton('Generate and share', onPressed: () {})],
+        children: [
+          PrimaryButton(
+            'Generate and share',
+            onPressed: () => notImplementedHere(
+              context,
+              'Generating the report on this iPhone…',
+            ),
+          ),
+        ],
       ),
       children: [
         Row(

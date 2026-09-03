@@ -5,6 +5,7 @@ import '../../models/models.dart';
 import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// D3 — code detail. Plain-English meaning, ordered causes, the freeze frame,
@@ -20,7 +21,13 @@ class CodeDetailScreen extends StatelessWidget {
     onBack: () => Navigator.of(context).pop(),
     footer: ScreenFooter(
       children: [
-        SecondaryButton('Was this fixed? Log a repair', onPressed: () {}),
+        SecondaryButton(
+          'Was this fixed? Log a repair',
+          onPressed: () => notImplementedHere(
+            context,
+            'Opens a new service record pre-filled with ${dtc.code}.',
+          ),
+        ),
       ],
     ),
     children: [

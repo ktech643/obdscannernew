@@ -8,6 +8,7 @@ import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 import '../account/account_screens.dart';
 import '../pro/paywall_screen.dart';
@@ -57,7 +58,7 @@ class SettingsScreen extends StatelessWidget {
           title: 'Polling rate',
           value: s.pollingRate,
           chevron: true,
-          onTap: () {},
+          onTap: () => _pickPollingRate(context, s),
         ),
         AppListRow(
           title: 'Auto-reconnect',
@@ -86,7 +87,16 @@ class SettingsScreen extends StatelessWidget {
             chevron: true,
             onTap: () => openPaywall(context),
           ),
-        AppListRow(title: 'Restore purchases', chevron: true, onTap: () {}),
+        AppListRow(
+          title: 'Restore purchases',
+          chevron: true,
+          // Purchases live with the Apple ID, so this is a real round trip in
+          // production. Saying so beats a control that appears inert.
+          onTap: () => notImplementedHere(
+            context,
+            'Checking your Apple ID for existing purchases…',
+          ),
+        ),
         const SectionHeading('Account'),
         AppListRow(
           title: a.status == AccountStatus.signedOut
@@ -201,3 +211,34 @@ class DemoModeScreen extends StatelessWidget {
     );
   }
 }
+
+/// Polling rate. "Auto" is the honest default — it lets the app drop the rate
+/// when the adapter is slow and say so, rather than pretending to sample
+/// faster than the hardware can answer.
+void _pickPollingRate(BuildContext context, SettingsProvider s) =>
+    showAppSheet<void>(context, (sheetContext) {
+      return SheetBody(
+        eyebrow: 'Connection',
+        title: 'Polling rate',
+        children: [
+          for (final rate in SettingsProvider.pollingRates)
+            RadioRow(
+              label: rate,
+              subtitle: rate == 'Auto'
+                  ? 'Drops the rate when the adapter falls behind'
+                  : null,
+              selected: s.pollingRate == rate,
+              onSelect: () {
+                s.setPollingRate(rate);
+                Navigator.of(sheetContext).pop();
+              },
+            ),
+          const SizedBox(height: 14),
+          Text(
+            'A rate above what your adapter can answer does not make data '
+            'arrive faster — it makes tiles go stale between replies.',
+            style: Type.footnote,
+          ),
+        ],
+      );
+    });

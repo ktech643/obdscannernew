@@ -9,6 +9,7 @@ import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// M3 — iCloud sync conflict.
@@ -72,7 +73,8 @@ class SyncConflictScreen extends StatelessWidget {
           title: 'Review 2 possible duplicates',
           subtitle: 'Oil change · 3 Feb',
           chevron: true,
-          onTap: () {},
+          onTap: () =>
+              notImplementedHere(context, 'Opens the duplicate review.'),
         ),
       ],
     );
@@ -234,14 +236,16 @@ class VinMismatchScreen extends StatelessWidget {
           subtitle: 'VIN matches · WVW••••••••••8871',
           severityBar: T.pass,
           chevron: true,
-          onTap: () {},
+          onTap: () =>
+              notImplementedHere(context, 'Switches the active vehicle.'),
         ),
         AppListRow(
           title: 'Add it as a new vehicle',
           subtitle: "We'll prefill from the VIN",
           trailing: e.isPro ? null : const Badge('PRO'),
           chevron: true,
-          onTap: () {},
+          onTap: () =>
+              notImplementedHere(context, 'Adding a vehicle is a Pro feature.'),
         ),
         AppListRow(
           title: 'Stay on ${g.active.nickname}',

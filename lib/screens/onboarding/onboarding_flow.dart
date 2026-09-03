@@ -8,6 +8,7 @@ import '../../theme/typography.dart';
 import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// Flow A — first run. Four frames: what this does, the adapter explainer,
@@ -208,7 +209,13 @@ class _A2Adapter extends StatelessWidget {
         children: [
           PrimaryButton('I have one', onPressed: o.next),
           const SizedBox(height: 8),
-          GhostButton('Help me pick one', onPressed: () {}),
+          GhostButton(
+            'Help me pick one',
+            onPressed: () => notImplementedHere(
+              context,
+              'Opens the bundled adapter list — no lookup leaves your iPhone.',
+            ),
+          ),
         ],
       ),
       children: [

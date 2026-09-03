@@ -9,6 +9,7 @@ import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 import '../pro/paywall_screen.dart';
 
@@ -187,7 +188,13 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                 : null,
           ),
           const SizedBox(height: 6),
-          GhostButton('Sign up with Apple instead', onPressed: () {}),
+          GhostButton(
+            'Sign up with Apple instead',
+            onPressed: () => notImplementedHere(
+              context,
+              'Sign in with Apple is handled by iOS.',
+            ),
+          ),
         ],
       ),
       children: [
@@ -604,7 +611,13 @@ class _FinishProfileScreenState extends State<FinishProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  InlineAction('Add a photo', onPressed: () {}),
+                  InlineAction(
+                    'Add a photo',
+                    onPressed: () => notImplementedHere(
+                      context,
+                      'Photos stay on this iPhone, downscaled to 800 px.',
+                    ),
+                  ),
                   Text(
                     'Stays on your device, downscaled to 800 px.',
                     style: Type.footnote,
@@ -637,7 +650,10 @@ class _FinishProfileScreenState extends State<FinishProfileScreen> {
           title: 'Currency',
           value: s.currency,
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(
+            context,
+            'Pick the currency your receipts are in.',
+          ),
         ),
         const SizedBox(height: 8),
         AppListRow(
@@ -693,7 +709,13 @@ class ProfileScreen extends StatelessWidget {
       backLabel: 'Settings',
       onBack: () => Navigator.of(context).pop(),
       title: 'Profile',
-      titleTrailing: InlineAction('Edit', onPressed: () {}),
+      titleTrailing: InlineAction(
+        'Edit',
+        onPressed: () => notImplementedHere(
+          context,
+          'Profile editing lands with the next Account pass.',
+        ),
+      ),
       children: [
         Row(
           children: [
@@ -732,7 +754,8 @@ class ProfileScreen extends StatelessWidget {
           title: 'iCloud sync',
           value: e.isPro ? 'On' : 'Paused · Pro',
           chevron: true,
-          onTap: () {},
+          onTap: () =>
+              notImplementedHere(context, 'iCloud sync is a Pro feature.'),
         ),
         AppListRow(title: 'iPhone 15 Pro', subtitle: 'This device'),
         AppListRow(title: 'iPhone 11', subtitle: '3 days ago'),
@@ -784,20 +807,41 @@ class AccountSettingsScreen extends StatelessWidget {
       onBack: () => Navigator.of(context).pop(),
       children: [
         const SectionHeading('Sign-in', topPadding: 4),
-        AppListRow(title: 'Email', value: a.email, chevron: true, onTap: () {}),
+        AppListRow(
+          title: 'Email',
+          value: a.email,
+          chevron: true,
+          onTap: () => notImplementedHere(
+            context,
+            'Changing your email sends a code to the new address.',
+          ),
+        ),
         AppListRow(
           title: 'Password',
           value: 'Changed 2 Sep',
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(
+            context,
+            'Changing a password re-authenticates through iOS.',
+          ),
         ),
         AppListRow(
           title: 'Sign in with Apple',
           value: 'Not linked',
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(
+            context,
+            'Sign in with Apple is handled by iOS.',
+          ),
         ),
-        AppListRow(title: 'Two-step verification', chevron: true, onTap: () {}),
+        AppListRow(
+          title: 'Two-step verification',
+          chevron: true,
+          onTap: () => notImplementedHere(
+            context,
+            'Two-step verification is set up on the web.',
+          ),
+        ),
         const SectionHeading('Privacy'),
         AppListRow(
           title: 'Personalised ads',
@@ -811,12 +855,15 @@ class AccountSettingsScreen extends StatelessWidget {
           title: 'Signed-in devices',
           value: '${a.signedInDevices}',
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(
+            context,
+            'Opens the Privacy Policy in Safari.',
+          ),
         ),
         AppListRow(
           title: 'Export everything as JSON',
           chevron: true,
-          onTap: () {},
+          onTap: () => notImplementedHere(context, 'Copied your data as JSON.'),
         ),
         const SectionHeading('Danger zone'),
         AppListRow(

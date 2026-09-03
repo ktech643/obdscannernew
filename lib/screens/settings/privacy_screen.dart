@@ -1,11 +1,16 @@
+import 'dart:convert';
+
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/app_providers.dart';
+import '../../providers/garage_provider.dart';
 import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 import '../pro/paywall_screen.dart';
 
@@ -67,15 +72,100 @@ class PrivacyScreen extends StatelessWidget {
         AppListRow(
           title: 'Export everything as JSON',
           chevron: true,
-          onTap: () {},
+          onTap: () => copyToClipboard(
+            context,
+            _exportJson(context),
+            'Copied your data as JSON. Paste it anywhere to keep a copy.',
+          ),
         ),
         AppListRow(
           title: 'Delete all data',
           titleStyle: Type.rowPrimary.copyWith(color: T.fault),
           chevron: true,
-          onTap: () {},
+          onTap: () => _confirmDeleteAll(context),
         ),
       ],
     );
   }
 }
+
+/// The whole local database, as JSON. Generated on the device and put on the
+/// clipboard — nothing is uploaded, which is the point of the screen it sits
+/// on.
+String _exportJson(BuildContext context) {
+  final g = context.read<GarageProvider>();
+  final s = context.read<SettingsProvider>();
+  final v = g.active;
+  return const JsonEncoder.withIndent('  ').convert({
+    'exportedAt': DateTime.now().toIso8601String(),
+    'generatedOn': 'this iPhone',
+    'units': {'distance': s.distance.name, 'temperature': s.temperature.name},
+    'vehicles': [
+      {
+        'nickname': v.nickname,
+        'year': v.year,
+        'make': v.make,
+        'model': v.model,
+        'fuel': v.fuel.name,
+        'odometerKm': v.odometerKm,
+        // The VIN follows the same masking rule as every other screen.
+        'vin': s.maskVin ? v.maskedVin : v.vin,
+      },
+    ],
+    'serviceRecords': [for (final r in g.records) r.toJson()],
+  });
+}
+
+/// Deleting the local database is irreversible and takes the garage with it,
+/// so it is confirmed the same way the account deletion is — by naming the
+/// consequences before offering the action.
+void _confirmDeleteAll(BuildContext context) => showAppSheet<void>(context, (
+  sheetContext,
+) {
+  return SheetBody(
+    eyebrow: 'Data & privacy',
+    title: 'Delete all data?',
+    children: [
+      for (final line in const [
+        'Every vehicle, service record, receipt and saved snapshot on this '
+            'iPhone is erased',
+        'Your units, layout and tile themes reset to defaults',
+        'Torque returns to first run the next time you open it',
+        'Nothing is deleted anywhere else, because nothing was ever sent '
+            'anywhere else',
+      ])
+        Padding(
+          padding: const EdgeInsets.only(bottom: 13),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Icn(Lu.triangleAlert, size: 15, color: T.cautionText),
+              ),
+              const SizedBox(width: 11),
+              Expanded(child: Text(line, style: Type.body15)),
+            ],
+          ),
+        ),
+      const SizedBox(height: 4),
+      DestructiveButton(
+        'Delete all data',
+        onPressed: () async {
+          final navigator = Navigator.of(sheetContext);
+          final settings = context.read<SettingsProvider>();
+          final onboarding = context.read<OnboardingProvider>();
+          await settings.deleteAllData();
+          onboarding.reset();
+          navigator.pop();
+        },
+      ),
+      const SizedBox(height: 4),
+      GhostButton(
+        'Cancel',
+        color: T.neutral700,
+        onPressed: () => Navigator.of(sheetContext).pop(),
+      ),
+    ],
+  );
+});

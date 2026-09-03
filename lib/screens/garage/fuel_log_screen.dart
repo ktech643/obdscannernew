@@ -9,6 +9,7 @@ import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// E5 — the fuel log. Economy is calculated between full fill-ups only;
@@ -41,7 +42,15 @@ class FuelLogScreen extends StatelessWidget {
       backLabel: 'Garage',
       onBack: () => Navigator.of(context).pop(),
       footer: ScreenFooter(
-        children: [PrimaryButton('Add a fill-up', onPressed: () {})],
+        children: [
+          PrimaryButton(
+            'Add a fill-up',
+            onPressed: () => notImplementedHere(
+              context,
+              'Fill-up entry lands with the next Garage pass.',
+            ),
+          ),
+        ],
       ),
       children: [
         Row(

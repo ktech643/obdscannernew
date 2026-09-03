@@ -10,6 +10,7 @@ import '../../theme/typography.dart';
 import '../../widgets/blueprint.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// J2 — the trip list, including an interrupted trip and a Pro-locked one.
@@ -71,10 +72,25 @@ class TripDetailScreen extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(child: SecondaryButton('Export CSV', onPressed: () {})),
+            Expanded(
+              child: SecondaryButton(
+                'Export CSV',
+                onPressed: () => notImplementedHere(
+                  context,
+                  'Generating the trip CSV on this iPhone…',
+                ),
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(
-              child: GhostButton('Delete', color: T.fault, onPressed: () {}),
+              child: GhostButton(
+                'Delete',
+                color: T.fault,
+                onPressed: () => notImplementedHere(
+                  context,
+                  'Deletes this trip from the device.',
+                ),
+              ),
             ),
           ],
         ),

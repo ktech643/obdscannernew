@@ -11,6 +11,7 @@ import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
 import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
+import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// E2 — the maintenance log, grouped by month with a running year total.
@@ -27,7 +28,13 @@ class MaintenanceScreen extends StatelessWidget {
       backLabel: 'Garage',
       onBack: () => Navigator.of(context).pop(),
       title: 'Maintenance log',
-      titleTrailing: InlineAction('Filter', onPressed: () {}),
+      titleTrailing: InlineAction(
+        'Filter',
+        onPressed: () => notImplementedHere(
+          context,
+          'Filtering by type and date lands with the next Garage pass.',
+        ),
+      ),
       footer: ScreenFooter(
         children: [
           Row(
@@ -270,7 +277,10 @@ class _NewServiceRecordScreenState extends State<NewServiceRecordScreen> {
         const SizedBox(height: 16),
         SecondaryButton(
           'Attach a receipt photo',
-          onPressed: () {},
+          onPressed: () => notImplementedHere(
+            context,
+            'Opens the camera. Receipts stay on this iPhone.',
+          ),
           icon: Lu.camera,
         ),
         const SizedBox(height: 18),
