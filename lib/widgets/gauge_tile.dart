@@ -17,14 +17,26 @@ class GaugeTile extends StatelessWidget {
     required this.reading,
     this.onTap,
     this.editing = false,
+    this.now,
   });
 
   final GaugeReading reading;
   final VoidCallback? onTap;
   final bool editing;
 
-  Color get _valueColor => switch (reading.state) {
-    TileState.stale => T.neutral700,
+  /// The clock the decay is resolved against. Injected so tests and the
+  /// scenario fixtures can pin it; defaults to the wall clock.
+  final DateTime? now;
+
+  DateTime get _now => now ?? DateTime.now();
+
+  /// Resolved from [reading]'s own age, not taken on trust from a fixture.
+  TileState get _state => reading.stateAt(_now);
+
+  String? get _note => reading.ageNoteAt(_now);
+
+  Color get _valueColor => switch (_state) {
+    TileState.stale || TileState.unavailable => T.neutral700,
     _ => switch (reading.tone) {
       Tone.caution => T.cautionText,
       Tone.fault => T.fault,
@@ -45,23 +57,39 @@ class GaugeTile extends StatelessWidget {
     _ => T.divider,
   };
 
-  double get _opacity => reading.state == TileState.stale ? 0.42 : 1;
+  /// 42% once stale. The staleness decay and the one-shot fault pulse are the
+  /// only motion in the app that the user did not trigger.
+  double get _opacity => switch (_state) {
+    TileState.stale || TileState.unavailable => 0.42,
+    _ => 1,
+  };
 
   @override
   Widget build(BuildContext context) {
-    final unsupported = reading.state == TileState.unsupported;
-    return _PressScale(
-      onTap: onTap,
-      child: Opacity(
-        opacity: _opacity,
-        child: Blueprint(
-          height: T.gaugeTileHeight,
-          borderColor: _borderColor,
-          child: ClipRect(
-            child: Padding(
-              // 12px 13px 0 — the range bar bleeds to the tile edges below.
-              padding: const EdgeInsets.fromLTRB(13, 12, 13, 0),
-              child: unsupported ? _unsupported() : _live(),
+    final unsupported = _state == TileState.unsupported;
+    final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    return Semantics(
+      container: true,
+      button: onTap != null,
+      // Everything colour and opacity convey is spoken here in words — a
+      // VoiceOver user must not be the only one who can't tell live from stale.
+      label: reading.semanticLabelAt(_now),
+      excludeSemantics: true,
+      child: _PressScale(
+        onTap: onTap,
+        child: AnimatedOpacity(
+          opacity: _opacity,
+          duration: Duration(milliseconds: reduceMotion ? 0 : 400),
+          curve: Curves.easeOut,
+          child: Blueprint(
+            height: T.gaugeTileHeight,
+            borderColor: _borderColor,
+            child: ClipRect(
+              child: Padding(
+                // 12px 13px 0 — the range bar bleeds to the tile edges below.
+                padding: const EdgeInsets.fromLTRB(13, 12, 13, 0),
+                child: unsupported ? _unsupported() : _live(),
+              ),
             ),
           ),
         ),
@@ -83,9 +111,9 @@ class GaugeTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (reading.note != null)
+          if (_note != null)
             Text(
-              reading.note!.toUpperCase(),
+              _note!.toUpperCase(),
               style: Type.gaugeNote(_noteColor),
               textAlign: TextAlign.right,
             ),
@@ -100,7 +128,7 @@ class GaugeTile extends StatelessWidget {
           children: [
             Flexible(
               child: Text(
-                reading.valueText,
+                reading.valueTextAt(_now),
                 style: Type.gaugeNumeral(_valueColor),
                 maxLines: 1,
                 overflow: TextOverflow.visible,

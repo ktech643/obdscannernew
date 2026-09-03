@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:torque_obd2/app.dart';
 import 'package:torque_obd2/models/enums.dart';
+import 'package:torque_obd2/models/models.dart';
 import 'package:torque_obd2/providers/app_providers.dart';
 import 'package:torque_obd2/providers/dashboard_provider.dart';
 import 'package:torque_obd2/providers/diagnostics_provider.dart';
@@ -117,6 +118,134 @@ void main() {
       final oil = d.tiles.firstWhere((t) => t.label == 'Oil temp');
       expect(oil.value, isNull);
       expect(oil.state, TileState.unsupported);
+    });
+  });
+
+  group('staleness decay — the signature interaction', () {
+    final at = DateTime(2026, 9, 4, 9, 41);
+    GaugeReading tileAged(Duration age) => GaugeReading(
+      pid: '010D',
+      label: 'Speed',
+      unit: 'km/h',
+      value: 68,
+      lastUpdated: at.subtract(age),
+      expectedInterval: const Duration(milliseconds: 500),
+    );
+
+    test('live inside its expected interval', () {
+      expect(
+        tileAged(const Duration(milliseconds: 400)).stateAt(at),
+        TileState.live,
+      );
+    });
+
+    test('goes stale past 2x its interval and shows its age', () {
+      final t = tileAged(const Duration(seconds: 4));
+      expect(t.stateAt(at), TileState.stale);
+      expect(t.ageNoteAt(at), '4 s ago');
+      // The value is still shown — dimmed and dated, not hidden.
+      expect(t.valueTextAt(at), '68');
+    });
+
+    test('drops to an em dash past 5 s', () {
+      final t = tileAged(const Duration(seconds: 7));
+      expect(t.stateAt(at), TileState.unavailable);
+      expect(t.valueTextAt(at), '—');
+    });
+
+    test('a slow poll rate does not make a fresh tile look stale', () {
+      // The same 1 s age is live at 2 Hz and stale at 8 Hz. Decay is measured
+      // against the tile's own interval, not a fixed wall-clock delay.
+      const age = Duration(seconds: 1);
+      final slow = GaugeReading(
+        pid: 'x',
+        label: 'x',
+        unit: '',
+        value: 1,
+        lastUpdated: at.subtract(age),
+        expectedInterval: const Duration(seconds: 1),
+      );
+      final fast = GaugeReading(
+        pid: 'x',
+        label: 'x',
+        unit: '',
+        value: 1,
+        lastUpdated: at.subtract(age),
+        expectedInterval: const Duration(milliseconds: 125),
+      );
+      expect(slow.stateAt(at), TileState.live);
+      expect(fast.stateAt(at), TileState.stale);
+    });
+
+    test('an unsupported PID never decays — it was never live', () {
+      const t = GaugeReading(
+        pid: '015C',
+        label: 'Oil temp',
+        unit: '°C',
+        state: TileState.unsupported,
+      );
+      expect(t.stateAt(at), TileState.unsupported);
+    });
+  });
+
+  group('VoiceOver labels speak what colour and opacity show', () {
+    final at = DateTime(2026, 9, 4, 9, 41);
+
+    test('a stale tile says so, and says how old it is', () {
+      final t = GaugeReading(
+        pid: '010D',
+        label: 'Speed',
+        unit: 'km/h',
+        value: 68,
+        lastUpdated: at.subtract(const Duration(seconds: 4)),
+        expectedInterval: const Duration(milliseconds: 500),
+      );
+      final label = t.semanticLabelAt(at);
+      expect(label, contains('4 s ago'));
+      expect(label, contains('not live'));
+    });
+
+    test('caution is spoken as a word, never carried by colour alone', () {
+      const t = GaugeReading(
+        pid: '0105',
+        label: 'Coolant',
+        unit: '°C',
+        value: 112,
+        tone: Tone.caution,
+      );
+      expect(t.semanticLabelAt(at), contains('caution'));
+    });
+
+    test('unsupported is distinguished from missing', () {
+      const unsupported = GaugeReading(
+        pid: '015C',
+        label: 'Oil temp',
+        unit: '°C',
+        state: TileState.unsupported,
+      );
+      final noData = GaugeReading(
+        pid: '0104',
+        label: 'Engine load',
+        unit: '%',
+        value: 34,
+        lastUpdated: at.subtract(const Duration(seconds: 7)),
+      );
+      expect(
+        unsupported.semanticLabelAt(at),
+        contains('not available on this vehicle'),
+      );
+      expect(noData.semanticLabelAt(at), contains('no data'));
+    });
+
+    test('a live zero reads as a value, not as absent', () {
+      const t = GaugeReading(
+        pid: '010C',
+        label: 'Engine RPM',
+        unit: 'rpm',
+        value: 0,
+        note: 'EV mode',
+      );
+      expect(t.semanticLabelAt(at), 'Engine RPM, 0 rpm');
     });
   });
 

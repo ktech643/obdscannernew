@@ -17,6 +17,8 @@ class GaugeReading {
     this.position = 0,
     this.cautionAt,
     this.criticalAt,
+    this.lastUpdated,
+    this.expectedInterval = const Duration(milliseconds: 125),
   });
 
   /// OBD2 PID, e.g. `010C`. Identity for reordering and layout persistence.
@@ -43,10 +45,70 @@ class GaugeReading {
   final double? cautionAt;
   final double? criticalAt;
 
+  /// When this PID last answered. Null means the tile carries a fixed state
+  /// and does not decay — an unsupported PID has no clock to run.
+  final DateTime? lastUpdated;
+
+  /// How often this PID is expected to answer at the current polling rate.
+  /// Decay is measured against 2× this, not against a fixed wall-clock delay,
+  /// so a tile polled at 2 Hz isn't called stale on a schedule meant for 8 Hz.
+  final Duration expectedInterval;
+
+  /// The four-stage decay, resolved against [now].
+  ///
+  /// Live → past 2× its interval it fades and shows its age → past 5 s it
+  /// shows `—`. A tile whose state was set explicitly (unsupported, or a
+  /// fixture with no clock) keeps that state. **Never display a stale number
+  /// as if it were live** — this is the whole point of the component.
+  TileState stateAt(DateTime now) {
+    if (state == TileState.unsupported) return TileState.unsupported;
+    if (lastUpdated == null) return state;
+    final age = now.difference(lastUpdated!);
+    if (age > const Duration(seconds: 5)) return TileState.unavailable;
+    if (age > expectedInterval * 2) return TileState.stale;
+    return TileState.live;
+  }
+
+  /// "4 s ago" once a tile has gone stale, so the age is on screen rather than
+  /// merely implied by the dimming.
+  String? ageNoteAt(DateTime now) {
+    if (lastUpdated == null) return note;
+    final resolved = stateAt(now);
+    if (resolved == TileState.live) return note;
+    if (resolved == TileState.unavailable) return 'No data';
+    return '${now.difference(lastUpdated!).inSeconds} s ago';
+  }
+
+  String valueTextAt(DateTime now) =>
+      stateAt(now) == TileState.unavailable ? '—' : valueText;
+
   String get valueText => display ?? (value == null ? '—' : _fmt(value!));
 
   static String _fmt(double v) =>
       v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  /// The VoiceOver string for this tile, in the state it is actually in.
+  ///
+  /// Every semantic the sighted user gets from colour and opacity is spoken
+  /// here in words: staleness, its age, the caution tone, and the fact that a
+  /// PID is unsupported rather than merely missing.
+  String semanticLabelAt(DateTime now) {
+    final resolved = stateAt(now);
+    final unit = this.unit.isEmpty ? '' : ' ${this.unit}';
+    return switch (resolved) {
+      TileState.unsupported => '$label, not available on this vehicle',
+      TileState.unavailable =>
+        '$label, no data. Last reading was over 5 seconds ago',
+      TileState.stale =>
+        '$label, ${valueText}$unit, ${ageNoteAt(now)}. This reading is not live',
+      TileState.live => switch (tone) {
+        Tone.caution =>
+          '$label, ${valueText}$unit, caution, outside its normal range',
+        Tone.fault => '$label, ${valueText}$unit, fault',
+        _ => '$label, ${valueText}$unit',
+      },
+    };
+  }
 
   GaugeReading copyWith({
     double? value,
@@ -55,6 +117,7 @@ class GaugeReading {
     Tone? tone,
     String? note,
     double? position,
+    DateTime? lastUpdated,
     bool clearNote = false,
   }) => GaugeReading(
     pid: pid,
@@ -68,6 +131,8 @@ class GaugeReading {
     position: position ?? this.position,
     cautionAt: cautionAt,
     criticalAt: criticalAt,
+    lastUpdated: lastUpdated ?? this.lastUpdated,
+    expectedInterval: expectedInterval,
   );
 }
 

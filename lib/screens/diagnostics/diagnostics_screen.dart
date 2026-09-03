@@ -193,54 +193,75 @@ class _DtcRow extends StatelessWidget {
     DtcSeverity.unknown => T.neutral400,
   };
 
+  /// The severity bar is a colour, and colour never carries meaning alone —
+  /// so VoiceOver gets the severity as a word.
+  String get _semanticLabel => [
+    dtc.code,
+    dtc.description,
+    if (dtc.hasDefinition)
+      switch (dtc.severity) {
+        DtcSeverity.severe => 'severe',
+        DtcSeverity.moderate => 'moderate',
+        DtcSeverity.minor => 'minor',
+        DtcSeverity.unknown => 'severity unknown',
+      },
+    if (dtc.hasDefinition) dtc.statusDetail ?? dtc.statusLine,
+  ].join(', ');
+
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    behavior: HitTestBehavior.opaque,
-    onTap: dtc.hasDefinition
-        ? () => Navigator.of(context).push(_route(CodeDetailScreen(dtc: dtc)))
-        : null,
-    child: Container(
-      constraints: const BoxConstraints(minHeight: T.touchTargetFloor),
-      decoration: const BoxDecoration(border: T.hairlineBottom),
-      padding: const EdgeInsets.symmetric(vertical: 13),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(width: 3, height: 40, color: _severityColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(dtc.code, style: Type.dtcCode),
-                const SizedBox(height: 4),
-                Text(
-                  dtc.description,
-                  style: dtc.hasDefinition
-                      ? Type.rowPrimary
-                      : Type.rowPrimary.copyWith(
-                          color: T.neutral700,
-                          fontStyle: FontStyle.italic,
-                        ),
-                ),
-                if (dtc.hasDefinition) ...[
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    button: dtc.hasDefinition,
+    label: _semanticLabel,
+    excludeSemantics: true,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: dtc.hasDefinition
+          ? () => Navigator.of(context).push(_route(CodeDetailScreen(dtc: dtc)))
+          : null,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: T.touchTargetFloor),
+        decoration: const BoxDecoration(border: T.hairlineBottom),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(width: 3, height: 40, color: _severityColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(dtc.code, style: Type.dtcCode),
                   const SizedBox(height: 4),
                   Text(
-                    dtc.statusDetail ?? dtc.statusLine,
-                    style: Type.rowSecondary,
+                    dtc.description,
+                    style: dtc.hasDefinition
+                        ? Type.rowPrimary
+                        : Type.rowPrimary.copyWith(
+                            color: T.neutral700,
+                            fontStyle: FontStyle.italic,
+                          ),
                   ),
+                  if (dtc.hasDefinition) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      dtc.statusDetail ?? dtc.statusLine,
+                      style: Type.rowSecondary,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          if (dtc.hasDefinition) ...[
-            const SizedBox(width: 8),
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Icn(Lu.chevronRight, size: 16, color: T.neutral600),
-            ),
+            if (dtc.hasDefinition) ...[
+              const SizedBox(width: 8),
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Icn(Lu.chevronRight, size: 16, color: T.neutral600),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     ),
   );

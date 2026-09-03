@@ -19,6 +19,39 @@ class DashboardProvider extends ChangeNotifier {
     _tiles = _scenarioTiles(DashboardScenario.healthy);
   }
 
+  /// Stands in for the polling loop. Once a second every answering PID gets a
+  /// fresh timestamp; a PID that is answering late gets one backdated by its
+  /// lag, so it holds a stable age instead of sliding to `—` on its own.
+  ///
+  /// This is not animating a value — the numerals never move. It keeps the
+  /// *age* honest, which is the failure that matters: a tile reading "4 s ago"
+  /// forever is lying about how fresh it is, and so is one that decays to
+  /// nothing while the adapter is in fact still answering.
+  Timer? _pollTicker;
+
+  /// PID → how far behind that PID is answering. Absent means keeping up.
+  Map<String, Duration> _lag = const {};
+
+  void _startPolling() {
+    _pollTicker?.cancel();
+    if (_lag.isEmpty && !_tiles.any((t) => t.lastUpdated != null)) return;
+    _poll();
+    _pollTicker = Timer.periodic(const Duration(seconds: 1), (_) => _poll());
+  }
+
+  void _poll() {
+    final now = DateTime.now();
+    _tiles = [
+      for (final t in _tiles)
+        t.state == TileState.unsupported
+            ? t
+            : t.copyWith(
+                lastUpdated: now.subtract(_lag[t.pid] ?? Duration.zero),
+              ),
+    ];
+    notifyListeners();
+  }
+
   DashboardScenario _scenario = DashboardScenario.healthy;
   DashboardScenario get scenario => _scenario;
 
@@ -201,7 +234,8 @@ class DashboardProvider extends ChangeNotifier {
     ),
   ];
 
-  static const _degraded = <GaugeReading>[
+  static List<GaugeReading> _degradedAt(DateTime now) => [
+    // Fresh: answering inside its interval.
     GaugeReading(
       pid: '010C',
       label: 'Engine RPM',
@@ -211,38 +245,44 @@ class DashboardProvider extends ChangeNotifier {
       position: 34,
       cautionAt: 78,
       criticalAt: 92,
+      lastUpdated: now,
+      expectedInterval: _slowPoll,
     ),
+    // Stage two: past 2× its interval, so it fades and shows its age.
     GaugeReading(
       pid: '010D',
       label: 'Speed',
       unit: 'km/h',
       value: 68,
-      state: TileState.stale,
-      note: '4 s ago',
       position: 42,
       cautionAt: 80,
       criticalAt: 94,
+      lastUpdated: now.subtract(const Duration(seconds: 4)),
+      expectedInterval: _slowPoll,
     ),
     GaugeReading(
       pid: '0105',
       label: 'Coolant',
       unit: '°C',
       value: 89,
-      state: TileState.stale,
-      note: '6 s ago',
       position: 52,
       cautionAt: 76,
       criticalAt: 90,
+      lastUpdated: now.subtract(const Duration(seconds: 4, milliseconds: 900)),
+      expectedInterval: _slowPoll,
     ),
+    // Stage three: past 5 s, so the number is replaced by an em dash rather
+    // than left on screen looking current.
     GaugeReading(
       pid: '0104',
       label: 'Engine load',
       unit: '%',
-      display: '—',
-      state: TileState.stale,
-      note: 'No data',
+      value: 34,
+      position: 34,
       cautionAt: 80,
       criticalAt: 94,
+      lastUpdated: now.subtract(const Duration(seconds: 7)),
+      expectedInterval: _slowPoll,
     ),
     GaugeReading(
       pid: 'ATRV',
@@ -253,7 +293,11 @@ class DashboardProvider extends ChangeNotifier {
       position: 55,
       cautionAt: 82,
       criticalAt: 93,
+      lastUpdated: now,
+      expectedInterval: _slowPoll,
     ),
+    // Stage four: the PID is not supported at all, which is a different fact
+    // from "we have not heard from it lately".
     GaugeReading(
       pid: '015C',
       label: 'Oil temp',
@@ -261,6 +305,9 @@ class DashboardProvider extends ChangeNotifier {
       state: TileState.unsupported,
     ),
   ];
+
+  /// 2 Hz — what a budget adapter answering in ~640 ms actually sustains.
+  static const _slowPoll = Duration(milliseconds: 500);
 
   static const _diesel = <GaugeReading>[
     GaugeReading(
@@ -418,7 +465,7 @@ class DashboardProvider extends ChangeNotifier {
   static List<GaugeReading> _scenarioTiles(DashboardScenario s) => switch (s) {
     DashboardScenario.healthy => List.of(_healthy),
     DashboardScenario.caution => List.of(_caution),
-    DashboardScenario.degraded => List.of(_degraded),
+    DashboardScenario.degraded => _degradedAt(DateTime.now()),
     DashboardScenario.diesel => List.of(_diesel),
     DashboardScenario.hybrid => List.of(_hybrid),
     DashboardScenario.imperial => List.of(_imperial),
@@ -456,6 +503,8 @@ class DashboardProvider extends ChangeNotifier {
   void setScenario(DashboardScenario s) {
     _scenario = s;
     _tiles = _scenarioTiles(s);
+    _lag = _lagFor(s);
+    _startPolling();
     _speedKmh = _tiles
         .firstWhere(
           (t) => t.pid == '010D',
@@ -513,9 +562,21 @@ class DashboardProvider extends ChangeNotifier {
     }
   }
 
+  /// Only the degraded scenario has PIDs falling behind — that is the frame
+  /// the board draws as "stale + degraded + unsupported".
+  static Map<String, Duration> _lagFor(DashboardScenario s) => switch (s) {
+    DashboardScenario.degraded => const {
+      '010D': Duration(seconds: 4), // Speed — visibly stale, still readable
+      '0105': Duration(seconds: 4), // Coolant
+      '0104': Duration(seconds: 7), // Engine load — past 5 s, shows an em dash
+    },
+    _ => const {},
+  };
+
   @override
   void dispose() {
     _pump?.cancel();
+    _pollTicker?.cancel();
     super.dispose();
   }
 }
