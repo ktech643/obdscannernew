@@ -13,7 +13,7 @@ import '../../widgets/scaffold.dart';
 import '../pro/paywall_screen.dart';
 
 Route<void> _route(Widget child) =>
-    PageRouteBuilder(pageBuilder: (_, __, ___) => child);
+    PageRouteBuilder(pageBuilder: (_, _, _) => child);
 
 /// G1 — sign in. An account is genuinely optional, and the screen says so
 /// twice: once as an action, once as a closing fact.

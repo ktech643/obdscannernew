@@ -44,7 +44,7 @@ class ConnectionProvider extends ChangeNotifier {
   String get protocolLine => 'ISO 15765-4 CAN 11/500';
   String get firmwareLine => 'ELM327 v1.5';
 
-  double _batteryVolts = 14.2;
+  final double _batteryVolts = 14.2;
   double get batteryVolts => _batteryVolts;
 
   int get rssi => -54;

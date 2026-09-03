@@ -151,7 +151,7 @@ class ConnectionStrip extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (trailing != null) trailing!,
+          ?trailing,
         ],
       ),
     );
@@ -245,7 +245,7 @@ class SectionHeading extends StatelessWidget {
     child: Row(
       children: [
         Expanded(child: Text(label.toUpperCase(), style: Type.sectionHeading)),
-        if (trailing != null) trailing!,
+        ?trailing,
       ],
     ),
   );

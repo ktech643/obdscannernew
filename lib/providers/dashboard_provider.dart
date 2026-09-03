@@ -77,12 +77,12 @@ class DashboardProvider extends ChangeNotifier {
   bool _recording = false;
   bool get recording => _recording;
 
-  bool _tripPaused = false;
+  final bool _tripPaused = false;
   bool get tripPaused => _tripPaused;
 
-  double _tripKm = 12.4;
-  int _tripMinutes = 18;
-  double _tripAvg = 41;
+  final double _tripKm = 12.4;
+  final int _tripMinutes = 18;
+  final double _tripAvg = 41;
 
   String get tripLine {
     if (_tripPaused) return 'Trip paused · ${_tripKm.toStringAsFixed(1)} km';

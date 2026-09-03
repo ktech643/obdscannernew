@@ -22,12 +22,15 @@ class ConnectScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.watch<ConnectionProvider>();
 
-    if (!c.bluetoothOn || c.bluetoothDenied)
+    if (!c.bluetoothOn || c.bluetoothDenied) {
       return const BluetoothStateScreen();
-    if (c.status == ConnectionStatus.unsupported)
+    }
+    if (c.status == ConnectionStatus.unsupported) {
       return const CompatibilityGate();
-    if (c.status == ConnectionStatus.handshaking)
+    }
+    if (c.status == ConnectionStatus.handshaking) {
       return const HandshakeScreen();
+    }
 
     return Screen(
       title: 'Connect',
@@ -95,7 +98,7 @@ class ConnectScreen extends StatelessWidget {
 }
 
 Route<void> _route(Widget child) =>
-    PageRouteBuilder(pageBuilder: (_, __, ___) => child);
+    PageRouteBuilder(pageBuilder: (_, _, _) => child);
 
 /// B1's header. A 2px accent line sweeps under the title — never a spinner,
 /// because a spinner promises resolution this state cannot guarantee.

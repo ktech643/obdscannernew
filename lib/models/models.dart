@@ -100,12 +100,12 @@ class GaugeReading {
       TileState.unavailable =>
         '$label, no data. Last reading was over 5 seconds ago',
       TileState.stale =>
-        '$label, ${valueText}$unit, ${ageNoteAt(now)}. This reading is not live',
+        '$label, $valueText$unit, ${ageNoteAt(now)}. This reading is not live',
       TileState.live => switch (tone) {
         Tone.caution =>
-          '$label, ${valueText}$unit, caution, outside its normal range',
-        Tone.fault => '$label, ${valueText}$unit, fault',
-        _ => '$label, ${valueText}$unit',
+          '$label, $valueText$unit, caution, outside its normal range',
+        Tone.fault => '$label, $valueText$unit, fault',
+        _ => '$label, $valueText$unit',
       },
     };
   }

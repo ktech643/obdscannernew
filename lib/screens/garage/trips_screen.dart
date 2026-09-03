@@ -40,7 +40,7 @@ class TripListScreen extends StatelessWidget {
                 ? null
                 : () => Navigator.of(context).push(
                     PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => TripDetailScreen(trip: t),
+                      pageBuilder: (_, _, _) => TripDetailScreen(trip: t),
                     ),
                   ),
           ),

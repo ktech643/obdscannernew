@@ -10,7 +10,7 @@ import '../../widgets/icons.dart';
 import '../../widgets/scaffold.dart';
 
 void openPaywall(BuildContext context) => Navigator.of(context)
-    .push(PageRouteBuilder(pageBuilder: (_, __, ___) => const PaywallScreen()));
+    .push(PageRouteBuilder(pageBuilder: (_, _, _) => const PaywallScreen()));
 
 /// F1 — the contextual paywall. The close control is visible from the first
 /// frame, and the renewal terms are stated in full rather than linked away.

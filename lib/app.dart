@@ -119,7 +119,7 @@ class _AppShellState extends State<AppShell> {
                     key: _navKeys[i],
                     onGenerateRoute: (settings) => PageRouteBuilder(
                       settings: settings,
-                      pageBuilder: (_, __, ___) => _tabs[i],
+                      pageBuilder: (_, _, _) => _tabs[i],
                       transitionsBuilder: _slide,
                     ),
                   ),

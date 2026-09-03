@@ -179,7 +179,7 @@ class _GaugeGrid extends StatelessWidget {
                   reading: t,
                   onTap: () => Navigator.of(context).push(
                     PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => GraphScreen(reading: t),
+                      pageBuilder: (_, _, _) => GraphScreen(reading: t),
                     ),
                   ),
                 ),

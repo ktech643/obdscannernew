@@ -221,7 +221,7 @@ class _DevPanelState extends State<DevPanel> {
     label,
     () => Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => Material(
+        pageBuilder: (_, _, _) => Material(
           color: T.bg,
           child: SafeArea(bottom: false, child: screen),
         ),

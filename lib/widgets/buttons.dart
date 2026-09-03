@@ -456,7 +456,7 @@ class NoteBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (Color fg, Color? fill, Color border, String glyph) = switch (tone) {
+    final (Color fg, Color fill, Color border, String glyph) = switch (tone) {
       Tone.caution => (
         T.cautionText,
         T.cautionTint,

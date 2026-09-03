@@ -27,7 +27,7 @@ class CompatibilityGate extends StatelessWidget {
             'Check my adapter',
             onPressed: () => Navigator.of(context).push(
               PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const AdapterCompatibilityList(),
+                pageBuilder: (_, _, _) => const AdapterCompatibilityList(),
               ),
             ),
           ),
@@ -38,7 +38,7 @@ class CompatibilityGate extends StatelessWidget {
             'Set up Wi-Fi instead',
             onPressed: () => Navigator.of(context).push(
               PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const WifiSetupScreen(),
+                pageBuilder: (_, _, _) => const WifiSetupScreen(),
               ),
             ),
           ),
@@ -272,7 +272,7 @@ class BluetoothStateScreen extends StatelessWidget {
           'Set up Wi-Fi instead',
           onPressed: () => Navigator.of(context).push(
             PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const WifiSetupScreen(),
+              pageBuilder: (_, _, _) => const WifiSetupScreen(),
             ),
           ),
         ),

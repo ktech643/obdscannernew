@@ -18,7 +18,7 @@ import 'reports_screen.dart';
 import 'trips_screen.dart';
 
 Route<void> _route(Widget child) =>
-    PageRouteBuilder(pageBuilder: (_, __, ___) => child);
+    PageRouteBuilder(pageBuilder: (_, _, _) => child);
 
 /// E1 — vehicle overview. Photo, masked VIN, and the health/codes/overdue
 /// tri-stat, then everything else about this vehicle as plain rows.

@@ -15,7 +15,7 @@ import 'diagnostics_log_screen.dart';
 import 'privacy_screen.dart';
 
 Route<void> _route(Widget child) =>
-    PageRouteBuilder(pageBuilder: (_, __, ___) => child);
+    PageRouteBuilder(pageBuilder: (_, _, _) => child);
 
 /// F5 — settings.
 class SettingsScreen extends StatelessWidget {

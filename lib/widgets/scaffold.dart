@@ -82,7 +82,7 @@ class Screen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Expanded(child: Text(title!, style: Type.screenTitle)),
-                  if (titleTrailing != null) titleTrailing!,
+                  ?titleTrailing,
                 ],
               ),
             ),
@@ -101,7 +101,7 @@ class Screen extends StatelessWidget {
       color: T.bg,
       child: Column(
         children: [
-          if (above != null) above!,
+          ?above,
           Expanded(
             child: scrollable
                 ? SingleChildScrollView(
@@ -110,7 +110,7 @@ class Screen extends StatelessWidget {
                   )
                 : body,
           ),
-          if (footer != null) footer!,
+          ?footer,
         ],
       ),
     );

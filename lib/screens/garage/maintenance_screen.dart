@@ -43,7 +43,7 @@ class MaintenanceScreen extends StatelessWidget {
               SquareAddButton(
                 onPressed: () => Navigator.of(context).push(
                   PageRouteBuilder(
-                    pageBuilder: (_, __, ___) => const NewServiceRecordScreen(),
+                    pageBuilder: (_, _, _) => const NewServiceRecordScreen(),
                   ),
                 ),
               ),

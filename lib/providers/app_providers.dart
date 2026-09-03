@@ -100,7 +100,7 @@ class AccountProvider extends ChangeNotifier {
   int get scanCount => 14;
   int get signedInDevices => 2;
 
-  int _resendSeconds = 42;
+  final int _resendSeconds = 42;
   int get resendSeconds => _resendSeconds;
 
   /// Password rules, checked live under the field.

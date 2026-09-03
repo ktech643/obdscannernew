@@ -29,7 +29,7 @@ class DiagnosticsScreen extends StatelessWidget {
 }
 
 Route<void> _route(Widget child) =>
-    PageRouteBuilder(pageBuilder: (_, __, ___) => child);
+    PageRouteBuilder(pageBuilder: (_, _, _) => child);
 
 /// D1 — deliberately almost colourless. If a vehicle has no faults, this
 /// screen contains no colour at all beyond a single green tick.

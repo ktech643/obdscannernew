@@ -30,7 +30,7 @@ class ReadinessScreen extends StatelessWidget {
             'What completes a monitor?',
             onPressed: () => Navigator.of(context).push(
               PageRouteBuilder(
-                pageBuilder: (_, __, ___) => const DriveCycleScreen(),
+                pageBuilder: (_, _, _) => const DriveCycleScreen(),
               ),
             ),
           ),
