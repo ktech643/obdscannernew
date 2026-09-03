@@ -36,6 +36,52 @@ enum TileState {
 /// glyph *and* a word.
 enum Tone { ink, caution, fault, pass }
 
+/// How a gauge tile draws its value.
+///
+/// All five share one component and one set of props — the treatment changes
+/// what is drawn beside the numeral, never whether there is one. **Every
+/// variant prints the number in figures**: the dial is a second reading of the
+/// same value, never the only one.
+enum TileType {
+  /// Full ~270° speedo with a needle and tick marks.
+  dial,
+
+  /// 180° sweep, no needle.
+  arc,
+
+  /// Seven segments filled to the current position.
+  bar,
+
+  /// A sparkline over the recent sample window.
+  trace,
+
+  /// The numeral alone over its range bar — the system default.
+  figure,
+}
+
+extension TileTypeX on TileType {
+  String get label => switch (this) {
+    TileType.dial => 'Dial',
+    TileType.arc => 'Arc',
+    TileType.bar => 'Bar',
+    TileType.trace => 'Trace',
+    TileType.figure => 'Figure',
+  };
+
+  /// Dials and arcs need vertical room the flat treatments don't. A grid sizes
+  /// every row to the tallest type it contains, so rows stay aligned when tile
+  /// types are mixed.
+  double get tileHeight => switch (this) {
+    TileType.dial => 172,
+    TileType.arc => 152,
+    _ => 124,
+  };
+
+  /// Whether the numeral sits inside the graphic (dial, arc) or above it.
+  bool get numeralInsideGraphic =>
+      this == TileType.dial || this == TileType.arc;
+}
+
 enum Entitlement { free, pro }
 
 enum ProSource { direct, family }

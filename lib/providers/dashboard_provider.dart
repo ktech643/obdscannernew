@@ -61,6 +61,74 @@ class DashboardProvider extends ChangeNotifier {
   bool _editing = false;
   bool get editing => _editing;
 
+  // ------------------------------------------------------------ treatments
+  /// The treatment a tile uses when it has no choice of its own. Figure is the
+  /// system default — the numeral over its range bar, which is the densest and
+  /// least decorative of the five.
+  TileType _defaultTileType = TileType.figure;
+  TileType get defaultTileType => _defaultTileType;
+
+  /// Per-PID overrides. Tile type is set per tile, per vehicle, so a user can
+  /// watch RPM as a trace, load as a bar, and read coolant as a figure —
+  /// the treatment follows what the number is for.
+  final Map<String, TileType> _tileTypes = {};
+
+  TileType typeFor(String pid) => _tileTypes[pid] ?? _defaultTileType;
+
+  /// The tile the theme picker is targeting. Null means no tile is selected,
+  /// in which case a pick applies to the default for every tile.
+  String? _selectedPid;
+  String? get selectedPid => _selectedPid;
+
+  /// When on, a pick retypes every tile. Otherwise it changes only the tile
+  /// the user tapped.
+  bool _applyToEveryTile = false;
+  bool get applyToEveryTile => _applyToEveryTile;
+
+  void selectTile(String? pid) {
+    _selectedPid = pid;
+    notifyListeners();
+  }
+
+  void setApplyToEveryTile(bool value) {
+    _applyToEveryTile = value;
+    notifyListeners();
+  }
+
+  /// The single entry point for retyping. With [applyToEveryTile] on — or with
+  /// no tile selected — this becomes the default and clears every override, so
+  /// the grid can't be left in a half-applied state.
+  void setTileType(TileType type) {
+    if (_applyToEveryTile || _selectedPid == null) {
+      _defaultTileType = type;
+      _tileTypes.clear();
+    } else {
+      _tileTypes[_selectedPid!] = type;
+    }
+    _seedSamples();
+    notifyListeners();
+  }
+
+  /// The trace treatment needs history the moment it is chosen, or the tile
+  /// would draw a flat line until enough samples accumulated.
+  void _seedSamples() {
+    for (var i = 0; i < _tiles.length; i++) {
+      final t = _tiles[i];
+      if (typeFor(t.pid) != TileType.trace || t.samples.isNotEmpty) continue;
+      _tiles[i] = t.copyWith(samples: _syntheticWindow(t));
+    }
+  }
+
+  /// A plausible recent window around the tile's current position, so a trace
+  /// reads as this PID's history rather than as noise.
+  List<double> _syntheticWindow(GaugeReading t) {
+    final centre = t.position;
+    return [
+      for (var i = 0; i < 24; i++)
+        (centre + (_rng.nextDouble() - 0.5) * 26).clamp(0, 100),
+    ];
+  }
+
   /// Free tier ceiling. Pro lifts it and adds named layouts per vehicle.
   int get tileCeiling => 6;
 
@@ -504,6 +572,8 @@ class DashboardProvider extends ChangeNotifier {
     _scenario = s;
     _tiles = _scenarioTiles(s);
     _lag = _lagFor(s);
+    _selectedPid = null;
+    _seedSamples();
     _startPolling();
     _speedKmh = _tiles
         .firstWhere(
@@ -517,6 +587,7 @@ class DashboardProvider extends ChangeNotifier {
   void setEditing(bool value) {
     if (value && !editingAllowed) return; // safety gate
     _editing = value;
+    if (!value) _selectedPid = null;
     notifyListeners();
   }
 

@@ -5,12 +5,17 @@ import '../models/models.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'blueprint.dart';
+import 'gauge_treatments.dart';
 
-/// The signature component: a 124px blueprint tile carrying one PID.
+/// The signature component: a blueprint tile carrying one PID.
 ///
 /// Four states. `live` is full opacity; `stale` fades to 42% and shows its age;
 /// `unavailable` shows `—`; `unsupported` says so in words and hatches out the
 /// range bar. A stale number is never displayed as if it were live.
+///
+/// Five treatments, selected by [type], all sharing this one component and one
+/// set of props. Whichever is chosen, the numeral is printed in figures — a
+/// dial is a second reading of the same value, never the only one.
 class GaugeTile extends StatelessWidget {
   const GaugeTile({
     super.key,
@@ -18,11 +23,19 @@ class GaugeTile extends StatelessWidget {
     this.onTap,
     this.editing = false,
     this.now,
+    this.type = TileType.figure,
+    this.selected = false,
   });
 
   final GaugeReading reading;
   final VoidCallback? onTap;
   final bool editing;
+
+  /// Which of the five treatments to draw. Set per tile, per vehicle.
+  final TileType type;
+
+  /// Marks the tile the theme picker is currently targeting.
+  final bool selected;
 
   /// The clock the decay is resolved against. Injected so tests and the
   /// scenario fixtures can pin it; defaults to the wall clock.
@@ -51,11 +64,29 @@ class GaugeTile extends StatelessWidget {
     _ => T.neutral700,
   };
 
-  Color get _borderColor => switch (reading.tone) {
-    Tone.caution => T.cautionBorder,
-    Tone.fault => T.fault,
-    _ => T.divider,
-  };
+  Color get _borderColor => selected
+      ? T.accent700
+      : switch (reading.tone) {
+          Tone.caution => T.cautionBorder,
+          Tone.fault => T.fault,
+          _ => T.divider,
+        };
+
+  /// The tone drives the sweep; the track stays neutral and the needle stays
+  /// ink. A stale tile sweeps neutral too — a dimmed amber arc would still
+  /// read as a live warning.
+  GaugePalette get _palette => GaugePalette(
+    sweep: switch (_state) {
+      TileState.stale || TileState.unavailable => T.neutral500,
+      _ => switch (reading.tone) {
+        Tone.caution => T.cautionBorder,
+        Tone.fault => T.fault,
+        Tone.pass => T.pass,
+        Tone.ink => T.accent,
+      },
+    },
+    track: T.neutral300,
+  );
 
   /// 42% once stale. The staleness decay and the one-shot fault pulse are the
   /// only motion in the app that the user did not trigger.
@@ -82,7 +113,7 @@ class GaugeTile extends StatelessWidget {
           duration: Duration(milliseconds: reduceMotion ? 0 : 400),
           curve: Curves.easeOut,
           child: Blueprint(
-            height: T.gaugeTileHeight,
+            height: type.tileHeight,
             borderColor: _borderColor,
             child: ClipRect(
               child: Padding(
@@ -100,59 +131,136 @@ class GaugeTile extends StatelessWidget {
   Widget _live() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              reading.label.toUpperCase(),
-              style: Type.pidLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (_note != null)
-            Text(
-              _note!.toUpperCase(),
-              style: Type.gaugeNote(_noteColor),
-              textAlign: TextAlign.right,
-            ),
-        ],
-      ),
-      const Spacer(),
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Flexible(
-              child: Text(
-                reading.valueTextAt(_now),
-                style: Type.gaugeNumeral(_valueColor),
-                maxLines: 1,
-                overflow: TextOverflow.visible,
-              ),
-            ),
-            const SizedBox(width: 5),
-            Text(
-              reading.unit,
-              style: Type.gaugeNote(T.neutral700).copyWith(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.66,
-              ),
-            ),
-          ],
-        ),
-      ),
-      RangeBar(
-        position: reading.position,
-        cautionAt: reading.cautionAt,
-        criticalAt: reading.criticalAt,
-      ),
+      _header(),
+      if (type.numeralInsideGraphic)
+        // Dial and arc centre the numeral inside their own graphic.
+        Expanded(child: _graphicWithNumeral())
+      else ...[
+        const Spacer(),
+        Padding(padding: const EdgeInsets.only(bottom: 12), child: _numeral()),
+        _flatGraphic(),
+      ],
     ],
   );
+
+  Widget _header() => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(
+        child: Text(
+          reading.label.toUpperCase(),
+          style: Type.pidLabel,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      // Edit mode puts a drag handle and a remove control in this corner, so
+      // the note stands down rather than colliding with them. The tone still
+      // reads from the border and the numeral.
+      if (_note != null && !editing)
+        Text(
+          _note!.toUpperCase(),
+          style: Type.gaugeNote(_noteColor),
+          textAlign: TextAlign.right,
+        ),
+    ],
+  );
+
+  /// The numeral, laid out on a baseline with its unit beside it. Used by the
+  /// three flat treatments.
+  Widget _numeral() => Row(
+    crossAxisAlignment: CrossAxisAlignment.baseline,
+    textBaseline: TextBaseline.alphabetic,
+    children: [
+      Flexible(
+        child: Text(
+          reading.valueTextAt(_now),
+          style: Type.gaugeNumeral(_valueColor),
+          maxLines: 1,
+          overflow: TextOverflow.visible,
+        ),
+      ),
+      const SizedBox(width: 5),
+      Text(reading.unit, style: _unitStyle),
+    ],
+  );
+
+  static final _unitStyle = Type.gaugeNote(T.neutral700)
+      .copyWith(fontSize: 11, fontWeight: FontWeight.w500, letterSpacing: 0.66);
+
+  /// Bar, trace and figure keep the numeral above and the graphic below.
+  Widget _flatGraphic() => switch (type) {
+    TileType.bar => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SizedBox(
+        height: 12,
+        child: CustomPaint(
+          painter: SegmentBarPainter(
+            position: reading.position,
+            palette: _palette,
+          ),
+          size: Size.infinite,
+        ),
+      ),
+    ),
+    TileType.trace => Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: SizedBox(
+        height: 26,
+        child: CustomPaint(
+          painter: SparklinePainter(
+            samples: reading.samples,
+            palette: _palette,
+          ),
+          size: Size.infinite,
+        ),
+      ),
+    ),
+    // The figure treatment keeps the system's range bar, which bleeds to the
+    // tile edges — hence the negative margin against the tile's own padding.
+    _ => RangeBar(
+      position: reading.position,
+      cautionAt: reading.cautionAt,
+      criticalAt: reading.criticalAt,
+    ),
+  };
+
+  /// Dial and arc: the graphic carries the numeral, and the numeral is still
+  /// the reading — the sweep is a second view of the same number.
+  Widget _graphicWithNumeral() {
+    final dial = type == TileType.dial;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      // The painter is the sizing widget and the numeral is its child, so the
+      // graphic always gets the tile's real box. A Positioned.fill inside a
+      // loose Stack collapses it to the numeral's size instead.
+      child: SizedBox.expand(
+        child: CustomPaint(
+          painter: dial
+              ? DialPainter(position: reading.position, palette: _palette)
+              : ArcPainter(position: reading.position, palette: _palette),
+          child: Align(
+            // Low in the dial's face; inside the arc's opening.
+            alignment: dial
+                ? const Alignment(0, 0.52)
+                : const Alignment(0, 0.95),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  reading.valueTextAt(_now),
+                  style: Type.gaugeNumeral(_valueColor)
+                      .copyWith(fontSize: dial ? 25 : 30),
+                  maxLines: 1,
+                ),
+                Text(reading.unit.toUpperCase(), style: _unitStyle),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _unsupported() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,

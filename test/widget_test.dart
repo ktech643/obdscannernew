@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:torque_obd2/app.dart';
@@ -6,6 +7,7 @@ import 'package:torque_obd2/models/models.dart';
 import 'package:torque_obd2/providers/app_providers.dart';
 import 'package:torque_obd2/providers/dashboard_provider.dart';
 import 'package:torque_obd2/providers/diagnostics_provider.dart';
+import 'package:torque_obd2/widgets/gauge_tile.dart';
 
 void main() {
   testWidgets('opens on the first-run flow', (tester) async {
@@ -247,6 +249,101 @@ void main() {
       );
       expect(t.semanticLabelAt(at), 'Engine RPM, 0 rpm');
     });
+  });
+
+  group('tile treatments', () {
+    test('figure is the default', () {
+      final d = DashboardProvider();
+      expect(d.defaultTileType, TileType.figure);
+      expect(d.typeFor('010C'), TileType.figure);
+    });
+
+    test('with no tile selected, a pick retypes every tile', () {
+      final d = DashboardProvider()..setTileType(TileType.dial);
+      expect(d.defaultTileType, TileType.dial);
+      for (final t in d.tiles) {
+        expect(d.typeFor(t.pid), TileType.dial);
+      }
+    });
+
+    test('with a tile selected, a pick changes only that tile', () {
+      final d = DashboardProvider()
+        ..selectTile('010C')
+        ..setTileType(TileType.trace);
+      expect(d.typeFor('010C'), TileType.trace);
+      expect(d.typeFor('010D'), TileType.figure);
+    });
+
+    test(
+      'apply-to-every-tile overrides a selection and clears per-tile types',
+      () {
+        final d = DashboardProvider()
+          ..selectTile('010C')
+          ..setTileType(TileType.trace)
+          ..setApplyToEveryTile(true)
+          ..setTileType(TileType.arc);
+        // No tile is left on the old override — the grid can't end up
+        // half-applied.
+        for (final t in d.tiles) {
+          expect(d.typeFor(t.pid), TileType.arc);
+        }
+      },
+    );
+
+    test('leaving edit mode drops the selection', () {
+      final d = DashboardProvider()
+        ..setSpeed(0)
+        ..setEditing(true)
+        ..selectTile('010C');
+      expect(d.selectedPid, '010C');
+      d.setEditing(false);
+      expect(d.selectedPid, isNull);
+    });
+
+    test('choosing trace seeds a sample window so it is not a flat line', () {
+      final d = DashboardProvider()..setTileType(TileType.trace);
+      for (final t in d.tiles.where((t) => t.state != TileState.unsupported)) {
+        expect(t.samples.length, greaterThan(1));
+      }
+    });
+  });
+
+  group('every treatment prints the number in figures', () {
+    // The board's central rule: a dial is a second reading of the same value,
+    // never the only one. If a treatment ever drops the numeral, this fails.
+    for (final type in TileType.values) {
+      testWidgets('${type.label} shows the numeral and its unit', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Center(
+              child: SizedBox(
+                width: 180,
+                child: GaugeTile(
+                  type: type,
+                  reading: const GaugeReading(
+                    pid: '010D',
+                    label: 'Speed',
+                    unit: 'km/h',
+                    value: 68,
+                    position: 42,
+                    cautionAt: 80,
+                    criticalAt: 94,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(find.text('68'), findsOneWidget);
+        expect(
+          find.text(type.numeralInsideGraphic ? 'KM/H' : 'km/h'),
+          findsOneWidget,
+        );
+      });
+    }
   });
 
   test('unknown codes never get a fabricated definition', () {

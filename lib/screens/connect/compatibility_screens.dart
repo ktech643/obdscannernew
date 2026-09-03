@@ -271,9 +271,7 @@ class BluetoothStateScreen extends StatelessWidget {
         GhostButton(
           'Set up Wi-Fi instead',
           onPressed: () => Navigator.of(context).push(
-            PageRouteBuilder(
-              pageBuilder: (_, _, _) => const WifiSetupScreen(),
-            ),
+            PageRouteBuilder(pageBuilder: (_, _, _) => const WifiSetupScreen()),
           ),
         ),
         const SizedBox(height: 10),

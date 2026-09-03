@@ -161,6 +161,7 @@ class _GaugeGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final d = context.watch<DashboardProvider>();
     final scale = MediaQuery.textScalerOf(context).scale(15) / 15;
     final columns = scale > 1.5 ? 1 : 2;
     return LayoutBuilder(
@@ -177,6 +178,7 @@ class _GaugeGrid extends StatelessWidget {
                 width: w,
                 child: GaugeTile(
                   reading: t,
+                  type: d.typeFor(t.pid),
                   onTap: () => Navigator.of(context).push(
                     PageRouteBuilder(
                       pageBuilder: (_, _, _) => GraphScreen(reading: t),
@@ -326,6 +328,7 @@ class _EditMode extends StatelessWidget {
         _ReorderableGrid(tiles: d.tiles, onRemove: d.removeTile),
         const SizedBox(height: T.gridGutter),
         _AddTileCell(enabled: !atCeiling),
+        const _ThemePicker(),
         if (atCeiling) ...[
           const SizedBox(height: 18),
           Blueprint(
@@ -367,54 +370,123 @@ class _ReorderableGrid extends StatelessWidget {
   final void Function(String pid) onRemove;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, box) {
-      final w = (box.maxWidth - T.gridGutter) / 2;
-      return Wrap(
-        spacing: T.gridGutter,
-        runSpacing: T.gridGutter,
-        children: [
-          for (final t in tiles)
-            SizedBox(
-              width: w,
-              child: Stack(
-                children: [
-                  GaugeTile(reading: t, editing: true),
-                  // Drag handle and remove affordance, both above the 48pt
-                  // target floor.
-                  Positioned(
-                    top: 0,
-                    right: 0,
-                    child: Row(
-                      children: [
-                        const SizedBox(
-                          width: 34,
-                          height: 34,
-                          child: Center(
-                            child: Icn(Lu.grip, size: 16, color: T.neutral600),
-                          ),
-                        ),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => onRemove(t.pid),
-                          child: const SizedBox(
+  Widget build(BuildContext context) {
+    final d = context.watch<DashboardProvider>();
+    return LayoutBuilder(
+      builder: (context, box) {
+        final w = (box.maxWidth - T.gridGutter) / 2;
+        return Wrap(
+          spacing: T.gridGutter,
+          runSpacing: T.gridGutter,
+          children: [
+            for (final t in tiles)
+              SizedBox(
+                width: w,
+                child: Stack(
+                  children: [
+                    GaugeTile(
+                      reading: t,
+                      editing: true,
+                      type: d.typeFor(t.pid),
+                      selected: d.selectedPid == t.pid,
+                      // Tapping a tile aims the picker at it. Tapping it again
+                      // deselects, which puts a pick back on the default.
+                      onTap: () =>
+                          d.selectTile(d.selectedPid == t.pid ? null : t.pid),
+                    ),
+                    // Drag handle and remove affordance, both above the 48pt
+                    // target floor.
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: Row(
+                        children: [
+                          const SizedBox(
                             width: 34,
                             height: 34,
                             child: Center(
-                              child: Icn(Lu.x, size: 15, color: T.fault),
+                              child: Icn(
+                                Lu.grip,
+                                size: 16,
+                                color: T.neutral600,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => onRemove(t.pid),
+                            child: const SizedBox(
+                              width: 34,
+                              height: 34,
+                              child: Center(
+                                child: Icn(Lu.x, size: 15, color: T.fault),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-        ],
-      );
-    },
-  );
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The theme picker. Five treatments, applied to the tile the user tapped or
+/// to every tile at once.
+class _ThemePicker extends StatelessWidget {
+  const _ThemePicker();
+
+  @override
+  Widget build(BuildContext context) {
+    final d = context.watch<DashboardProvider>();
+    final target = d.selectedPid;
+    final current = target == null ? d.defaultTileType : d.typeFor(target);
+    final targetLabel = target == null
+        ? null
+        : d.tiles
+              .firstWhere((t) => t.pid == target, orElse: () => d.tiles.first)
+              .label;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SectionHeading('Theme'),
+        Text('TILE TYPE', style: Type.formLabel.copyWith(letterSpacing: 0.9)),
+        const SizedBox(height: 10),
+        // One segmented control, the system component — five segments fit a
+        // phone width at the 44pt row height.
+        Segmented(
+          options: [for (final t in TileType.values) t.label],
+          selected: TileType.values.indexOf(current),
+          onSelect: (i) => d.setTileType(TileType.values[i]),
+          height: 44,
+          expand: true,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          d.applyToEveryTile || target == null
+              ? 'Applies to every tile.'
+              : 'Applies to $targetLabel. Tap another tile to aim elsewhere.',
+          style: Type.footnote,
+        ),
+        const SizedBox(height: 6),
+        AppListRow(
+          title: 'Apply to every tile',
+          subtitle: 'Otherwise this changes only the tile you tapped',
+          divider: false,
+          trailing: AppSwitch(
+            value: d.applyToEveryTile,
+            onChanged: d.setApplyToEveryTile,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _AddTileCell extends StatelessWidget {

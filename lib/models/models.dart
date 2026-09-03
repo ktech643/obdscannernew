@@ -19,6 +19,7 @@ class GaugeReading {
     this.criticalAt,
     this.lastUpdated,
     this.expectedInterval = const Duration(milliseconds: 125),
+    this.samples = const [],
   });
 
   /// OBD2 PID, e.g. `010C`. Identity for reordering and layout persistence.
@@ -48,6 +49,11 @@ class GaugeReading {
   /// When this PID last answered. Null means the tile carries a fixed state
   /// and does not decay — an unsupported PID has no clock to run.
   final DateTime? lastUpdated;
+
+  /// The recent sample window, oldest first. Only the trace treatment draws
+  /// it, but it is part of the shared prop set so switching treatment never
+  /// needs a different reading.
+  final List<double> samples;
 
   /// How often this PID is expected to answer at the current polling rate.
   /// Decay is measured against 2× this, not against a fixed wall-clock delay,
@@ -118,6 +124,7 @@ class GaugeReading {
     String? note,
     double? position,
     DateTime? lastUpdated,
+    List<double>? samples,
     bool clearNote = false,
   }) => GaugeReading(
     pid: pid,
@@ -133,6 +140,7 @@ class GaugeReading {
     criticalAt: criticalAt,
     lastUpdated: lastUpdated ?? this.lastUpdated,
     expectedInterval: expectedInterval,
+    samples: samples ?? this.samples,
   );
 }
 
