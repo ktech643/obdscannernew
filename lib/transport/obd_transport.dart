@@ -2,7 +2,7 @@
 ///
 /// Pure Dart by design: the protocol engine talks to this and nothing else, so
 /// the whole of `lib/protocol/` can be unit-tested on the VM with no device,
-/// no plugin, and no car. Swapping `flutter_blue_plus` for something else
+/// no plugin, and no car. Swapping the BLE plugin for something else
 /// costs one file, not a rewrite.
 library;
 

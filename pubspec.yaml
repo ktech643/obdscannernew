@@ -38,8 +38,7 @@ dependencies:
   flutter_svg: ^2.3.0
   intl: ^0.20.3
   shared_preferences: ^2.5.5
-  flutter_blue_plus: ^2.3.12
-
+  flutter_reactive_ble: ^5.5.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

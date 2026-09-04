@@ -17,7 +17,7 @@ On iOS, the cheap $8 ELM327 adapters everyone already owns are **permanently unu
 
 | Transport | iOS | Android | Notes |
 |---|---|---|---|
-| Bluetooth LE | ✅ `flutter_blue_plus` | ✅ `flutter_blue_plus` | Shared Dart |
+| Bluetooth LE | ✅ `flutter_reactive_ble` | ✅ `flutter_reactive_ble` | Shared Dart |
 | Bluetooth Classic (SPP) | ❌ impossible | ✅ **custom Kotlin channel** | The Android unlock |
 | Wi-Fi (TCP) | ✅ `dart:io Socket` | ✅ `dart:io Socket` | Fully shared |
 | USB OTG | ❌ | ✅ optional phase 3 | `usb_serial`, niche |
@@ -30,7 +30,7 @@ On iOS, the cheap $8 ELM327 adapters everyone already owns are **permanently unu
 | Bundle size parity is dead | Target is 5.8 MB. Flutter floor ~16–18 MB iOS, ~9–13 MB Android per-device. | Accept it. Apply every lever in §1.5. |
 | BLE timing control is coarser | Every notification crosses a platform channel. | §1.4 keeps it under control. 8–10 Hz measured on good adapters. |
 | Two stores, two reviews | Play Data Safety, Android 14 FGS types, DSA trader verification. | §8, §11. |
-| Plugin risk | `flutter_blue_plus` is one maintainer away from a problem. | Wrap behind `ObdTransport` (§3.1). Swap costs a day, not a rewrite. |
+| Plugin risk | The BLE plugin is one maintainer away from a problem — and this happened: `flutter_blue_plus` went commercial mid-build. | Wrapped behind `ObdTransport` (§3.1). The swap cost one file. |
 | 60 fps at 10 Hz | Naïve `setState` at grid level janks on mid-range Android. | Leaf-level rebuilds only. §1.4, §B.5. Non-negotiable. |
 
 ## 0.3 Parity constraints carried over
@@ -62,7 +62,7 @@ dependencies:
   go_router: ^14.6.0
   freezed_annotation: ^2.4.4
   json_annotation: ^4.9.0
-  flutter_blue_plus: ^1.35.0        # BLE both platforms
+  flutter_reactive_ble: ^5.5.0      # BLE both platforms — see note below
   drift: ^2.23.0
   sqlite3_flutter_libs: ^0.5.26
   path_provider: ^2.1.5
@@ -89,6 +89,8 @@ dev_dependencies:
 ```
 
 **Explicitly rejected:** `flutter_bluetooth_serial` (abandoned, broken on Android 12+ permissions), Syncfusion charts (bundle size), Firebase anything (breaks the privacy label), `isar` (maintenance uncertain), `get`.
+
+> **`flutter_blue_plus` — rejected during Phase 2 (Sep 2026).** From 2.1.0 it requires a paid commercial license for for-profit use, and from 2.3.5 it makes a network call at build time reporting the package name. Both conflict with this product: it is commercial, and AC-14 forbids outbound traffic. `flutter_reactive_ble` (BSD-3, Philips Hue) was swapped in behind the `ObdTransport` abstraction — one file, as §0.2 predicted.
 
 ## 1.2 Project structure
 
@@ -133,7 +135,7 @@ UI isolate
               └─ Text  ← ONLY this rebuilds, at 10 Hz
 PidBus — Map<String, ValueNotifier<PidSample?>>
 ElmSession — serial queue, ONE outstanding command, framed on '>' (0x3E)
-Transport — flutter_blue_plus / SPP channel / Socket
+Transport — flutter_reactive_ble / SPP channel / Socket
 
 Separate isolates: trip CSV flush (5 s) · chart downsampling (>2,000 pts) · PDF
 ```
@@ -245,7 +247,7 @@ enum TransportKind { ble, spp, wifi, mfi, mock }
 
 Everything above this line is platform-agnostic Dart. Everything below is swappable.
 
-## 3.2 BLE — GATT profile matrix, probe in order, first match wins
+## 3.2 BLE (`flutter_reactive_ble`) — GATT profile matrix, probe in order, first match wins
 
 | Profile | Service | Write char | Notify char | Adapters |
 |---|---|---|---|---|
