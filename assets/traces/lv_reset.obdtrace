@@ -1,0 +1,37 @@
+# torque.obdtrace v1
+# vehicle: 2007 Peugeot 307 1.6
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: 6
+# notes: LV RESET mid-session; full re-handshake required
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+3125  < SEARCHING...\r41 00 BE 3F A8 13\r\r>
+T+3155  > ATRV
+T+3195  < 12.1V\r\r>
+T+3225  > ATDPN
+T+3255  < A6\r\r>
+T+3285  > ATI
+T+3315  < ELM327 v1.5\r\r>
+T+3345  > 010C
+T+3433  < 41 0C 00 00\r\r>
+T+3463  > 010C
+T+3763  < LV RESET\r\r>
+T+3793  > ATZ
+T+4893  < ELM327 v1.5\r\r>
+T+4923  > ATE0
+T+4958  < OK\r\r>
+T+4988  > 010C
+T+5078  < 41 0C 0C 80\r\r>
+T+5108  > ATRV
+T+5148  < 14.3V\r\r>

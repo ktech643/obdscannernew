@@ -1,0 +1,31 @@
+# torque.obdtrace v1
+# vehicle: 2015 BMW 320d
+# adapter: OBDLink CX
+# protocol: 6
+# notes: Engine and transmission ECUs both reply to 0100 and 010C
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+3125  < SEARCHING...\r7E8 06 41 00 BE 3F A8 13\r7E9 06 41 00 80 00 00 00\r\r>
+T+3155  > ATRV
+T+3195  < 14.2V\r\r>
+T+3225  > ATDPN
+T+3255  < A6\r\r>
+T+3285  > ATI
+T+3315  < ELM327 v1.5\r\r>
+T+3345  > 010C
+T+3455  < 7E8 04 41 0C 1A F8\r7E9 04 41 0C 1A F6\r\r>
+T+3485  > 010D
+T+3575  < 7E8 03 41 0D 44\r\r>
+T+3605  > 03
+T+3725  < 7E8 02 43 00\r7E9 02 43 00\r\r>

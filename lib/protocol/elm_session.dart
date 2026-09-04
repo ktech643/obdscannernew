@@ -12,11 +12,19 @@ import 'response_parser.dart';
 /// disaster in this category traces back to violating that, so the invariant is
 /// enforced here and asserted in tests rather than left to callers.
 class ElmSession {
-  ElmSession(this._transport) {
+  ElmSession(this._transport, {this.timeScale = 1.0}) {
     _sub = _transport.inbound.listen(_onBytes);
   }
 
   final ObdTransport _transport;
+
+  /// Multiplies every timeout. 1.0 in production; a replayed trace at 100×
+  /// speed passes 0.01 so a dead adapter times out in 50 ms, not 5 s.
+  final double timeScale;
+
+  Duration scaled(Duration d) => Duration(
+    microseconds: (d.inMicroseconds * timeScale).round().clamp(1, 1 << 40),
+  );
   late final StreamSubscription<List<int>> _sub;
 
   final Queue<_PendingCommand> _queue = Queue();
@@ -75,7 +83,7 @@ class ElmSession {
     _active = next;
     _rx.clear();
     next.startedAt = DateTime.now();
-    _timeout = Timer(next.timeout, _onTimeout);
+    _timeout = Timer(scaled(next.timeout), _onTimeout);
     _transport.write('${next.cmd}\r'.codeUnits);
   }
 

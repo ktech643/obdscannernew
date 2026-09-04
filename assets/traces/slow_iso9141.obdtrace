@@ -1,0 +1,59 @@
+# torque.obdtrace v1
+# vehicle: 2001 Honda Accord 2.0
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: 3 (ISO 9141-2)
+# notes: Auto-detect fails; ladder reaches ATSP3 after ~9 s
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+5525  < SEARCHING...\rUNABLE TO CONNECT\r\r>
+T+5555  > ATSP6
+T+5585  < OK\r\r>
+T+5615  > 0100
+T+6715  < UNABLE TO CONNECT\r\r>
+T+6745  > ATSP7
+T+6775  < OK\r\r>
+T+6805  > 0100
+T+7905  < UNABLE TO CONNECT\r\r>
+T+7935  > ATSP8
+T+7965  < OK\r\r>
+T+7995  > 0100
+T+9095  < UNABLE TO CONNECT\r\r>
+T+9125  > ATSP9
+T+9155  < OK\r\r>
+T+9185  > 0100
+T+10285  < UNABLE TO CONNECT\r\r>
+T+10315  > ATSP5
+T+10345  < OK\r\r>
+T+10375  > 0100
+T+12575  < BUS INIT: ...ERROR\r\r>
+T+12605  > ATSP4
+T+12635  < OK\r\r>
+T+12665  > 0100
+T+18765  < BUS INIT: ...ERROR\r\r>
+T+18795  > ATSP3
+T+18825  < OK\r\r>
+T+18855  > 0100
+T+24255  < BUS INIT: OK\r41 00 BE 1E B8 11\r\r>
+T+24285  > ATRV
+T+24325  < 13.8V\r\r>
+T+24355  > ATDPN
+T+24385  < 3\r\r>
+T+24415  > ATI
+T+24445  < ELM327 v1.5\r\r>
+T+24475  > 010C
+T+24685  < 41 0C 0B B8\r\r>
+T+24715  > 010D
+T+24920  < 41 0D 00\r\r>
+T+24950  > 03
+T+25210  < 43 01 33 00 00 00 00\r\r>

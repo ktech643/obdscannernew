@@ -66,5 +66,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Torque connects to your OBD2 adapter over Bluetooth to read data from your car.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Torque connects to Wi-Fi OBD2 adapters on your local network.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Attach receipt photos to your service records.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 </dict>
 </plist>

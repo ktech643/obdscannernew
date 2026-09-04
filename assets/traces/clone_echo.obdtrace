@@ -1,0 +1,33 @@
+# torque.obdtrace v1
+# vehicle: 2011 Suzuki Swift 1.3
+# adapter: Generic "ELM327 v2.1" BLE clone
+# protocol: 6
+# notes: Echo survives ATE0; fake v2.1 version string
+T+0000  > ATZ
+T+1400  < ATZ\rELM327 v2.1\r\r>
+T+1430  > ATE0
+T+1490  < ATE0\rOK\r\r>
+T+1520  > ATL0
+T+1570  < ATL0\rOK\r\r>
+T+1600  > ATS0
+T+1650  < ATS0\rOK\r\r>
+T+1680  > ATH1
+T+1730  < ATH1\rOK\r\r>
+T+1760  > ATSP0
+T+1820  < ATSP0\rOK\r\r>
+T+1850  > 0100
+T+3950  < 0100\rSEARCHING...\r41 00 BE 3F A8 13\r\r>
+T+3980  > ATRV
+T+4040  < ATRV\r12.6V\r\r>
+T+4070  > ATDPN
+T+4120  < ATDPN\rA6\r\r>
+T+4150  > ATI
+T+4200  < ATI\rELM327 v2.1\r\r>
+T+4230  > 010C
+T+4440  < 010C\r41 0C 0F A0\r\r>
+T+4470  > 010D
+T+4675  < 010D\r41 0D 00\r\r>
+T+4705  > 0105
+T+4913  < 0105\r41 05 5A\r\r>
+T+4943  > 03
+T+5163  < 03\r43 00\r\r>

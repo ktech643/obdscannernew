@@ -1,0 +1,37 @@
+# torque.obdtrace v1
+# vehicle: 2011 Suzuki Swift 1.3
+# adapter: Generic "ELM327 v2.1" BLE clone
+# protocol: 6
+# notes: BUFFER FULL under a 10 Hz poll; rate must halve
+T+0000  > ATZ
+T+0980  < ELM327 v2.1\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+3125  < SEARCHING...\r41 00 BE 3F A8 13\r\r>
+T+3155  > ATRV
+T+3195  < 12.4V\r\r>
+T+3225  > ATDPN
+T+3255  < A6\r\r>
+T+3285  > ATI
+T+3315  < ELM327 v2.1\r\r>
+T+3345  > 010C
+T+3585  < 41 0C 0F A0\r\r>
+T+3615  > 010D
+T+3851  < 41 0D 00\r\r>
+T+3881  > 010C0D11
+T+4781  < BUFFER FULL\r\r>
+T+4811  > ATWS
+T+5511  < ELM327 v2.1\r\r>
+T+5541  > 010C
+T+5786  < 41 0C 0F A4\r\r>
+T+5816  > 010D
+T+6054  < 41 0D 00\r\r>

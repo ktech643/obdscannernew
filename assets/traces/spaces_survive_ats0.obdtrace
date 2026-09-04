@@ -1,0 +1,28 @@
+# torque.obdtrace v1
+# vehicle: 2013 Hyundai i20
+# adapter: KONNWEI KW902 BLE
+# protocol: 6
+T+0000  > ATZ
+T+0990  < ELM327 v1.5\r\r>
+T+1020  > ATE0
+T+1055  < OK\r\r>
+T+1085  > ATL0
+T+1115  < OK\r\r>
+T+1145  > ATS0
+T+1175  < ?\r\r>
+T+1205  > ATH1
+T+1235  < OK\r\r>
+T+1265  > ATSP0
+T+1305  < OK\r\r>
+T+1335  > 0100
+T+3035  < 41 00 BE 3F A8 13\r\r>
+T+3065  > ATRV
+T+3105  < 13.9V\r\r>
+T+3135  > ATDPN
+T+3165  < A6\r\r>
+T+3195  > ATI
+T+3225  < ELM327 v1.5\r\r>
+T+3255  > 010C
+T+3343  < 41 0C 1A F8\r\r>
+T+3373  > 010D
+T+3457  < 41 0D 44\r\r>

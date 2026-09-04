@@ -1,0 +1,47 @@
+# torque.obdtrace v1
+# vehicle: 2014 VW Golf GTD 2.0 diesel
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: 6
+# notes: Byte B bit 3 set; NOx/SCR and PM filter monitors
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+3125  < SEARCHING...\r41 00 BE 3F A8 13\r\r>
+T+3155  > ATRV
+T+3195  < 14.2V\r\r>
+T+3225  > ATDPN
+T+3255  < A6\r\r>
+T+3285  > ATI
+T+3315  < ELM327 v1.5\r\r>
+T+3345  > 0120
+T+3440  < 41 20 80 07 A0 11\r\r>
+T+3470  > 0140
+T+3565  < 41 40 C0 DC 00 00\r\r>
+T+3595  > 010C
+T+3683  < 41 0C 1D D8\r\r>
+T+3713  > 010D
+T+3797  < 41 0D 44\r\r>
+T+3827  > 0105
+T+3917  < 41 05 81\r\r>
+T+3947  > 015C
+T+4039  < 41 5C 88\r\r>
+T+4069  > 0144
+T+4969  < NO DATA\r\r>
+T+4999  > 0144
+T+5899  < NO DATA\r\r>
+T+5929  > 0144
+T+6829  < NO DATA\r\r>
+T+6859  > 0101
+T+6949  < 41 01 00 0F 6B 21\r\r>
+T+6979  > 03
+T+7074  < 43 00\r\r>

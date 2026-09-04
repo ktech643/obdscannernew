@@ -1,0 +1,28 @@
+# torque.obdtrace v1
+# vehicle: 2004 Renault Clio 1.4
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: 5 (ISO 14230-4 KWP fast)
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+5225  < SEARCHING...\rBUS INIT: OK\r41 00 BE 1E B8 11\r\r>
+T+5255  > ATRV
+T+5295  < 13.6V\r\r>
+T+5325  > ATDPN
+T+5355  < A5\r\r>
+T+5385  > ATI
+T+5415  < ELM327 v1.5\r\r>
+T+5445  > 010C
+T+5625  < 41 0C 0C E4\r\r>
+T+5655  > 0105
+T+5830  < 41 05 7A\r\r>

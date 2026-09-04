@@ -153,19 +153,19 @@ class ProtocolNegotiator {
   Future<String?> _resetWithEscalatingDelay() async {
     for (final delayMs in [0, 250, 500, 1000]) {
       if (delayMs > 0) {
-        await Future<void>.delayed(Duration(milliseconds: delayMs));
+        await Future<void>.delayed(
+          _session.scaled(Duration(milliseconds: delayMs)),
+        );
       }
       final response = await _session.send(
         'ATZ',
         timeout: ElmSession.slowTimeout,
       );
-      if (response.status != ElmStatus.timeout && response.raw.isNotEmpty) {
-        return response.raw;
-      }
+      if (response.isOk && response.raw.trim().isNotEmpty) return response.raw;
     }
     // Last resort: a warm start, which some adapters accept when ATZ hangs.
     final warm = await _session.send('ATWS', timeout: ElmSession.slowTimeout);
-    return warm.status == ElmStatus.timeout ? null : warm.raw;
+    return warm.isOk && warm.raw.trim().isNotEmpty ? warm.raw : null;
   }
 
   /// `ATSP0` first; if auto-detect can't settle, walk the ladder explicitly.

@@ -1,0 +1,7 @@
+# torque.obdtrace v1
+# vehicle: unknown
+# adapter: Unpowered clone
+# protocol: none
+# notes: ATZ times out at every escalation; ATWS also silent
+T+0000  > ATZ
+T+6000  > ATWS

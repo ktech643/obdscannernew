@@ -1,0 +1,25 @@
+# torque.obdtrace v1
+# vehicle: 2002 Toyota Yaris
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: 3
+# notes: First K-line init fails; retry succeeds
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP3
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+5525  < BUS INIT: ERROR\r\r>
+T+5555  > 0100
+T+10655  < BUS INIT: OK\r41 00 BE 1E B8 11\r\r>
+T+10685  > ATRV
+T+10725  < 13.5V\r\r>
+T+10755  > 010C
+T+10965  < 41 0C 0A F0\r\r>

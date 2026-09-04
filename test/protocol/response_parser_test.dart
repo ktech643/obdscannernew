@@ -62,8 +62,22 @@ void main() {
       expect(r.frames, ['410C1AF8', '410C1AF9']);
     });
 
-    test('an odd-length hex string is malformed, not a value', () {
-      expect(parse('010C', '41 0C 1A F\r>').status, ElmStatus.malformed);
+    test('an odd-length frame is kept — it may carry a CAN header', () {
+      // With ATH1 on, '7E8 04 41 0C 1A F8' squashes to 17 characters. That
+      // is a header, not corruption, and the reassembler strips it.
+      final r = parse('010C', '7E8 04 41 0C 1A F8\r>');
+      expect(r.isOk, isTrue);
+      expect(r.frames.single, '7E804410C1AF8');
+      expect(
+        ResponseParser.stripHeader(r.frames.single, headerChars: 3),
+        '04410C1AF8',
+      );
+    });
+
+    test('BUS INIT: OK is chatter before the real reply, like SEARCHING', () {
+      final r = parse('0100', 'BUS INIT: OK\r41 00 BE 1E B8 11\r\r>');
+      expect(r.isOk, isTrue);
+      expect(r.frames.single, '4100BE1EB811');
     });
 
     test('OK is a valid non-hex reply', () {

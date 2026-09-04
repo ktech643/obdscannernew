@@ -1,0 +1,29 @@
+# torque.obdtrace v1
+# vehicle: unknown — ignition off
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: none
+# notes: ATRV answers but 0100 does not: ignition-off, not a dead link
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+5525  < SEARCHING...\rUNABLE TO CONNECT\r\r>
+T+5555  > ATSP6
+T+5585  < OK\r\r>
+T+5615  > 0100
+T+9815  < UNABLE TO CONNECT\r\r>
+T+9845  > ATSP7
+T+9875  < OK\r\r>
+T+9905  > 0100
+T+14105  < UNABLE TO CONNECT\r\r>
+T+14135  > ATRV
+T+14175  < 11.8V\r\r>

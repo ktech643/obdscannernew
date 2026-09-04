@@ -1,0 +1,27 @@
+# torque.obdtrace v1
+# vehicle: 2008 Mazda 3 2.0
+# adapter: LELink BLE
+# protocol: 6
+# notes: ATH1 returns ?; multi-ECU disambiguation impossible
+T+0000  > ATZ
+T+1000  < ELM327 v1.4b\r\r>
+T+1030  > ATE0
+T+1065  < OK\r\r>
+T+1095  > ATL0
+T+1125  < OK\r\r>
+T+1155  > ATS0
+T+1185  < OK\r\r>
+T+1215  > ATH1
+T+1245  < ?\r\r>
+T+1275  > ATSP0
+T+1315  < OK\r\r>
+T+1345  > 0100
+T+3245  < SEARCHING...\r41 00 BE 1F A8 13\r\r>
+T+3275  > ATRV
+T+3315  < 14.1V\r\r>
+T+3345  > ATDPN
+T+3375  < A6\r\r>
+T+3405  > ATI
+T+3435  < ELM327 v1.4b\r\r>
+T+3465  > 010C
+T+3553  < 41 0C 12 34\r\r>

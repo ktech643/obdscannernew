@@ -1,0 +1,33 @@
+# torque.obdtrace v1
+# vehicle: 2010 Vauxhall Astra
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: 6
+# notes: CAN ERROR on the second read; ATWS recovers
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+3125  < SEARCHING...\r41 00 BE 3F A8 13\r\r>
+T+3155  > ATRV
+T+3195  < 14.2V\r\r>
+T+3225  > ATDPN
+T+3255  < A6\r\r>
+T+3285  > ATI
+T+3315  < ELM327 v1.5\r\r>
+T+3345  > 010C
+T+3433  < 41 0C 1A F8\r\r>
+T+3463  > 010D
+T+3863  < CAN ERROR\r\r>
+T+3893  > ATWS
+T+4593  < ELM327 v1.5\r\r>
+T+4623  > 010D
+T+4707  < 41 0D 44\r\r>

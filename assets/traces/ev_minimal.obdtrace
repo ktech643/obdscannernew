@@ -1,0 +1,41 @@
+# torque.obdtrace v1
+# vehicle: 2019 Nissan Leaf
+# adapter: Vgate iCar Pro BLE 4.0
+# protocol: 6
+# notes: Fewer than 6 PIDs, no RPM, no MAF — the honest-state trigger
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1105  < OK\r\r>
+T+1135  > ATS0
+T+1165  < OK\r\r>
+T+1195  > ATH1
+T+1225  < OK\r\r>
+T+1255  > ATSP0
+T+1295  < OK\r\r>
+T+1325  > 0100
+T+3125  < SEARCHING...\r41 00 08 08 00 00\r\r>
+T+3155  > ATRV
+T+3195  < 14.2V\r\r>
+T+3225  > ATDPN
+T+3255  < A6\r\r>
+T+3285  > ATI
+T+3315  < ELM327 v1.5\r\r>
+T+3345  > 0120
+T+3440  < 41 20 00 00 00 01\r\r>
+T+3470  > 0140
+T+3565  < 41 40 40 00 00 00\r\r>
+T+3595  > 010C
+T+4495  < NO DATA\r\r>
+T+4525  > 010D
+T+4609  < 41 0D 22\r\r>
+T+4639  > 0105
+T+4729  < 41 05 3C\r\r>
+T+4759  > 0142
+T+4850  < 41 42 01 A4\r\r>
+T+4880  > 0101
+T+4970  < 41 01 00 00 00 00\r\r>
+T+5000  > 03
+T+5095  < 43 00\r\r>
