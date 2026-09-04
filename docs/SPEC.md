@@ -303,6 +303,19 @@ private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
 
 **Discovery:** SPP adapters must be paired in Android Settings first. Do not attempt in-app pairing. Show paired devices + "Pair a new adapter" → `ACTION_BLUETOOTH_SETTINGS` with a 3-step card ("The PIN is usually 1234 or 0000").
 
+### 3.4.1 As built (Phase 3, 2026-09-05) — decisions that are not obvious from the rules
+
+Files: `android/app/src/main/kotlin/com/torque/torque_obd2/SppPlugin.kt`, `lib/transport/spp_transport.dart`, `test/transport/spp_transport_test.dart` (26 tests against a scripted native side). Two adversarial review rounds (5 lenses × 3 refuters) drove the design below.
+
+- **Error codes** (native → `SppFailure`): `unsupported`, `off`, `permission`, `unpaired` → `notPaired`, `argument` → `badAddress`, `io`, `state`. `listPaired` returns `off` when Bluetooth is disabled — `bondedDevices` is empty whenever the adapter isn't `STATE_ON`, so without this "off" looks like "nothing paired". `connect` refuses a device whose `bondState != BOND_BONDED` with `unpaired`, because a secure RFCOMM connect to an unbonded device makes the OS pop its pairing dialog — the in-app pairing this spec forbids.
+- **Rule 5 needs `RECEIVER_EXPORTED` on API 33+.** `ACTION_ACL_DISCONNECTED` is sent by the Bluetooth stack process (uid 1002), not `system_server`; a `RECEIVER_NOT_EXPORTED` receiver only accepts root/system senders and the broadcast is dropped with an "Exported Denial". The action is a `<protected-broadcast>`, so exporting adds no spoofing surface. Filtered to the connected address.
+- **One `Link` per connection** (socket, streams, own `alive` flag, receiver). A stale read thread can only close its own link; nothing ever `join`s a thread. Disconnect is synchronous on the platform thread: closing the socket is what unblocks a parked `connect()`/`read()`.
+- **Generation + `pending` socket.** Every connect *and* disconnect bumps a generation on the platform thread, in call order. The socket a connect is blocked on is parked in `pending`; `abort()` closes it, and a newer connect closes the one it supersedes rather than queueing 12–30 s behind it. A connect that finds the generation moved throws its socket away. The link is published and its ACL receiver registered in one critical section so an abort can't leave a receiver registered forever.
+- **Dart holds exactly one `EventChannel` subscription, shared across instances.** Flutter keeps one message handler per channel name; cancelling a second overlapping `receiveBroadcastStream()` subscription silently removes the first's handler. Native has one link anyway, so the subscription is static, routed to the current *owner* instance; connecting a second `SppTransport` evicts the first (it sees `disconnected`, and its own `disconnect()` touches nothing native).
+- **Dart timeout tells native to stop** (only if still the current attempt), or a late native success would leave an open socket nobody listens to. Addresses are upper-cased on both sides — `getRemoteDevice` rejects lower-case hex.
+- **Build:** `flutter_reactive_ble` 5.x pins `compileSdk 33` while its androidx dependencies require 34+; `android/build.gradle.kts` lifts every library plugin to 36. Behavioural APIs (`minSdk`/`targetSdk`) are untouched.
+- **Deferred to Phase 7:** `SppPlugin` is Activity-scoped (created/disposed with the engine). The foreground service will need the link to be Application-scoped.
+
 ## 3.5 `MockTransport` and the trace format
 
 ```
@@ -887,9 +900,9 @@ Deep `#0A1418` ground, one geometric mark combining the OBD2 connector trapezoid
 # PART C — BUILD ORDER
 
 ```
-Phase 1  Protocol engine, PURE DART, no Flutter imports. Tests FIRST.
-Phase 2  Transport: ObdTransport + MockTransport, then BLE, then Wi-Fi.
-Phase 3  Android SPP native module.
+Phase 1  Protocol engine, PURE DART, no Flutter imports. Tests FIRST.   ✅ done
+Phase 2  Transport: ObdTransport + MockTransport, then BLE, then Wi-Fi.   ✅ done
+Phase 3  Android SPP native module.   ✅ done 2026-09-05 — see §3.4.1
 Phase 4  Persistence — Drift, migrations with a schema test per step.
 Phase 5  Design system — Part B before any screen. Goldens.
 Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
