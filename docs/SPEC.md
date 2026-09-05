@@ -913,6 +913,24 @@ Deep `#0A1418` ground, one geometric mark combining the OBD2 connector trapezoid
 
 ---
 
+## B.10 As built (Phase 5, 2026-09-05) — decisions that are not obvious from B.1–B.9
+
+Files: `lib/design_system/` (`tokens`, `typography`, `spacing`, `theme`, `surfaces`, `adaptive`, `widgets/*`, barrel `design_system.dart`), `lib/domain/pid_sample.dart` (`PidSample`, `GaugeSpec`, `PidBus`, `DashboardClock`), `tool/icon.py` (B.9). 72 tests and 20 goldens in `test/design_system/`; `test/flutter_test_config.dart` loads Barlow and the Material icon font so goldens render real glyphs. The existing `lib/screens` + `lib/widgets` (the earlier Industry design) are untouched; Phase 6 rebuilds the screens on this.
+
+- **`GaugeTile` rendering model (hard rule 3).** `RepaintBoundary` → const chrome (label, unit, frame) → `ValueListenableBuilder<GaugeState>` (rebuilds only on a state *change*) → `ListenableBuilder` over the sample **and** the state (the numeral, unit, marker, and the variant graphic). The readout listens to state too because the shared clock can move a tile from stale to unavailable with no new sample, and the numeral must become `—` the moment it does — a test caught that. Staleness is derived, never stored: `stateFor(spec, sample, now)` gives live / stale (>2× interval) / unavailable (>5 s or null) / unsupported / outOfRange.
+- **One `DashboardClock` for the whole dashboard**, ticked by the scheduler, not a timer per tile. Decay is 400 ms opacity to 40% plus a luma-preserving desaturation matrix; both collapse to 0 ms under `disableAnimations`.
+- **Semantics:** one node per tile, built inside the readout (so it carries the current value) with the chrome excluded; `liveRegion` is set exactly once when the state crosses into or out of `outOfRange`, consumed by the next build — never per sample.
+- **`RangeBar`** paints its track and band once in their own `RepaintBoundary`; only the 2×10 marker moves, via `TweenAnimationBuilder` retargeting at 120 ms easeOut. The sparkline variant scales to the normal band widened by half its width on each side, not the physical range — coolant wandering 84–91 °C on a 0–150 axis is a flat line and says nothing.
+- **`PrimaryButton` keeps its width while loading** by leaving the label in the layout at opacity 0 and stacking the indicator on top. `DestructiveButton` is two-step with a 4 s auto-disarm timer, cancelled on dispose.
+- **`ConnectionBanner`** is 44 px and is laid out by `BannerHost` *above* the content, so it pushes rather than covers; the child's top moves by exactly 44 (tested).
+- **`DtcRow`** needs `IntrinsicHeight` around its stretched row or the severity bar forces infinite height — the same trap the Industry UI hit.
+- **B.4:** every platform decision is in `adaptive.dart` and reads `PlatformInfo` through `AdaptiveScope` (tests inject `FakePlatform`); nothing else in `lib/design_system/` mentions a platform. Tab change is `Duration.zero` on both chromes.
+- **B.8 is tested against the actual tokens:** primary and secondary ink ≥ 4.5:1 on all three surfaces, every telltale ≥ 3:1 on the tile and canvas, dark-on-amber ≥ 4.5:1. Tertiary ink is for chrome and secondary text only.
+- **Type:** condensed Barlow for readouts and titles, regular for everything else; tabular figures on every style; uppercase produced by the tile itself for the PID label and nowhere else.
+- **Icon (B.9):** generated, not drawn by hand — `tool/icon.py` renders the trapezoid-and-rising-line mark at 4× and downsamples into all 19 iOS sizes, the five legacy mipmaps, and an adaptive foreground at 52/108 of the canvas inside the 66 dp safe circle over a `#0A1418` colour background.
+- **Round-2 review (22 findings, all applied):** every button, the banner action, the DTC row and a tappable tile carry their tap action *on the Semantics node* — a `GestureDetector` under `ExcludeSemantics` is invisible to TalkBack and VoiceOver. The tile is one node: its header is excluded and the readout node carries `button`/`onTap`. Only the *readout* dims when stale; the header word ("3 s ago" with the clock glyph) stays at full strength, because the word explaining the dimming must be the most legible thing on the tile, and *unavailable* is not dimmed at all (the dash is the state). Desaturation is a colour choice (amber drops to ink) rather than a `ColorFilter`, so no layer and no re-inflation on the transition. The clock is **required**; an optional one meant a tile with no samples never decayed. Numerals, button labels, chip words, DTC status and list values scale down or wrap at text scale 2.0 instead of overflowing (tested at 1.5 and 2.0 in 2-up widths). Chrome is monochrome — tabs, switches, spinners, progress and the current handshake step are ink; amber is the primary button, the banner action and caution only. "Caution" is a word in `meta`, not a second uppercase site. A `TorqueTokens.highContrast` set answers `MediaQuery.highContrast` (brighter inks, visible rules, stronger tints, a lighter dim). iOS icons are exported without an alpha channel (App Store Connect rejects one); the Android adaptive foreground fills the 66 dp safe circle.
+- **Not built here:** the six-state *screens* (B.6 is a rule for Phase 6; the building blocks — `Skeleton`, `GaugeTileSkeleton`, `EmptyStateView`, `ValueRow(null, reason:)`, the banner — are); haptics beyond the three verbs; the fault-appears 200 ms edge pulse (belongs to the dashboard grid, Phase 6).
+
 # PART C — BUILD ORDER
 
 ```
@@ -920,7 +938,7 @@ Phase 1  Protocol engine, PURE DART, no Flutter imports. Tests FIRST.   ✅ done
 Phase 2  Transport: ObdTransport + MockTransport, then BLE, then Wi-Fi.   ✅ done
 Phase 3  Android SPP native module.   ✅ done 2026-09-05 — see §3.4.1
 Phase 4  Persistence — Drift, migrations with a schema test per step.   ✅ done 2026-09-05 — see §6.1
-Phase 5  Design system — Part B before any screen. Goldens.
+Phase 5  Design system — Part B before any screen. Goldens.   ✅ done 2026-09-05 — see §B.10
 Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
 Phase 7  Android FGS, OEM battery helper, permission matrix.
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.
