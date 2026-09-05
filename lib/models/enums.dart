@@ -96,6 +96,9 @@ enum SyncStatus { off, synced, paused, conflict }
 
 enum MonitorState { complete, notComplete, notSupported }
 
+/// What a garage entry records. Stored by name — never reorder, only append.
+enum ServiceType { maintenance, repair, inspection, tyres, other }
+
 enum DtcStatus { stored, pending, permanent }
 
 enum DtcSeverity { severe, moderate, minor, unknown }

@@ -1,0 +1,9 @@
+targets:
+  $default:
+    builders:
+      drift_dev:
+        options:
+          # ISO-8601 text, not unix seconds: sub-second precision, sane in an
+          # export, readable in a debugger. Set from day one so it never has
+          # to migrate.
+          store_date_time_values_as_text: true

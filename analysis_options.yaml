@@ -18,6 +18,9 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # Generated: Drift data classes and the schema-verifier snapshots.
+    - lib/**/*.g.dart
+    - test/data/schema/**
 
 linter:
   # The lint rules applied to this project can be customized in the

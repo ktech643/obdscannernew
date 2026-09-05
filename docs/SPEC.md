@@ -549,6 +549,22 @@ Units (independent toggles) · Polling rate · Keep screen on · Haptics · Adap
 
 **Sync:** no cloud sync at v1. Full JSON export/import instead — preserves the zero-server posture.
 
+### 6.1 As built (Phase 4, 2026-09-05) — decisions that are not obvious from the table list
+
+Files: `lib/data/db/{tables,app_database,open}.dart`, `lib/data/repositories/{vehicle,service,dtc,trip}_repository.dart`, `lib/data/backup/backup_codec.dart`, `lib/data/{clock,ids}.dart`; 59 tests in `test/data/`. Drift 2.34 with `drift_flutter`; generated code and `drift_schemas/` are committed. Two adversarial review rounds (16 + 11 confirmed findings) drove the design below.
+
+- **Ids are random 128-bit strings, never autoincrement**, so rows keep their identity across export/import. Enums are stored by **name** (append, never reorder). Dates are ISO-8601 **UTC** text (`build.yaml` + `clock.dart`): text `ORDER BY` is only chronological when every row uses the same offset, and §9.7 says store UTC. Repositories normalise every DateTime they write; readers get UTC instants back. *Dart's `DateTime ==` also compares the UTC flag — compare instants with `isAtSameMomentAs`.*
+- **Length limits are real SQL `CHECK`s** (`title` 1–200, `notes` ≤5000, `currencyCode` = 3). Drift's `withLength` alone is Dart-side validation only; raw SQL would bypass it.
+- **`PRAGMA foreign_keys = ON` in `beforeOpen`** — SQLite defaults it off, and every cascade depends on it. The test asserts the pragma, not just "something threw".
+- **Duplicate VINs are allowed** (§9.8), so `byVin` returns a list, primary first; `primary()` never throws; `reconcilePrimary()` restores the one-primary invariant after deletes and imports (a merge keeps the device's own primary even if the backup unflags it). `setPrimary` with a stale id rolls back rather than leave zero primaries. Whole-row `update()`/`updateRecord()` normalise dates to UTC like every other write — the date-picker edit path is the one that would otherwise store a local offset.
+- **DTC clear (§9.5):** `beginClear()` writes the `beforeClear` snapshot with `clearOutcome = pending` and must be awaited before Mode 04; `completeClear()` writes the `afterClear` re-read, links both ways, and settles `cleared` / `codesReturned`; `failClear()` for `refused`/`unknown`. `unreconciledClears()` on every launch finds a clear the app died in the middle of — tested across a real close-and-reopen.
+- **Trip files:** the only path ever resolved is exactly `trips/<32-hex>.csv`; anything else (the database file, an attachment, `..`) is refused, and an imported trip row is accepted only with the path the app produces for its own id — a backup is someone else's data. The row is inserted before the file is created. `reconcileFiles()` at launch deletes orphan CSVs and zeroes `fileBytes` on rows whose file is gone; `deleteAllFiles()` is the file half of "Delete all data" (`wipe()` is only the row half). Retention: 30 days by `startedAt`, then 200 MB by `lastOpenedAt` (LRU); a recording trip is never touched; one failed delete doesn't stop the pass.
+- **Backup (`BackupCodec`):** one JSON document, all tables, files by path only. Import runs in one transaction; a row that doesn't parse or fails a CHECK is skipped and counted, never fatal — including the case where Drift's Dart-side length check (UTF-16 units) passes but SQLite's `LENGTH()` (code points) refuses; a merge overwrites a known id in full, nulls included; `replace: true` refuses a document without a vehicle list before wiping, and rolls the wipe back if none of its vehicles could be read. Every timestamp encoding (ISO string or epoch integer) is read back as a UTC instant.
+- **Fuel economy** is computed between full fills only, partials folded in, walked in odometer order (date-picker entries share a midnight timestamp). A km-recurring reminder completed without a reading rolls from the vehicle's odometer, else its own target, else is simply completed — never a silent no-op.
+- **Schema test:** v1 opens a *fresh* database so `onCreate` runs and is diffed against the dump; starting at v1 and validating at v1 only compares the dump with itself. Each future version adds a step. `tool/schema.sh` re-dumps and regenerates the verifier.
+- **Free-tier caps (§7.2)** are answerable from `count()`/`recordCount()`/`recent(limit:)` but enforced by the entitlement layer (Phase 8), not here.
+- **Not built here:** attachment/photo path handling (Phase 6 UI), the bundled DTC-definition database (`assets/db/dtc.sqlite.gz` needs a licensed, verified source — never fabricate definitions), and wiring the existing Provider UI to these repositories (Phase 6).
+
 ---
 
 # PART 7 — MONETISATION
@@ -903,7 +919,7 @@ Deep `#0A1418` ground, one geometric mark combining the OBD2 connector trapezoid
 Phase 1  Protocol engine, PURE DART, no Flutter imports. Tests FIRST.   ✅ done
 Phase 2  Transport: ObdTransport + MockTransport, then BLE, then Wi-Fi.   ✅ done
 Phase 3  Android SPP native module.   ✅ done 2026-09-05 — see §3.4.1
-Phase 4  Persistence — Drift, migrations with a schema test per step.
+Phase 4  Persistence — Drift, migrations with a schema test per step.   ✅ done 2026-09-05 — see §6.1
 Phase 5  Design system — Part B before any screen. Goldens.
 Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
 Phase 7  Android FGS, OEM battery helper, permission matrix.
