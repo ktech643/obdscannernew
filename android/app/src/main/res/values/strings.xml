@@ -1,0 +1,7 @@
+<resources>
+    <string name="fgs_channel_name">Trip recording</string>
+    <string name="fgs_channel_desc">Keeps the adapter connected while a trip is being recorded.</string>
+    <string name="fgs_title">Recording trip</string>
+    <string name="fgs_text">Torque is recording engine data.</string>
+    <string name="fgs_stop">Stop</string>
+</resources>

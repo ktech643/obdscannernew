@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/enums.dart';
 import '../models/models.dart';
+import '../platform/background_service.dart';
 import 'persistence.dart';
 
 /// The scenario the dashboard is rendering. The board draws each of these as
@@ -22,6 +23,7 @@ class DashboardProvider extends ChangeNotifier {
   }
 
   final Persistence _store;
+  final BackgroundService _background = BackgroundService();
 
   /// Layouts save per vehicle, so every layout key is scoped by this.
   final String vehicleId;
@@ -854,6 +856,16 @@ class DashboardProvider extends ChangeNotifier {
 
   void toggleRecording() {
     _recording = !_recording;
+    // Android: an active recording holds the adapter connection in background
+    // through the connectedDevice foreground service (SPEC §9.3). Starting it
+    // here keeps the process alive with the screen off; stopping it releases
+    // the service. No-op on iOS, which holds the BLE link under
+    // bluetooth-central instead.
+    if (_recording) {
+      _background.startRecording();
+    } else {
+      _background.stopRecording();
+    }
     notifyListeners();
   }
 

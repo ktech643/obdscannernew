@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- OBD2 connector trapezoid with a rising diagnostic line. Notification
+         small icons are rendered as a white alpha mask, so the fill is pure
+         white and there is no background. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6,3 L18,3 L18,6 L6,6 Z M5,8 L19,8 L19,10 L5,10 Z M7,12 L17,12 L17,14 L7,14 Z M6,16 L18,16 L18,19 L6,19 Z"/>
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,21 L20,21 L20,23 L4,23 Z"/>
+</vector>

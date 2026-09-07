@@ -15,6 +15,16 @@
     <!-- Wi-Fi adapters -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- API 33+ reminders and the foreground-service notification -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Trip recording in background (SPEC §9.3). The connectedDevice type is
+         required on Android 14+ to hold a Bluetooth connection while the
+         screen is off; without it the service crashes with
+         MissingForegroundServiceTypeException. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <application
         android:label="torque_obd2"
         android:name="${applicationName}"
@@ -46,6 +56,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Holds the adapter connection while a trip recording runs with the
+             screen off. Typed connectedDevice for Android 14+. -->
+        <service
+            android:name=".ObdForegroundService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

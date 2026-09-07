@@ -19,7 +19,10 @@ android {
         applicationId = "com.torque.torque_obd2"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // SPEC: Android 8.0 / API 26 minimum. This also lets the foreground
+        // service use the framework Notification.Builder (API 26+) directly
+        // rather than pulling in androidx.core.
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
