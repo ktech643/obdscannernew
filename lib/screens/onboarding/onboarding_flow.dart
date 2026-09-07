@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/platform/platform_info.dart';
 import '../../models/enums.dart';
 import '../../providers/app_providers.dart';
 import '../../theme/tokens.dart';
@@ -201,6 +202,10 @@ class _A2Adapter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final o = context.read<OnboardingProvider>();
+    // SPEC §5.1: this screen is platform-branched. On Android almost any
+    // ELM327 adapter works; on iOS only BLE/Wi-Fi, and the classic-Bluetooth
+    // incompatibility has to be explained up front.
+    final android = PlatformInfo.current.isAndroid;
     return Screen(
       gutter: T.gutterWide,
       footer: ScreenFooter(
@@ -213,7 +218,7 @@ class _A2Adapter extends StatelessWidget {
             'Help me pick one',
             onPressed: () => notImplementedHere(
               context,
-              'Opens the bundled adapter list — no lookup leaves your iPhone.',
+              'Opens the bundled adapter list — no lookup leaves your device.',
             ),
           ),
         ],
@@ -223,42 +228,55 @@ class _A2Adapter extends StatelessWidget {
         Text('You need an adapter', style: Type.onboardingHeadline),
         const SizedBox(height: 12),
         Text(
-          'Torque talks to your car through an OBD2 adapter that plugs in under '
-          'the dash. On iPhone it must be a Bluetooth LE or Wi-Fi adapter.',
+          android
+              ? 'Torque talks to your car through an OBD2 adapter that plugs in '
+                'under the dash. Almost any ELM327 adapter works — Bluetooth, '
+                'Bluetooth LE, or Wi-Fi.'
+              : 'Torque talks to your car through an OBD2 adapter that plugs in '
+                'under the dash. On iPhone it must be a Bluetooth LE or Wi-Fi '
+                'adapter.',
           style: Type.body16Muted,
         ),
         const SizedBox(height: 22),
-        IntrinsicHeight(
-          // The two cells must match height whichever has more content, and
-          // stretch needs a bounded cross axis to resolve against.
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Expanded(
-                child: _CompareCell(
-                  verdict: 'Works',
-                  items: ['Bluetooth LE', 'Wi-Fi'],
-                  tone: Tone.pass,
+        if (android)
+          const _CompareCell(
+            verdict: 'Works',
+            items: ['Bluetooth', 'Bluetooth LE', 'Wi-Fi'],
+            tone: Tone.pass,
+          )
+        else
+          IntrinsicHeight(
+            // The two cells must match height whichever has more content, and
+            // stretch needs a bounded cross axis to resolve against.
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Expanded(
+                  child: _CompareCell(
+                    verdict: 'Works',
+                    items: ['Bluetooth LE', 'Wi-Fi'],
+                    tone: Tone.pass,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 14),
-              const Expanded(
-                child: _CompareCell(
-                  verdict: "Can't work",
-                  items: ['Bluetooth Classic'],
-                  footnote: 'the cheap Android kind',
-                  tone: Tone.fault,
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: _CompareCell(
+                    verdict: "Can't work",
+                    items: ['Bluetooth Classic'],
+                    footnote: 'the cheap Android kind',
+                    tone: Tone.fault,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         const SizedBox(height: 20),
-        const NoteBlock(
-          'Pairing an adapter in iPhone Settings does not make it work with '
-          'apps. Apple gives no app access to Classic Bluetooth — that is a '
-          'platform rule, not a Torque limitation.',
-        ),
+        if (!android)
+          const NoteBlock(
+            'Pairing an adapter in iPhone Settings does not make it work with '
+            'apps. Apple gives no app access to Classic Bluetooth — that is a '
+            'platform rule, not a Torque limitation.',
+          ),
         const SizedBox(height: 22),
         Text('Where the port is', style: Type.cardTitle),
         const SizedBox(height: 10),
