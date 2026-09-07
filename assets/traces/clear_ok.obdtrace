@@ -1,0 +1,50 @@
+# torque.obdtrace v1
+# vehicle: 2012 Ford Focus 1.6 petrol
+# adapter: OBDLink SX
+# protocol: 6 (ISO 15765-4 CAN 11/500)
+# notes: Mode 04 accepted; the re-read is clean. Exercises the
+# notes: before/after snapshot pair in SPEC 9.5.
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1110  < OK\r\r>
+T+1140  > ATS0
+T+1175  < OK\r\r>
+T+1205  > ATH1
+T+1240  < OK\r\r>
+T+1270  > ATSP0
+T+1305  < OK\r\r>
+T+1335  > 0100
+T+3135  < SEARCHING...\r41 00 00 00 00 01\r\r>
+T+3165  > ATRV
+T+3205  < 13.9V\r\r>
+T+3235  > ATDPN
+T+3265  < A6\r\r>
+T+3295  > ATI
+T+3325  < ELM327 v1.5\r\r>
+T+3355  > 0120
+T+3450  < 41 20 00 00 00 01\r\r>
+T+3480  > 0140
+T+3575  < 41 40 00 00 00 01\r\r>
+T+3605  > 0160
+T+3700  < 41 60 00 00 00 00\r\r>
+T+3730  > 0101
+T+3820  < 41 01 82 07 65 05\r\r>
+T+3850  > 03
+T+3970  < 06 43 02 03 01 04 20\r\r>
+T+4000  > 07
+T+4100  < 47 00\r\r>
+T+4130  > 0A
+T+4230  < 4A 00\r\r>
+T+4260  > 04
+T+4400  < 44\r\r>
+T+4430  > 0101
+T+4520  < 41 01 00 07 00 00\r\r>
+T+4550  > 03
+T+4660  < 43 00\r\r>
+T+4690  > 07
+T+4790  < 47 00\r\r>
+T+4820  > 0A
+T+4920  < 4A 00\r\r>

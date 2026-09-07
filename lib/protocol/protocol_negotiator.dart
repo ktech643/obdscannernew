@@ -28,6 +28,7 @@ class HandshakeResult {
     this.status,
     this.headersUnavailable = false,
     this.echoActive = false,
+    this.supportBytes = const [],
   });
 
   final bool ok;
@@ -41,10 +42,19 @@ class HandshakeResult {
 
   final bool headersUnavailable;
   final bool echoActive;
+
+  /// The decoded payload of the `0100` probe that proved the car is
+  /// listening. It *is* the first support bitmask, so a caller never has to
+  /// ask `0100` a second time — one fewer round trip on every connect, and
+  /// the reason a recorded session only ever contains one.
+  final List<int> supportBytes;
 }
 
 /// Brings an ELM327 session up and finds the vehicle's protocol.
 class ProtocolNegotiator {
+  /// Payload of the successful `0100`, handed back in the result.
+  List<int> _supportBytes = const [];
+
   ProtocolNegotiator(this._session);
 
   final ElmSession _session;
@@ -145,6 +155,7 @@ class ProtocolNegotiator {
       batteryVolts: volts,
       headersUnavailable: headersUnavailable,
       echoActive: echoActive,
+      supportBytes: _supportBytes,
     );
   }
 
@@ -203,9 +214,15 @@ class ProtocolNegotiator {
         '0100',
         timeout: const Duration(seconds: 10),
       );
-      return _isPositive(retry);
+      return _accept(retry);
     }
-    return _isPositive(response);
+    return _accept(response);
+  }
+
+  bool _accept(ElmResponse r) {
+    if (!_isPositive(r)) return false;
+    _supportBytes = r.bytes;
+    return true;
   }
 
   static bool _isPositive(ElmResponse r) =>

@@ -931,6 +931,51 @@ Files: `lib/design_system/` (`tokens`, `typography`, `spacing`, `theme`, `surfac
 - **Round-2 review (22 findings, all applied):** every button, the banner action, the DTC row and a tappable tile carry their tap action *on the Semantics node* — a `GestureDetector` under `ExcludeSemantics` is invisible to TalkBack and VoiceOver. The tile is one node: its header is excluded and the readout node carries `button`/`onTap`. Only the *readout* dims when stale; the header word ("3 s ago" with the clock glyph) stays at full strength, because the word explaining the dimming must be the most legible thing on the tile, and *unavailable* is not dimmed at all (the dash is the state). Desaturation is a colour choice (amber drops to ink) rather than a `ColorFilter`, so no layer and no re-inflation on the transition. The clock is **required**; an optional one meant a tile with no samples never decayed. Numerals, button labels, chip words, DTC status and list values scale down or wrap at text scale 2.0 instead of overflowing (tested at 1.5 and 2.0 in 2-up widths). Chrome is monochrome — tabs, switches, spinners, progress and the current handshake step are ink; amber is the primary button, the banner action and caution only. "Caution" is a word in `meta`, not a second uppercase site. A `TorqueTokens.highContrast` set answers `MediaQuery.highContrast` (brighter inks, visible rules, stronger tints, a lighter dim). iOS icons are exported without an alpha channel (App Store Connect rejects one); the Android adaptive foreground fills the 66 dp safe circle.
 - **Not built here:** the six-state *screens* (B.6 is a rule for Phase 6; the building blocks — `Skeleton`, `GaugeTileSkeleton`, `EmptyStateView`, `ValueRow(null, reason:)`, the banner — are); haptics beyond the three verbs; the fault-appears 200 ms edge pulse (belongs to the dashboard grid, Phase 6).
 
+## B.11 The session layer (Phase 6, slice 1 — 2026-09-07)
+
+`lib/session/` is the piece that makes everything built in Phases 1–5
+actually talk to a car. Until now the protocol engine, the transports and
+the design system all existed and were tested, but nothing drove them: the
+screens still ran on the older Provider/Industry stack with a faked
+handshake.
+
+- **`ObdSession`** owns the running conversation: transport → `ElmSession`
+  → handshake → supported-PID discovery → poll loop → `PidBus`. It is a
+  `ChangeNotifier` for *connection* state only, which changes rarely; live
+  values never pass through it (hard rule 3). Hard rule 2 needs no work
+  here — `ElmSession` keeps one command outstanding, so the loop can await
+  freely without ever pipelining.
+- **Every async step is generation-checked.** `connect` and `disconnect`
+  bump a counter; a loop belonging to a superseded connection stops the
+  moment it resumes. A second `connect` while the first is in flight is a
+  supported operation, not a race.
+- **The handshake now hands back its own `0100` payload.** That probe *is*
+  the first support bitmask, so discovery no longer re-asks it: one fewer
+  round trip on every connect. This was found by replay — a recorded
+  session contains exactly one `0100`, because a real session only asks
+  once, and the second ask timed out against the recorded 1.8 s
+  SEARCHING latency.
+- **Latency feedback must never undo a `BUFFER FULL` backoff.** The
+  scheduler's `recordP95Rtt` sets the rate back to 10 Hz on any fast cycle,
+  which erased the halving one line after it happened. After an overflow
+  the only way up is `relax()`, which ramps over several cycles.
+  `bufferOverflows` is counted for the §10.4 diagnostics log.
+- **§9.5 is enforced here, not in the UI.** `clearDtcs` reads the codes,
+  writes the `beforeClear` snapshot, sends Mode 04, then *always* re-reads
+  and settles the snapshot to `cleared` or `codesReturned`. A refusal is
+  recorded too. The UI cannot skip a step because it never sees them.
+- **Hard rule 9** is a property of the loop: `setBackgrounded(true)` stops
+  it unless `setRecording(true)`.
+- **Three new fixtures.** `clear_ok`, `clear_returns` and
+  `buffer_full_poll`. Mode 04 appeared in none of the twenty Phase 2
+  recordings — the one place the app *writes* to the car had nothing to
+  replay against — and `BUFFER FULL` had only ever been recorded against a
+  batched request this build never sends.
+
+**Still to do in Phase 6:** the screens themselves. `lib/screens/` and
+`lib/widgets/` are still the older Industry design on Provider, and the
+Part B design system in `lib/design_system/` is still unused by them.
+
 # PART C — BUILD ORDER
 
 ```
@@ -940,6 +985,7 @@ Phase 3  Android SPP native module.   ✅ done 2026-09-05 — see §3.4.1
 Phase 4  Persistence — Drift, migrations with a schema test per step.   ✅ done 2026-09-05 — see §6.1
 Phase 5  Design system — Part B before any screen. Goldens.   ✅ done 2026-09-05 — see §B.10
 Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
+         ◐ slice 1 done 2026-09-07 — the session layer, see §B.11
 Phase 7  Android FGS, OEM battery helper, permission matrix.
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.
 Phase 9  Demo Mode. Required for store review, not optional.
