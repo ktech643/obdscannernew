@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app.dart';
+import 'monetization/revenuecat_service.dart';
 import 'providers/persistence.dart';
 
 Future<void> main() async {
@@ -15,5 +16,10 @@ Future<void> main() async {
   // Storage opens before the first frame: the app is local-first, so the
   // stored state *is* the state.
   final store = await Persistence.open();
-  runApp(TorqueApp(store: store));
+  // RevenueCat configures before runApp so a purchase that completed while
+  // the app was dead reconciles on the first frame (SPEC §7.5). No-op when
+  // the SDK keys are absent.
+  final billing = RevenueCatService();
+  await billing.configure();
+  runApp(TorqueApp(store: store, billing: billing));
 }

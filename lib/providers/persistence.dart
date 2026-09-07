@@ -95,6 +95,9 @@ class Keys {
   static const maskVin = 'settings.maskVin';
 
   static const entitlementTier = 'entitlement.tier';
+  /// ms-epoch of the last store-verified Pro entitlement, for the §7.5
+  /// 7-day offline grace.
+  static const entitlementVerifiedAt = 'entitlement.verifiedAt';
 
   static const accountStatus = 'account.status';
   static const accountEmail = 'account.email';

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'monetization/revenuecat_service.dart';
 import 'providers/app_providers.dart';
 import 'providers/persistence.dart';
 import 'providers/connection_provider.dart';
@@ -20,11 +21,15 @@ import 'dev_panel.dart';
 
 /// Root. Every provider is registered once, here; nothing constructs its own.
 class TorqueApp extends StatelessWidget {
-  const TorqueApp({super.key, required this.store});
+  const TorqueApp({super.key, required this.store, required this.billing});
 
   /// Opened before the first frame so every provider can restore its state in
   /// its constructor — no screen renders a default and then flickers.
   final Persistence store;
+
+  /// Configured in main() before runApp; shared so the entitlement provider
+  /// sees the same configured instance.
+  final RevenueCatService billing;
 
   @override
   Widget build(BuildContext context) => MultiProvider(
@@ -34,7 +39,9 @@ class TorqueApp extends StatelessWidget {
       ChangeNotifierProvider(create: (_) => DashboardProvider(store)),
       ChangeNotifierProvider(create: (_) => DiagnosticsProvider()),
       ChangeNotifierProvider(create: (_) => GarageProvider(store)),
-      ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
+      ChangeNotifierProvider(
+        create: (_) => EntitlementProvider(store, billing: billing),
+      ),
       ChangeNotifierProvider(create: (_) => AccountProvider(store)),
       ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
     ],

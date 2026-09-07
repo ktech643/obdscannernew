@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
 
+import '../core/config/revenuecat_config.dart';
 import '../models/enums.dart';
 import '../models/models.dart';
+import '../monetization/plan_option.dart';
+import '../monetization/revenuecat_service.dart';
 import 'persistence.dart';
 
 /// Tier, ads and the free-tier ceilings.
@@ -9,26 +12,104 @@ import 'persistence.dart';
 /// Pro carries a 7-day offline grace period — entitlement is never re-checked
 /// against a network the app otherwise never uses.
 class EntitlementProvider extends ChangeNotifier {
-  EntitlementProvider(this._store) {
+  EntitlementProvider(this._store, {RevenueCatService? billing})
+      : _billing = billing ?? RevenueCatService() {
     _tier = _store.enumValue(
       Keys.entitlementTier,
       Entitlement.values,
       Entitlement.free,
     );
     _ads = isPro ? AdState.none : AdState.banner;
+    _verifiedAt = _store.getInt(Keys.entitlementVerifiedAt);
+    _init();
   }
 
   final Persistence _store;
+  final RevenueCatService _billing;
 
   late Entitlement _tier;
   Entitlement get tier => _tier;
   bool get isPro => _tier == Entitlement.pro;
+
+  /// ms-epoch of the last store-verified Pro grant; backs the 7-day grace.
+  int? _verifiedAt;
 
   ProSource _source = ProSource.direct;
   ProSource get source => _source;
 
   AdState _ads = AdState.banner;
   AdState get ads => _ads;
+
+  bool get billingConfigured => _billing.configured;
+
+  List<PlanOption> _plans = const [];
+  List<PlanOption> get plans => _plans;
+
+  bool _purchaseInFlight = false;
+  bool get purchaseInFlight => _purchaseInFlight;
+
+  bool _restoring = false;
+  bool get restoring => _restoring;
+
+  PurchaseOutcome? _lastOutcome;
+  PurchaseOutcome? get lastOutcome => _lastOutcome;
+
+  /// Configures RevenueCat, loads the plans, and reconciles the entitlement
+  /// against the store. Called once from the constructor; safe to fire and
+  /// forget because every step degrades to a no-op when unconfigured.
+  Future<void> _init() async {
+    await _billing.configure();
+    _plans = await _billing.plans();
+    _billing.addEntitlementListener(_onEntitlementChanged);
+    final pro = await _billing.isPro();
+    if (pro == true) {
+      _grantPro(ProSource.direct);
+    } else if (pro == false) {
+      // The store answered and there is no entitlement. Respect the offline
+      // grace only when we *couldn't* reach the store (null); a confirmed no
+      // means the cached Pro is stale.
+      _revokeIfGraceExpired();
+    }
+    // pro == null (unreachable): keep the cached state — that IS the grace.
+    notifyListeners();
+  }
+
+  /// Fired on every customer-info change: purchase, refund, revocation,
+  /// billing retry. A `false` here is a real store answer, so it revokes.
+  void _onEntitlementChanged(bool pro) {
+    if (pro) {
+      _grantPro(ProSource.direct);
+    } else {
+      _setTier(Entitlement.free); // never deletes user data
+    }
+    notifyListeners();
+  }
+
+  void _grantPro(ProSource source) {
+    _source = source;
+    _setTier(Entitlement.pro);
+    _verifiedAt = DateTime.now().millisecondsSinceEpoch;
+    _store.setInt(Keys.entitlementVerifiedAt, _verifiedAt!);
+  }
+
+  void _setTier(Entitlement t) {
+    _tier = t;
+    _ads = t == Entitlement.pro ? AdState.none : AdState.banner;
+    _store.setEnum(Keys.entitlementTier, t);
+  }
+
+  void _revokeIfGraceExpired() {
+    final v = _verifiedAt;
+    if (v == null) {
+      _setTier(Entitlement.free);
+      return;
+    }
+    final age = DateTime.now()
+        .difference(DateTime.fromMillisecondsSinceEpoch(v));
+    if (age > RevenueCatConfig.offlineGrace) {
+      _setTier(Entitlement.free);
+    }
+  }
 
   /// Ads never cover a fault result, never interrupt a scan, and never appear
   /// while the car is moving. Callers pass the current context here rather
@@ -58,18 +139,67 @@ class EntitlementProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void subscribe({ProSource source = ProSource.direct}) {
-    _tier = Entitlement.pro;
-    _source = source;
-    _ads = AdState.none;
-    _store.setEnum(Keys.entitlementTier, _tier);
+  /// Display helpers that prefer the store's real plan data and fall back to
+  /// the bundled spec prices until RevenueCat reports in.
+  String planPrice(int i) => i < _plans.length
+      ? _plans[i].price
+      : const [priceWeekly, priceMonthly, priceLifetime][i];
+
+  String planPeriod(int i) => i < _plans.length
+      ? _plans[i].period
+      : const ['/week', '/month', 'once'][i];
+
+  String planAction(int i) =>
+      i < _plans.length ? _plans[i].actionLabel : 'Start Pro';
+
+  /// Purchases the selected plan. In unconfigured (dev/test) mode this grants
+  /// locally so the app stays testable without store keys.
+  Future<PurchaseOutcome> subscribe() async {
+    if (_purchaseInFlight) return PurchaseOutcome.failed;
+    if (!_billing.configured) {
+      _grantPro(ProSource.direct);
+      _lastOutcome = PurchaseOutcome.success;
+      notifyListeners();
+      return PurchaseOutcome.success;
+    }
+    final plan =
+        _selectedPlan < _plans.length ? _plans[_selectedPlan] : null;
+    if (plan == null) {
+      _lastOutcome = PurchaseOutcome.unavailable;
+      notifyListeners();
+      return PurchaseOutcome.unavailable;
+    }
+    // The service maps a null product to `unavailable`; the provider only
+    // cares that a plan was selected.
+    _purchaseInFlight = true;
     notifyListeners();
+    final outcome = await _billing.purchase(plan);
+    _purchaseInFlight = false;
+    _lastOutcome = outcome;
+    if (outcome == PurchaseOutcome.success) _grantPro(ProSource.direct);
+    notifyListeners();
+    return outcome;
   }
 
+  /// Restores purchases against the store account. Must work with no app
+  /// account — Play restores by Google account, iOS by Apple ID. SPEC §7.5.
+  Future<bool> restore() async {
+    if (_restoring) return false;
+    _restoring = true;
+    notifyListeners();
+    final ok = await _billing.restore();
+    final pro = await _billing.isPro();
+    _restoring = false;
+    if (ok && pro == true) _grantPro(ProSource.direct);
+    notifyListeners();
+    return ok && pro == true;
+  }
+
+  /// Opens the store's manage-subscription sheet.
+  Future<void> manageSubscription() => _billing.manageSubscription();
+
   void continueFreeWithAds() {
-    _tier = Entitlement.free;
-    _ads = AdState.banner;
-    _store.setEnum(Keys.entitlementTier, _tier);
+    _setTier(Entitlement.free);
     notifyListeners();
   }
 

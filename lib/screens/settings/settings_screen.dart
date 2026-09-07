@@ -90,13 +90,26 @@ class SettingsScreen extends StatelessWidget {
         AppListRow(
           title: 'Restore purchases',
           chevron: true,
-          // Purchases live with the Apple ID, so this is a real round trip in
-          // production. Saying so beats a control that appears inert.
-          onTap: () => notImplementedHere(
-            context,
-            'Checking your Apple ID for existing purchases…',
-          ),
+          // Purchases live with the store account (Apple ID / Google account),
+          // so this is a real round trip in production.
+          onTap: () async {
+            final ok = await e.restore();
+            if (!context.mounted) return;
+            Toast.show(
+              context,
+              ok
+                  ? 'Purchases restored'
+                  : "We couldn't find any purchases to restore.",
+              tone: ok ? Tone.pass : Tone.caution,
+            );
+          },
         ),
+        if (e.isPro)
+          AppListRow(
+            title: 'Manage subscription',
+            chevron: true,
+            onTap: () => e.manageSubscription(),
+          ),
         const SectionHeading('Account'),
         AppListRow(
           title: a.status == AccountStatus.signedOut

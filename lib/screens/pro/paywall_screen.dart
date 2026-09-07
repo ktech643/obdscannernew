@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
+import '../../models/enums.dart';
+import '../../monetization/revenuecat_service.dart';
 import '../../providers/app_providers.dart';
 import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
@@ -12,6 +14,35 @@ import '../../widgets/scaffold.dart';
 
 void openPaywall(BuildContext context) => Navigator.of(context)
     .push(PageRouteBuilder(pageBuilder: (_, _, _) => const PaywallScreen()));
+
+/// Runs the purchase and maps the outcome to the SPEC §7.5 vocabulary. A
+/// success closes the sheet; pending/cancelled/failed stay put with a toast so
+/// the user is never left wondering what happened.
+Future<void> _buy(BuildContext context, EntitlementProvider e) async {
+  final outcome = await e.subscribe();
+  if (!context.mounted) return;
+  switch (outcome) {
+    case PurchaseOutcome.success:
+      Toast.show(context, 'Welcome to Pro', tone: Tone.pass);
+      Navigator.of(context).pop();
+    case PurchaseOutcome.pending:
+      Toast.show(context, 'Waiting for approval…', tone: Tone.caution);
+    case PurchaseOutcome.cancelled:
+      break; // user closed the store sheet; stay put
+    case PurchaseOutcome.failed:
+      Toast.show(
+        context,
+        "The purchase didn't complete. Try again.",
+        tone: Tone.fault,
+      );
+    case PurchaseOutcome.unavailable:
+      Toast.show(
+        context,
+        "This plan isn't available right now.",
+        tone: Tone.caution,
+      );
+  }
+}
 
 /// F1 — the contextual paywall. The close control is visible from the first
 /// frame, and the renewal terms are stated in full rather than linked away.
@@ -30,11 +61,12 @@ class PaywallScreen extends StatelessWidget {
         gutter: T.gutterWide,
         children: [
           PrimaryButton(
-            'Start 3-day free trial',
-            onPressed: () {
-              e.subscribe();
-              Navigator.of(context).pop();
-            },
+            e.purchaseInFlight
+                ? 'Starting…'
+                : e.planAction(e.selectedPlan),
+            onPressed: e.purchaseInFlight
+                ? null
+                : () => _buy(context, e),
           ),
           const SizedBox(height: 6),
           GhostButton(
@@ -77,27 +109,27 @@ class PaywallScreen extends StatelessWidget {
         _PlanCard(
           index: 0,
           name: 'Weekly',
-          price: EntitlementProvider.priceWeekly,
-          period: '/week',
+          price: e.planPrice(0),
+          period: e.planPeriod(0),
         ),
         const SizedBox(height: 10),
         _PlanCard(
           index: 1,
           name: 'Monthly',
-          price: EntitlementProvider.priceMonthly,
-          period: '/month',
+          price: e.planPrice(1),
+          period: e.planPeriod(1),
         ),
         const SizedBox(height: 10),
         _PlanCard(
           index: 2,
           name: 'Lifetime',
-          price: EntitlementProvider.priceLifetime,
-          period: 'once',
+          price: e.planPrice(2),
+          period: e.planPeriod(2),
         ),
         const SizedBox(height: 18),
         // The full renewal terms, in the flow, not behind a link.
         Text(
-          'Free for 3 days, then ${EntitlementProvider.priceWeekly} per week. '
+          'Free for 3 days, then ${e.planPrice(0)} per week. '
           'Renews automatically until you cancel, any time in your Apple account '
           "settings. Cancel at least 24 hours before the trial ends and you won't "
           'be charged.',
@@ -249,10 +281,19 @@ class _LegalLinks extends StatelessWidget {
       InlineAction(
         'Restore purchases',
         color: T.neutral700,
-        onPressed: () => notImplementedHere(
-          context,
-          'Checking your Apple ID for existing purchases…',
-        ),
+        onPressed: () async {
+          final ok = await context
+              .read<EntitlementProvider>()
+              .restore();
+          if (!context.mounted) return;
+          Toast.show(
+            context,
+            ok
+                ? 'Purchases restored'
+                : "We couldn't find any purchases to restore.",
+            tone: ok ? Tone.pass : Tone.caution,
+          );
+        },
       ),
       Text('·', style: Type.rowSecondary),
       InlineAction(
@@ -289,9 +330,9 @@ class ChoiceScreen extends StatelessWidget {
         children: [
           PrimaryButton(
             'Start 3-day free trial',
-            onPressed: () {
-              e.subscribe();
-              onDone();
+            onPressed: () async {
+              final outcome = await e.subscribe();
+              if (outcome == PurchaseOutcome.success) onDone();
             },
           ),
           const SizedBox(height: 6),

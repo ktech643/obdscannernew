@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:torque_obd2/app.dart';
 import 'package:torque_obd2/models/enums.dart';
 import 'package:torque_obd2/models/models.dart';
+import 'package:torque_obd2/monetization/revenuecat_service.dart';
 import 'package:torque_obd2/providers/app_providers.dart';
 import 'package:torque_obd2/providers/dashboard_provider.dart';
 import 'package:torque_obd2/providers/diagnostics_provider.dart';
@@ -23,7 +24,7 @@ void main() {
   });
 
   testWidgets('opens on the first-run flow', (tester) async {
-    await tester.pumpWidget(TorqueApp(store: store));
+    await tester.pumpWidget(TorqueApp(store: store, billing: RevenueCatService()));
     await tester.pump();
     expect(find.text('You need an adapter'), findsNothing);
     expect(
@@ -35,7 +36,7 @@ void main() {
   testWidgets('the safety step is reachable and starts unacknowledged', (
     tester,
   ) async {
-    await tester.pumpWidget(TorqueApp(store: store));
+    await tester.pumpWidget(TorqueApp(store: store, billing: RevenueCatService()));
     await tester.pump();
 
     final o = Provider.of<OnboardingProvider>(
