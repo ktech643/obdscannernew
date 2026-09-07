@@ -96,6 +96,22 @@ class ConnectScreen extends StatelessWidget {
               Navigator.of(context)
                   .push(_route(const AdapterCompatibilityList())),
         ),
+        const SizedBox(height: 8),
+        // Demo Mode — the single highest-value thing for store review
+        // (SPEC §11.1). Replays a recorded session with live-looking gauges,
+        // sample fault codes, freeze frame and readiness, all watermarked.
+        GhostButton(
+          'Try it without an adapter',
+          icon: Lu.play,
+          onPressed: () {
+            c.enterDemoMode();
+            Toast.show(
+              context,
+              'Demo mode on — open the Dashboard to see live data.',
+              tone: Tone.caution,
+            );
+          },
+        ),
       ],
     );
   }
