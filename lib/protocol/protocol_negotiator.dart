@@ -28,7 +28,7 @@ class HandshakeResult {
     this.status,
     this.headersUnavailable = false,
     this.echoActive = false,
-    this.supportBytes = const [],
+    this.supportFrames = const [],
   });
 
   final bool ok;
@@ -43,17 +43,22 @@ class HandshakeResult {
   final bool headersUnavailable;
   final bool echoActive;
 
-  /// The decoded payload of the `0100` probe that proved the car is
-  /// listening. It *is* the first support bitmask, so a caller never has to
-  /// ask `0100` a second time — one fewer round trip on every connect, and
-  /// the reason a recorded session only ever contains one.
-  final List<int> supportBytes;
+  /// The raw frames of the `0100` probe that proved the car is listening.
+  ///
+  /// Two things depend on these. They *are* the first support bitmask, so a
+  /// caller never has to ask `0100` a second time — one fewer round trip on
+  /// every connect, and the reason a recorded session only ever contains
+  /// one. And because the shape of a `4100` reply is known, they are also
+  /// the one sample against which a caller can work out how wide this
+  /// adapter's headers actually are, rather than trusting that `ATH1` did
+  /// what it said.
+  final List<String> supportFrames;
 }
 
 /// Brings an ELM327 session up and finds the vehicle's protocol.
 class ProtocolNegotiator {
-  /// Payload of the successful `0100`, handed back in the result.
-  List<int> _supportBytes = const [];
+  /// Frames of the successful `0100`, handed back in the result.
+  List<String> _supportFrames = const [];
 
   ProtocolNegotiator(this._session);
 
@@ -155,7 +160,7 @@ class ProtocolNegotiator {
       batteryVolts: volts,
       headersUnavailable: headersUnavailable,
       echoActive: echoActive,
-      supportBytes: _supportBytes,
+      supportFrames: _supportFrames,
     );
   }
 
@@ -221,7 +226,7 @@ class ProtocolNegotiator {
 
   bool _accept(ElmResponse r) {
     if (!_isPositive(r)) return false;
-    _supportBytes = r.bytes;
+    _supportFrames = r.frames;
     return true;
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:torque_obd2/session/gauge_catalog.dart';
 import 'package:torque_obd2/session/obd_session.dart';
 import 'package:torque_obd2/transport/mock_transport.dart';
 import 'package:torque_obd2/transport/obd_trace.dart';
+import 'package:torque_obd2/transport/obd_transport.dart';
 
 import '../data/support.dart';
 
@@ -363,7 +365,7 @@ void main() {
     });
 
     test(
-      '★ a second connect supersedes the first; only one loop survives',
+      '★ a second connect supersedes the first; the loser is closed',
       () async {
         final session = ObdSession(timeScale: 0.01);
         final first = await transportFor('clean_can');
@@ -376,26 +378,17 @@ void main() {
         expect(session.state, SessionState.connected);
         await waitFor(() => session.bus.of('010C').value != null);
 
-        // The superseded transport is closed and silent.
-        final quiet = first.written.length;
-        await Future<void>.delayed(const Duration(milliseconds: 60));
-        expect(first.written.length, quiet);
+        // The loser never got a handshake; the winner did.
+        expect(first.written, isEmpty);
+        expect(second.written, contains('ATZ'));
+
+        // And the loser's transport really is shut: MockTransport drops
+        // writes when it is not connected, so nothing is recorded.
+        await first.write('ATZ\r'.codeUnits);
+        expect(first.written, isEmpty, reason: 'the superseded link is shut');
 
         await session.disconnect();
         session.dispose();
-      },
-    );
-
-    test(
-      'connecting to a transport that refuses is reported, not thrown',
-      () async {
-        final session = await sessionFor('clean_can');
-        final transport = await transportFor('clean_can');
-        transport.dropNext = 3;
-        final ok = await session.connect(transport);
-        // Either it fails outright or it fails the handshake; neither throws.
-        expect(ok, isA<bool>());
-        expect(session.isLive, anyOf(isTrue, isFalse));
       },
     );
   });
@@ -442,4 +435,306 @@ void main() {
       expect(spec!.supported, isFalse);
     });
   });
+  // ------------------------------------------------------------------
+  // Regressions from the Phase 6 slice-1 review. Each of these failed
+  // before the fix it names.
+  // ------------------------------------------------------------------
+
+  group('★ headers — ATH1 is on, so every reply carries one', () {
+    test(
+      'the header width is measured, not assumed, and everything decodes',
+      () async {
+        final session = await sessionFor('headers_can');
+        final ok = await session.connect(await transportFor('headers_can'));
+        expect(ok, isTrue);
+
+        // 11-bit CAN: a 3-character header. Three is odd, which is what
+        // shifted every byte-pairing by a nibble before this was handled.
+        expect(session.headerChars, 3);
+
+        // The support masks decoded, so there is something to poll at all.
+        expect(session.supportedPids, contains('010C'));
+        expect(session.supportedPids, contains('0142'));
+
+        // The same physical values as the header-less clean_can trace.
+        await waitFor(() => session.bus.of('010C').value?.value != null);
+        expect(session.bus.of('010C').value!.value, 1726);
+        await waitFor(() => session.bus.of('0105').value?.value != null);
+        expect(session.bus.of('0105').value!.value, 89);
+      },
+    );
+
+    test('codes and a multi-frame VIN decode through the header too', () async {
+      final session = await sessionFor('headers_can');
+      await session.connect(await transportFor('headers_can'));
+
+      final r = await session.readDtcs();
+      expect(r.stored.map((d) => d.code), containsAll(['P0301', 'P0420']));
+      expect(r.milOn, isTrue, reason: 'from the headered 0101 summary');
+      expect(r.complete, isTrue);
+
+      final vin = await session.readVin();
+      expect(vin, isNotNull);
+      expect(vin!.vin, '1HGBH41JXMN109186');
+    });
+
+    test('a header-less adapter still calibrates to zero', () async {
+      final session = await sessionFor('clean_can');
+      await session.connect(await transportFor('clean_can'));
+      expect(session.headerChars, 0);
+      await waitFor(() => session.bus.of('010C').value?.value != null);
+      expect(session.bus.of('010C').value!.value, 1726);
+    });
+
+    test('two ECUs answering one query still yield a usable mask', () async {
+      final session = await sessionFor('two_ecu');
+      final ok = await session.connect(await transportFor('two_ecu'));
+      expect(ok, isTrue);
+      expect(session.headerChars, 3);
+      expect(session.supportedPids, isNotEmpty);
+    });
+  });
+
+  group('★ the clock is independent of the poll loop (hard rule 4)', () {
+    test('it keeps ticking while backgrounded, so tiles still decay', () async {
+      final session = await sessionFor('clean_can');
+      await session.connect(await transportFor('clean_can'));
+      await waitFor(() => session.bus.of('010C').value != null);
+
+      session.setBackgrounded(true);
+      final at = session.clock.value;
+      await waitFor(
+        () => session.clock.value.isAfter(at),
+        reason: 'the clock to tick with the loop stopped',
+      );
+    });
+  });
+
+  group('★ clearing — what the app is allowed to claim', () {
+    late AppDatabase db;
+    late DtcRepository repo;
+    late String vehicleId;
+
+    setUp(() async {
+      db = memoryDb();
+      repo = DtcRepository(db);
+      vehicleId = (await golf(db)).id;
+    });
+    tearDown(() => db.close());
+
+    test(
+      'a negative response is a refusal, not "the code came back"',
+      () async {
+        final session = await sessionFor('clear_refused', dtcs: repo);
+        await session.connect(await transportFor('clear_refused'));
+        expect(
+          await session.clearDtcs(vehicleId: vehicleId),
+          ClearResult.refused,
+        );
+        final before = (await repo.history(vehicleId))
+            .firstWhere((s) => s.purpose == SnapshotPurpose.beforeClear);
+        expect(before.clearOutcome, ClearOutcome.refused);
+      },
+    );
+
+    test('a link drop during Mode 04 leaves the snapshot pending', () async {
+      // Mode 04 is never answered: the ECU may well have cleared and only
+      // the reply was lost, which is exactly what the snapshot is for.
+      final session = await sessionFor('clear_interrupted', dtcs: repo);
+      await session.connect(await transportFor('clear_interrupted'));
+      expect(
+        await session.clearDtcs(vehicleId: vehicleId),
+        ClearResult.interrupted,
+      );
+      final pending = await repo.unreconciledClears(vehicleId);
+      expect(pending, hasLength(1), reason: 'relaunch must reconcile this');
+      expect(pending.single.clearOutcome, ClearOutcome.pending);
+    });
+
+    test('an unverifiable re-read is never reported as cleared', () async {
+      // Mode 04 succeeds, but the verifying Mode 03 does not answer.
+      final session = await sessionFor('clear_unverified', dtcs: repo);
+      await session.connect(await transportFor('clear_unverified'));
+      expect(
+        await session.clearDtcs(vehicleId: vehicleId),
+        ClearResult.interrupted,
+      );
+      expect(await repo.unreconciledClears(vehicleId), hasLength(1));
+    });
+
+    test('an unanswered mode is not the same as no codes', () async {
+      final session = await sessionFor('clear_unverified');
+      await session.connect(await transportFor('clear_unverified'));
+
+      // The first read answers normally.
+      final first = await session.readDtcs();
+      expect(first.complete, isTrue);
+      expect(first.stored, isNotEmpty);
+
+      // The second finds the bus busy: no codes were parsed, but that is
+      // not the same as the car having none.
+      final second = await session.readDtcs();
+      expect(second.complete, isFalse);
+      expect(second.stored, isEmpty);
+      expect(second.isEmpty, isFalse, reason: 'empty but not trustworthy');
+      expect(second.failedModes, contains('03'));
+    });
+  });
+
+  group('★ recovery paths that used to wedge', () {
+    test(
+      'LV RESET re-handshakes and polling resumes in the same loop',
+      () async {
+        final session = await sessionFor('lv_reset_recovers');
+        final ok = await session.connect(
+          await transportFor('lv_reset_recovers'),
+        );
+        expect(ok, isTrue);
+
+        // The first poll answers LV RESET; the session must re-handshake and
+        // then keep polling rather than going quiet for good.
+        await waitFor(
+          () => session.bus.of('010C').value?.value != null,
+          reason: 'a sample after the re-handshake',
+        );
+        expect(session.isLive, isTrue);
+      },
+    );
+
+    test(
+      'ignitionOff keeps a slow probe running and recovers on its own',
+      () async {
+        final session = await sessionFor('ignition_wakes');
+        final ok = await session.connect(await transportFor('ignition_wakes'));
+        expect(ok, isTrue);
+
+        await waitFor(
+          () => session.state == SessionState.ignitionOff,
+          reason: 'three UNABLE TO CONNECT replies',
+        );
+        // The key comes back: the probe must notice without any user action.
+        await waitFor(
+          () => session.state == SessionState.connected,
+          reason: 'the session to wake up again',
+          timeout: const Duration(seconds: 10),
+        );
+        expect(session.bus.of('010C').value?.value, isNotNull);
+      },
+    );
+  });
+
+  group('★ connect and reconnect', () {
+    test(
+      'a transport that refuses to open is reported, and nothing leaks',
+      () async {
+        final session = await sessionFor('clean_can');
+        final transport = _RefusingTransport();
+        final ok = await session.connect(transport);
+        expect(ok, isFalse);
+        expect(session.state, SessionState.disconnected);
+        expect(session.lastError, contains('adapter refused'));
+        expect(session.isLive, isFalse);
+      },
+    );
+
+    test(
+      'the escalating ATZ retry recovers from three dropped commands',
+      () async {
+        final session = await sessionFor('clean_can');
+        final transport = await transportFor('clean_can');
+        transport.dropNext = 3;
+        final ok = await session.connect(transport);
+        expect(ok, isTrue, reason: 'the fourth ATZ is answered');
+        expect(session.adapterIdentity, contains('ELM327'));
+      },
+    );
+
+    test(
+      '★ the reconnect ladder runs every rung, not just the first',
+      () async {
+        final session = await sessionFor('clean_can');
+        final transport = _FlakyTransport(await transportFor('clean_can'));
+        await session.connect(transport);
+
+        // Fail the next three handshakes, then let it through.
+        transport.failConnects = 3;
+        transport.drop();
+
+        await waitFor(
+          () => session.reconnectAttempt >= 3,
+          reason: 'the ladder to reach at least rung 3',
+          timeout: const Duration(seconds: 10),
+        );
+      },
+    );
+  });
+}
+
+/// A transport whose `connect` throws, for the failure path.
+class _RefusingTransport implements ObdTransport {
+  @override
+  TransportKind get kind => TransportKind.mock;
+  @override
+  String get id => 'mock:refusing';
+  @override
+  String get displayName => 'Refusing adapter';
+  @override
+  Stream<TransportState> get state => const Stream.empty();
+  @override
+  Stream<List<int>> get inbound => const Stream.empty();
+  @override
+  int get maxWriteLength => 20;
+  @override
+  TransportCapabilities get capabilities => TransportCapabilities.mock;
+  @override
+  Future<void> connect({Duration timeout = const Duration(seconds: 5)}) async {
+    throw Exception('adapter refused');
+  }
+
+  @override
+  Future<void> write(List<int> bytes) async {}
+  @override
+  Future<void> disconnect() async {}
+}
+
+/// Wraps a [MockTransport] so a test can drop the link and make the next
+/// few `connect` calls fail — the shape the reconnect ladder is for.
+class _FlakyTransport implements ObdTransport {
+  _FlakyTransport(this._inner);
+  final MockTransport _inner;
+  final _state = StreamController<TransportState>.broadcast();
+
+  int failConnects = 0;
+
+  void drop() => _state.add(TransportState.disconnected);
+
+  @override
+  TransportKind get kind => _inner.kind;
+  @override
+  String get id => _inner.id;
+  @override
+  String get displayName => _inner.displayName;
+  @override
+  Stream<TransportState> get state => _state.stream;
+  @override
+  Stream<List<int>> get inbound => _inner.inbound;
+  @override
+  int get maxWriteLength => _inner.maxWriteLength;
+  @override
+  TransportCapabilities get capabilities => _inner.capabilities;
+
+  @override
+  Future<void> connect({Duration timeout = const Duration(seconds: 5)}) async {
+    if (failConnects > 0) {
+      failConnects--;
+      throw Exception('still down');
+    }
+    await _inner.connect();
+  }
+
+  @override
+  Future<void> write(List<int> bytes) => _inner.write(bytes);
+
+  @override
+  Future<void> disconnect() => _inner.disconnect();
 }

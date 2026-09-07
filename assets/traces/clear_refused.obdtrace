@@ -1,0 +1,42 @@
+# torque.obdtrace v1
+# vehicle: 2013 Toyota Auris 1.6
+# adapter: OBDLink SX
+# protocol: 6
+# notes: Mode 04 negative response 7F 04 22 (conditionsNotCorrect).
+# notes: A refusal, not a code that returned.
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1110  < OK\r\r>
+T+1140  > ATS0
+T+1175  < OK\r\r>
+T+1205  > ATH1
+T+1240  < OK\r\r>
+T+1270  > ATSP0
+T+1305  < OK\r\r>
+T+1335  > 0100
+T+3135  < SEARCHING...\r41 00 00 00 00 01\r\r>
+T+3165  > ATRV
+T+3205  < 13.8V\r\r>
+T+3235  > ATDPN
+T+3265  < A6\r\r>
+T+3295  > ATI
+T+3325  < ELM327 v1.5\r\r>
+T+3355  > 0120
+T+3450  < 41 20 00 00 00 01\r\r>
+T+3480  > 0140
+T+3575  < 41 40 00 00 00 01\r\r>
+T+3605  > 0160
+T+3700  < 41 60 00 00 00 00\r\r>
+T+3730  > 0101
+T+3820  < 41 01 82 07 65 05\r\r>
+T+3850  > 03
+T+3970  < 06 43 02 03 01 04 20\r\r>
+T+4000  > 07
+T+4100  < 47 00\r\r>
+T+4130  > 0A
+T+4230  < 4A 00\r\r>
+T+4260  > 04
+T+4390  < 7F 04 22\r\r>

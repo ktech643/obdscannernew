@@ -1,0 +1,40 @@
+# torque.obdtrace v1
+# vehicle: 2016 Skoda Octavia 1.4 TSI
+# adapter: OBDLink MX+
+# protocol: 6
+# notes: Key out, then turned. Three UNABLE TO CONNECT, then the
+# notes: bus answers again and the session recovers unaided.
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1110  < OK\r\r>
+T+1140  > ATS0
+T+1175  < OK\r\r>
+T+1205  > ATH1
+T+1240  < OK\r\r>
+T+1270  > ATSP0
+T+1305  < OK\r\r>
+T+1335  > 0100
+T+3135  < SEARCHING...\r41 00 00 10 00 01\r\r>
+T+3165  > ATRV
+T+3205  < 13.8V\r\r>
+T+3235  > ATDPN
+T+3265  < A6\r\r>
+T+3295  > ATI
+T+3325  < ELM327 v1.5\r\r>
+T+3355  > 0120
+T+3450  < 41 20 00 00 00 01\r\r>
+T+3480  > 0140
+T+3575  < 41 40 00 00 00 01\r\r>
+T+3605  > 0160
+T+3700  < 41 60 00 00 00 00\r\r>
+T+3730  > 010C
+T+3930  < UNABLE TO CONNECT\r\r>
+T+3960  > 010C
+T+4160  < UNABLE TO CONNECT\r\r>
+T+4190  > 010C
+T+4390  < UNABLE TO CONNECT\r\r>
+T+4420  > 010C
+T+4665  < 41 0C 0B B8\r\r>

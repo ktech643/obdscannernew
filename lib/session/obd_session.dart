@@ -7,6 +7,7 @@ import '../data/repositories/dtc_repository.dart';
 import '../domain/pid_sample.dart';
 import '../protocol/dtc_decoder.dart';
 import '../protocol/elm_session.dart';
+import '../protocol/isotp_reassembler.dart';
 import '../protocol/pid_registry.dart';
 import '../protocol/pid_scheduler.dart';
 import '../protocol/protocol_negotiator.dart';
@@ -34,7 +35,8 @@ enum SessionState {
   degraded,
 
   /// The adapter answers but the ECU does not — key out, or engine off on a
-  /// car that sleeps its bus.
+  /// car that sleeps its bus. A slow probe keeps running so the session
+  /// comes back on its own when the key is turned.
   ignitionOff,
 
   /// The link dropped; the reconnect ladder is running.
@@ -44,7 +46,11 @@ enum SessionState {
   unsupported,
 }
 
-/// A snapshot of one diagnostic read.
+/// One diagnostic read.
+///
+/// [failedModes] is the difference between "the car has no pending codes"
+/// and "we could not ask" — without it an empty list means both, and a
+/// clear that could not be verified would be reported as a success.
 class DtcReadResult {
   const DtcReadResult({
     required this.stored,
@@ -53,6 +59,7 @@ class DtcReadResult {
     this.readiness,
     this.milOn,
     this.reportedCount,
+    this.failedModes = const {},
   });
 
   final List<RawDtc> stored;
@@ -65,13 +72,22 @@ class DtcReadResult {
   /// actually returned. Both are shown; neither is invented.
   final int? reportedCount;
 
+  /// Modes that did not answer at all: `'0101'`, `'03'`, `'07'`, `'0A'`.
+  final Set<String> failedModes;
+
   List<RawDtc> get all => [...stored, ...pending, ...permanent];
-  bool get isEmpty => all.isEmpty;
+
+  /// Empty *and* trustworthy. An unanswered mode makes this false even
+  /// when no codes were parsed.
+  bool get isEmpty => all.isEmpty && failedModes.isEmpty;
+
+  /// Whether every mode answered.
+  bool get complete => failedModes.isEmpty;
 }
 
 /// How a clear attempt ended, in terms the UI can explain.
 enum ClearResult {
-  /// Mode 04 accepted and the re-read came back empty.
+  /// Mode 04 accepted and the re-read came back verifiably empty.
   cleared,
 
   /// Mode 04 accepted but codes are still there — a live fault.
@@ -80,7 +96,8 @@ enum ClearResult {
   /// The ECU refused. Almost always: engine running.
   refused,
 
-  /// The link went away mid-clear. The snapshot is on disk, pending.
+  /// The link went away, or the verifying re-read could not be trusted.
+  /// The snapshot stays `pending` on disk and the next launch reconciles.
   interrupted,
 }
 
@@ -110,7 +127,9 @@ class ObdSession extends ChangeNotifier {
   /// object.
   final PidBus bus;
 
-  /// Ticked once per poll cycle so tiles can decay without a new sample.
+  /// Ticked by a timer of its own, never by the poll loop: a hung link must
+  /// not also stop the clock, or every tile freezes at its last value and
+  /// stale renders as live (hard rule 4).
   final DashboardClock clock;
 
   /// Where the §9.5 before/after-clear snapshots go. Null in tests that
@@ -127,10 +146,18 @@ class ObdSession extends ChangeNotifier {
   ObdTransport? _transport;
   ElmSession? _elm;
   StreamSubscription<TransportState>? _transportSub;
+  Timer? _ticker;
 
   /// Bumped by every connect and disconnect. Every async step checks it, so
   /// a loop belonging to a previous connection stops the moment it resumes.
   int _generation = 0;
+
+  /// Owns the reconnect ladder. Separate from [_generation] because the
+  /// ladder calls `connect`, which bumps the generation itself — checking
+  /// the generation after an attempt would abort the ladder every time,
+  /// collapsing 0.5/1/2/4/8 s into a single try.
+  int _reconnectToken = 0;
+  bool _reconnecting = false;
 
   SessionState _state = SessionState.disconnected;
   SessionState get state => _state;
@@ -157,6 +184,11 @@ class ObdSession extends ChangeNotifier {
 
   Set<String> _visible = {};
 
+  /// How many hex characters of header each reply carries, measured rather
+  /// than assumed — see [_calibrateHeader].
+  int _headerChars = 0;
+  int get headerChars => _headerChars;
+
   /// What the last failure was, for the banner. Null when nothing is wrong.
   String? _lastError;
   String? get lastError => _lastError;
@@ -164,15 +196,15 @@ class ObdSession extends ChangeNotifier {
   int _reconnectAttempt = 0;
   int get reconnectAttempt => _reconnectAttempt;
 
+  bool _backgrounded = false;
+  bool _recording = false;
+
   int _bufferOverflows = 0;
 
   /// How many times the adapter's own buffer overflowed this session. A
   /// clone that does this repeatedly is the thing to name in the
   /// diagnostics log (§10.4) — the car is fine, the adapter is not.
   int get bufferOverflows => _bufferOverflows;
-
-  bool _backgrounded = false;
-  bool _recording = false;
 
   /// Round-trip p95 over the recent window, for the diagnostics screen.
   int? get p95Rtt => _elm?.p95Rtt;
@@ -199,12 +231,18 @@ class ObdSession extends ChangeNotifier {
     } catch (e) {
       if (gen != _generation) return false;
       _set(SessionState.disconnected, error: _describe(e));
+      await _teardown();
       return false;
     }
-    if (gen != _generation) return false;
+    // Superseded while the transport was opening: close what this call
+    // opened and leave the winner's fields alone.
+    if (gen != _generation) {
+      await _closeQuietly(transport, null);
+      return false;
+    }
 
     // The transport can drop at any moment from here on.
-    _transportSub = transport.state.listen((s) {
+    final sub = _transportSub = transport.state.listen((s) {
       if (gen != _generation) return;
       if (s == TransportState.disconnected || s == TransportState.failed) {
         _onLinkLost();
@@ -213,6 +251,7 @@ class ObdSession extends ChangeNotifier {
 
     final elm = _elm = ElmSession(transport, timeScale: timeScale);
     _set(SessionState.handshaking);
+    _startTicker();
 
     final result = await ProtocolNegotiator(elm).handshake(
       onProgress: (step, label) {
@@ -222,7 +261,11 @@ class ObdSession extends ChangeNotifier {
         notifyListeners();
       },
     );
-    if (gen != _generation) return false;
+    if (gen != _generation) {
+      await sub.cancel();
+      await _closeQuietly(transport, elm);
+      return false;
+    }
 
     _adapterIdentity = result.adapterIdentity;
     _batteryVolts = result.batteryVolts;
@@ -236,11 +279,13 @@ class ObdSession extends ChangeNotifier {
             : SessionState.disconnected,
         error: _handshakeError(result),
       );
+      await _teardown();
       return false;
     }
 
     _protocol = result.protocol;
-    await _discoverSupported(gen, result.supportBytes);
+    _calibrateHeader(result.supportFrames, result.headersUnavailable);
+    await _discoverSupported(gen, result.supportFrames);
     if (gen != _generation) return false;
 
     _set(SessionState.connected, error: null);
@@ -252,11 +297,14 @@ class ObdSession extends ChangeNotifier {
   /// Stops polling and closes the transport. Safe to call at any point.
   Future<void> disconnect() async {
     _generation++;
+    _reconnectToken++;
+    _reconnecting = false;
     await _teardown();
     _protocol = null;
     _adapterIdentity = null;
     _batteryVolts = null;
     _supported = {};
+    _headerChars = 0;
     _progressStep = 0;
     _progressLabel = '';
     _reconnectAttempt = 0;
@@ -267,52 +315,125 @@ class ObdSession extends ChangeNotifier {
   }
 
   Future<void> _teardown() async {
+    _ticker?.cancel();
+    _ticker = null;
     await _transportSub?.cancel();
     _transportSub = null;
-    await _elm?.dispose();
+    final elm = _elm;
     _elm = null;
     final t = _transport;
     _transport = null;
-    if (t != null) {
-      try {
-        await t.disconnect();
-      } catch (_) {
-        // Already gone; the outcome is the same.
-      }
+    await _closeQuietly(t, elm);
+  }
+
+  Future<void> _closeQuietly(ObdTransport? t, ElmSession? elm) async {
+    await elm?.dispose();
+    if (t == null) return;
+    try {
+      await t.disconnect();
+    } catch (_) {
+      // Already gone; the outcome is the same.
     }
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _generation++;
+    _reconnectToken++;
     unawaited(_teardown());
     bus.dispose();
     clock.dispose();
     super.dispose();
   }
 
+  /// The clock runs for as long as a transport is attached, at a cadence
+  /// independent of the command loop. Tiles decay on their own even when
+  /// the link has hung, the app is backgrounded, or the ladder is running.
+  void _startTicker() {
+    _ticker?.cancel();
+    _ticker = Timer.periodic(
+      _scaled(const Duration(milliseconds: 200)),
+      (_) => clock.tick(),
+    );
+  }
+
   // -------------------------------------------------------------- discovery
 
-  /// Asks the four support bitmasks and tells the scheduler what exists.
-  /// Nothing outside the result is ever polled — clones answer unpredictably
-  /// to unsupported PIDs and it wrecks throughput.
-  Future<void> _discoverSupported(int gen, List<int> handshakeMask) async {
+  /// Works out how wide this adapter's headers are by measuring, not by
+  /// trusting `ATH1`.
+  ///
+  /// The handshake's `0100` probe is the one reply whose shape is known in
+  /// advance: it must decode to a payload beginning `41 00`. Trying each
+  /// plausible header width against it settles the question once, for every
+  /// decode that follows.
+  ///
+  /// Assuming zero — which is what this class did first — leaves an 11-bit
+  /// CAN header prefixing three hex characters to every frame. Three is
+  /// odd, so byte-pairing shifts by a nibble and *every* decode comes back
+  /// empty: no supported PIDs, a blank dashboard, no codes on a car with a
+  /// lit lamp. Guessing from the protocol number instead would break on the
+  /// clones that quietly ignore `ATH1`.
+  void _calibrateHeader(List<String> frames, bool headersUnavailable) {
+    if (frames.isEmpty) {
+      _headerChars = 0;
+      return;
+    }
+    // 3: 11-bit CAN. 8: 29-bit CAN. 6: three-byte legacy (J1850, ISO
+    // 9141-2, KWP). 0: headers off, or an adapter that ignored ATH1.
+    const candidates = [0, 3, 8, 6];
+    for (final width in headersUnavailable ? const [0] : candidates) {
+      final bytes = IsoTpReassembler.reassemble(frames, headerChars: width);
+      if (bytes.length >= 2 && bytes[0] == 0x41 && bytes[1] == 0x00) {
+        _headerChars = width;
+        return;
+      }
+    }
+    _headerChars = 0;
+  }
+
+  List<int> _payload(ElmResponse r) =>
+      IsoTpReassembler.reassemble(r.frames, headerChars: _headerChars);
+
+  /// Asks the remaining support bitmasks and tells the scheduler what
+  /// exists. Nothing outside the result is ever polled — clones answer
+  /// unpredictably to unsupported PIDs and it wrecks throughput.
+  Future<void> _discoverSupported(int gen, List<String> handshakeFrames) async {
     final found = <String>{};
     // The handshake's own `0100` probe already carried the first bitmask.
     // Re-asking would cost a round trip on every connect and tell us
     // nothing new.
     var queries = PidRegistry.supportQueries;
-    if (handshakeMask.isNotEmpty) {
-      found.addAll(PidRegistry.decodeSupportMask('0100', handshakeMask));
+    if (handshakeFrames.isNotEmpty) {
+      found.addAll(
+        PidRegistry.decodeSupportMask(
+          '0100',
+          IsoTpReassembler.reassemble(
+            handshakeFrames,
+            headerChars: _headerChars,
+          ),
+        ),
+      );
       queries = queries.skip(1).toList();
     }
+
     for (final query in queries) {
       if (gen != _generation) return;
-      final r = await _elm!.send(query);
+      var r = await _elm!.send(query);
       if (gen != _generation) return;
+      // A transient BUS BUSY or BUFFER FULL is not "unsupported": retry
+      // once before writing off every PID above this block for the whole
+      // session.
+      if (!r.isOk && r.status != ElmStatus.noData) {
+        r = await _elm!.send(query);
+        if (gen != _generation) return;
+      }
       if (!r.isOk) break; // the chain ends where the car stops answering
-      found.addAll(PidRegistry.decodeSupportMask(query, r.bytes));
+      found.addAll(PidRegistry.decodeSupportMask(query, _payload(r)));
     }
+
     _supported = found;
     _scheduler.setSupported(found);
     if (_visible.isEmpty) {
@@ -336,22 +457,28 @@ class ObdSession extends ChangeNotifier {
   void setBackgrounded(bool value) {
     if (_backgrounded == value) return;
     _backgrounded = value;
-    if (!_backgrounded && isLive) unawaited(_pollLoop(_generation));
+    if (!_backgrounded && _canPoll) unawaited(_pollLoop(_generation));
   }
 
   void setRecording(bool value) {
     if (_recording == value) return;
     _recording = value;
-    if (isLive) unawaited(_pollLoop(_generation));
+    if (_canPoll) unawaited(_pollLoop(_generation));
   }
 
-  bool get _shouldPoll => isLive && (!_backgrounded || _recording);
+  /// `ignitionOff` keeps polling — slowly — because that is the only way
+  /// the session notices the key coming back. Stopping there would wedge
+  /// it: nothing else restarts the loop.
+  bool get _canPoll =>
+      (isLive || _state == SessionState.ignitionOff) &&
+      (!_backgrounded || _recording);
 
   // -------------------------------------------------------------- poll loop
 
-  /// Set by a BUFFER FULL and cleared only once the rate has climbed
-  /// all the way back, so recovery is gradual rather than instant.
+  /// Set by a BUFFER FULL and cleared only once the rate has climbed all
+  /// the way back. §4.4 wants +10% every 30 s, not every cycle.
   bool _backedOff = false;
+  DateTime? _lastRelax;
 
   /// One cycle at a time, never overlapping: each await is a full round
   /// trip and `ElmSession` allows only one outstanding command anyway.
@@ -363,10 +490,16 @@ class ObdSession extends ChangeNotifier {
     try {
       var consecutiveTimeouts = 0;
       var consecutiveNoEcu = 0;
+      var busBusyRetries = 0;
 
-      while (gen == _generation && _shouldPoll) {
+      while (gen == _generation && _canPoll) {
         final started = DateTime.now();
-        final cycle = _scheduler.nextCycle();
+        // While the ECU is asleep, probe one PID slowly rather than
+        // hammering a bus that is not listening.
+        final probing = _state == SessionState.ignitionOff;
+        final cycle = probing
+            ? _scheduler.nextCycle(maxPids: 1)
+            : _scheduler.nextCycle();
         var overflowed = false;
 
         if (cycle.isEmpty) {
@@ -378,16 +511,27 @@ class ObdSession extends ChangeNotifier {
         }
 
         for (final pid in cycle) {
-          if (gen != _generation || !_shouldPoll) return;
+          if (gen != _generation || !_canPoll) return;
           final r = await _elm!.send(pid);
           if (gen != _generation) return;
 
+          // Only silence counts towards the watchdog. Every other status is
+          // the adapter answering, which means the link is alive.
+          if (r.status == ElmStatus.timeout) {
+            consecutiveTimeouts++;
+          } else {
+            consecutiveTimeouts = 0;
+          }
+          if (r.status != ElmStatus.noEcu) consecutiveNoEcu = 0;
+          if (r.status != ElmStatus.busBusy) busBusyRetries = 0;
+
           switch (r.status) {
             case ElmStatus.ok:
-              consecutiveTimeouts = 0;
-              consecutiveNoEcu = 0;
               _scheduler.recordSuccess(pid);
               _publish(pid, r);
+              if (_state == SessionState.ignitionOff) {
+                _set(SessionState.connected, error: null); // the bus woke up
+              }
             case ElmStatus.noData:
               _scheduler.recordNoData(pid);
             case ElmStatus.bufferFull:
@@ -395,52 +539,79 @@ class ObdSession extends ChangeNotifier {
               overflowed = true;
               _bufferOverflows++;
               _scheduler.onBufferFull();
+            case ElmStatus.badCommand:
+              // The adapter does not know this PID, and a second ask cannot
+              // change that. Drop it now rather than after three strikes.
+              _scheduler
+                ..recordNoData(pid)
+                ..recordNoData(pid)
+                ..recordNoData(pid);
+            case ElmStatus.busBusy:
+              // §4.4: back off and retry, but do not spin on a busy bus.
+              if (busBusyRetries < 2) {
+                busBusyRetries++;
+                await Future<void>.delayed(
+                  _scaled(const Duration(milliseconds: 500)),
+                );
+              }
             case ElmStatus.noEcu:
               consecutiveNoEcu++;
-            case ElmStatus.timeout:
-              consecutiveTimeouts++;
+            case ElmStatus.busInitError:
             case ElmStatus.lowVoltage:
             case ElmStatus.canError:
             case ElmStatus.internalError:
-              // §4.4: these need the whole conversation restarted.
-              await _rehandshake(gen, r.status);
-              return;
-            default:
+              // §4.4: these need the whole conversation restarted. Continue
+              // the *same* loop afterwards — starting a new one here would
+              // be a no-op, because this one still holds `_looping`.
+              if (!await _rehandshake(gen, r.status)) return;
+              consecutiveTimeouts = 0;
+              consecutiveNoEcu = 0;
+            case ElmStatus.searching:
+            case ElmStatus.stopped:
+            case ElmStatus.malformed:
+            case ElmStatus.timeout:
+              // Counted above. SEARCHING resolves itself; STOPPED, a
+              // garbled frame and a lone timeout are retried by the next
+              // cycle rather than by a tight retry here.
               break;
           }
 
-          if (consecutiveTimeouts >= 5) {
+          // §9.2: three consecutive timeouts is the watchdog for an adapter
+          // yanked from the port whose disconnect callback never fires.
+          if (consecutiveTimeouts >= 3) {
             _onLinkLost();
             return;
           }
-          if (consecutiveNoEcu >= 3) {
+          if (consecutiveNoEcu >= 3 && _state != SessionState.ignitionOff) {
             // The adapter is answering; the car is not.
             _set(SessionState.ignitionOff, error: 'The car is not answering');
-            consecutiveNoEcu = 0;
-          } else if (_state == SessionState.ignitionOff && r.isOk) {
-            _set(SessionState.connected, error: null);
           }
         }
 
         // Latency feedback must never undo a buffer-full backoff: the
         // adapter has already told us it is dropping data, and
         // recordP95Rtt would put the rate straight back to 10 Hz on the
-        // next fast cycle. After an overflow the only way up is relax(),
-        // which ramps over several cycles.
+        // next fast cycle.
+        final now = DateTime.now();
         if (overflowed) {
           _backedOff = true;
+          _lastRelax = now;
         } else if (_backedOff) {
-          _scheduler.relax();
-          if (_scheduler.targetHz >= 10) _backedOff = false;
+          if (now.difference(_lastRelax ?? now) >=
+              _scaled(const Duration(seconds: 30))) {
+            _scheduler.relax();
+            _lastRelax = now;
+            if (_scheduler.targetHz >= 10) _backedOff = false;
+          }
         } else {
           _scheduler.recordP95Rtt(_elm!.p95Rtt);
         }
         _refreshDegraded();
-        clock.tick();
 
-        final remaining =
-            _scaled(_scheduler.cycleBudget) -
-            DateTime.now().difference(started);
+        final budget = probing
+            ? _scaled(const Duration(seconds: 2))
+            : _scaled(_scheduler.cycleBudget);
+        final remaining = budget - DateTime.now().difference(started);
         if (remaining > Duration.zero) await Future<void>.delayed(remaining);
       }
     } finally {
@@ -449,7 +620,7 @@ class ObdSession extends ChangeNotifier {
   }
 
   void _publish(String pid, ElmResponse r) {
-    final value = PidRegistry.decodeResponse(pid, r.bytes);
+    final value = PidRegistry.decodeResponse(pid, _payload(r));
     // A null here is a real absence — a short frame, the wrong PID, or a
     // value outside physical bounds. Publishing it keeps the tile honest
     // rather than leaving the last good value on screen forever.
@@ -464,10 +635,11 @@ class ObdSession extends ChangeNotifier {
     }
   }
 
-  /// LV RESET, CAN ERROR or an internal fault: reset the adapter and
-  /// renegotiate rather than carrying on against a confused ELM.
-  Future<void> _rehandshake(int gen, ElmStatus cause) async {
-    if (gen != _generation) return;
+  /// LV RESET, CAN ERROR, a failed bus init or an internal fault: reset the
+  /// adapter and renegotiate rather than carrying on against a confused
+  /// ELM. Returns true when the caller's loop may continue.
+  Future<bool> _rehandshake(int gen, ElmStatus cause) async {
+    if (gen != _generation) return false;
     _set(SessionState.handshaking, error: _statusMessage(cause));
     final result = await ProtocolNegotiator(_elm!).handshake(
       cachedProtocol: _protocol?.number,
@@ -478,24 +650,29 @@ class ObdSession extends ChangeNotifier {
         notifyListeners();
       },
     );
-    if (gen != _generation) return;
+    if (gen != _generation) return false;
     if (!result.ok) {
       _onLinkLost();
-      return;
+      return false;
     }
     _protocol = result.protocol ?? _protocol;
     _batteryVolts = result.batteryVolts ?? _batteryVolts;
+    // ATWS may have changed what the adapter reports; re-measure rather
+    // than carry a stale width into every later decode.
+    _calibrateHeader(result.supportFrames, result.headersUnavailable);
     _scheduler.reset();
+    _backedOff = false;
     _set(SessionState.connected, error: null);
-    unawaited(_pollLoop(gen));
+    return true;
   }
 
   // ------------------------------------------------------------- reconnect
 
   void _onLinkLost() {
-    if (_state == SessionState.disconnected) return;
+    if (_state == SessionState.disconnected || _reconnecting) return;
+    _reconnecting = true;
     _set(SessionState.lost, error: 'Connection lost');
-    unawaited(_reconnect(_generation));
+    unawaited(_reconnect(++_reconnectToken));
   }
 
   /// SPEC §9.2 — 0.5 / 1 / 2 / 4 / 8 s, then stop and let the user decide.
@@ -507,24 +684,32 @@ class ObdSession extends ChangeNotifier {
     Duration(seconds: 8),
   ];
 
-  Future<void> _reconnect(int gen) async {
+  Future<void> _reconnect(int token) async {
     final transport = _transport;
-    if (transport == null) return;
-
-    for (var i = 0; i < reconnectDelays.length; i++) {
-      if (gen != _generation) return;
-      _reconnectAttempt = i + 1;
-      notifyListeners();
-      await Future<void>.delayed(_scaled(reconnectDelays[i]));
-      if (gen != _generation) return;
-
-      // connect() bumps the generation itself, so this attempt owns the
-      // session from here.
-      final ok = await connect(transport);
-      if (ok) return;
-      if (gen != _generation) return; // someone else took over
+    if (transport == null) {
+      _reconnecting = false;
+      return;
     }
-    _set(SessionState.disconnected, error: 'Could not reconnect');
+
+    try {
+      for (var i = 0; i < reconnectDelays.length; i++) {
+        if (token != _reconnectToken) return;
+        _reconnectAttempt = i + 1;
+        notifyListeners();
+        await Future<void>.delayed(_scaled(reconnectDelays[i]));
+        if (token != _reconnectToken) return;
+
+        // connect() bumps the generation itself, so the ladder cannot use
+        // it to tell "my own attempt" from "someone else took over" — that
+        // is what the token is for.
+        final ok = await connect(transport);
+        if (token != _reconnectToken) return;
+        if (ok) return;
+      }
+      _set(SessionState.disconnected, error: 'Could not reconnect');
+    } finally {
+      if (token == _reconnectToken) _reconnecting = false;
+    }
   }
 
   // ------------------------------------------------------------ diagnostics
@@ -532,22 +717,36 @@ class ObdSession extends ChangeNotifier {
   /// Modes 03, 07 and 0A plus the Mode 01 PID 01 summary.
   ///
   /// Pro gates permanent codes (§7.2) — the caller decides whether to ask;
-  /// this returns everything the car gave.
+  /// this returns everything the car gave, and records which modes did not
+  /// answer at all.
   Future<DtcReadResult> readDtcs({bool includePermanent = true}) async {
     final elm = _elm;
     if (elm == null) {
-      return const DtcReadResult(stored: [], pending: [], permanent: []);
+      return const DtcReadResult(
+        stored: [],
+        pending: [],
+        permanent: [],
+        failedModes: {'0101', '03', '07', '0A'},
+      );
     }
 
+    final failed = <String>{};
     final summary = await elm.send('0101', timeout: ElmSession.slowTimeout);
     final readiness = summary.isOk
-        ? ReadinessDecoder.decode(summary.bytes)
+        ? ReadinessDecoder.decode(_payload(summary))
         : null;
+    if (readiness == null) failed.add('0101');
 
     Future<List<RawDtc>> read(String mode, DtcMode kind) async {
       final r = await elm.send(mode, timeout: ElmSession.slowTimeout);
-      if (!r.isOk) return const [];
-      return DtcDecoder.decode(r.frames, kind);
+      if (r.isOk) {
+        return DtcDecoder.decode(r.frames, kind, headerChars: _headerChars);
+      }
+      // NO DATA is an honest "nothing here" on a lot of hardware,
+      // especially for modes 07 and 0A. Anything else means we could not
+      // ask, which is not the same as "no codes".
+      if (r.status != ElmStatus.noData) failed.add(mode);
+      return const [];
     }
 
     return DtcReadResult(
@@ -559,12 +758,14 @@ class ObdSession extends ChangeNotifier {
       readiness: readiness,
       milOn: readiness?.milOn,
       reportedCount: readiness?.dtcCount,
+      failedModes: failed,
     );
   }
 
   /// SPEC §9.5 — the snapshot is written **before** Mode 04 goes out, and
   /// the codes are always re-read afterwards. If the app dies in between,
-  /// the snapshot is on disk marked pending and the next launch reconciles.
+  /// or the link drops, or the re-read cannot be trusted, the snapshot
+  /// stays `pending` on disk and the next launch reconciles it.
   ///
   /// [vehicleId] is required for the snapshot; without a repository this
   /// still clears, it just keeps no history.
@@ -585,16 +786,38 @@ class ObdSession extends ChangeNotifier {
     }
 
     final cleared = await elm.send('04', timeout: ElmSession.slowTimeout);
-    if (!cleared.isOk) {
-      if (snapshot != null) {
-        await dtcs!.failClear(snapshot.id, ClearOutcome.refused);
+
+    // A refusal is a negative response — `7F 04 22` when the engine is
+    // running — which is well-formed hex and therefore parses as `ok`.
+    // Reading only the status would report a refusal as "the code came
+    // straight back", which is a different problem with a different fix.
+    final payload = _payload(cleared);
+    final negative = _hasPair(payload, 0x7F, 0x04);
+    final accepted = cleared.isOk && !negative && payload.contains(0x44);
+
+    if (!accepted) {
+      if (negative || cleared.status == ElmStatus.noData) {
+        // The ECU answered, and said no.
+        if (snapshot != null) {
+          await dtcs!.failClear(snapshot.id, ClearOutcome.refused);
+        }
+        return ClearResult.refused;
       }
-      return ClearResult.refused;
+      // Timeout, LV RESET, bus error: the clear may well have executed and
+      // only the reply was lost. Leave the snapshot pending so relaunch
+      // reconciles it — this ambiguity is exactly why §9.5 writes it first.
+      return ClearResult.interrupted;
     }
 
     // Always re-read: "cleared" that didn't clear is the single most
     // damaging thing this app could claim.
     final after = await readDtcs();
+    if (!after.complete) {
+      // The re-read could not be trusted, so neither can "cleared". The
+      // snapshot stays pending rather than being stamped with a result
+      // nobody verified.
+      return ClearResult.interrupted;
+    }
     if (snapshot != null) {
       await dtcs!.completeClear(
         beforeSnapshotId: snapshot.id,
@@ -604,7 +827,14 @@ class ObdSession extends ChangeNotifier {
         protocol: _protocol?.number,
       );
     }
-    return after.isEmpty ? ClearResult.cleared : ClearResult.codesReturned;
+    return after.all.isEmpty ? ClearResult.cleared : ClearResult.codesReturned;
+  }
+
+  static bool _hasPair(List<int> bytes, int a, int b) {
+    for (var i = 0; i + 1 < bytes.length; i++) {
+      if (bytes[i] == a && bytes[i + 1] == b) return true;
+    }
+    return false;
   }
 
   /// Mode 09 PID 02. Null when the car doesn't answer — common pre-2008,
@@ -614,7 +844,7 @@ class ObdSession extends ChangeNotifier {
     if (elm == null) return null;
     final r = await elm.send('0902', timeout: ElmSession.slowTimeout);
     if (!r.isOk) return null;
-    return VinReader.parse(r.frames);
+    return VinReader.parse(r.frames, headerChars: _headerChars);
   }
 
   /// The adapter's own voltage reading, which works even with the key out.
@@ -635,6 +865,7 @@ class ObdSession extends ChangeNotifier {
   // ----------------------------------------------------------------- state
 
   void _set(SessionState next, {String? error = _keep}) {
+    if (_disposed) return;
     final changed = _state != next || (error != _keep && error != _lastError);
     _state = next;
     if (error != _keep) _lastError = error;

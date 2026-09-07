@@ -972,6 +972,55 @@ handshake.
   replay against — and `BUFFER FULL` had only ever been recorded against a
   batched request this build never sends.
 
+### B.11.1 What the review changed
+
+An adversarial pass over the first cut confirmed 29 findings. The ones that
+mattered, and what they say about the fixtures:
+
+- **★ Headers were never stripped.** The handshake sends `ATH1`, so on any
+  real adapter every reply is prefixed with a CAN header — three hex
+  characters on 11-bit CAN. Three is odd, so byte-pairing shifts by a
+  nibble and *every* decode silently returns empty: no supported PIDs, a
+  blank dashboard, no codes on a car with a lit lamp, no VIN. Every test
+  passed, because nineteen of the twenty Phase 2 fixtures answer `ATH1`
+  with `OK` and then emit header-less frames — something that cannot happen
+  on real hardware. The width is now *measured*, not assumed: the `0100`
+  probe is the one reply whose shape is known in advance, so each candidate
+  width is tried against it once at connect. That also survives the clones
+  that quietly ignore `ATH1`. New fixture: `headers_can`.
+- **★ Two states wedged the poll loop permanently.** After `LV RESET` the
+  re-handshake tried to restart the loop from inside it, where the
+  `_looping` guard made the restart a no-op; and `ignitionOff` fell outside
+  `isLive`, so the loop exited and its own recovery branch became
+  unreachable. Both now continue in the same loop, and `ignitionOff` keeps
+  a slow one-PID probe running — the only way the session notices the key
+  coming back. New fixtures: `lv_reset_recovers`, `ignition_wakes`.
+- **★ The reconnect ladder collapsed to one rung**, because it checked the
+  generation counter that its own `connect` call increments. It has its own
+  token now, and 0.5/1/2/4/8 s all run.
+- **★ `clearDtcs` could claim "cleared" when the verifying re-read failed.**
+  `readDtcs` returned an empty list both for "the car has no codes" and for
+  "we could not ask". It now reports `failedModes`, and a clear whose
+  re-read is untrustworthy returns `interrupted` with the snapshot left
+  `pending` for relaunch. A Mode 04 *negative response* (`7F 04 22`, engine
+  running) is well-formed hex and parsed as success — it was reported as
+  "the code came straight back". A link drop during Mode 04 was recorded as
+  a refusal, which defeats the whole point of writing the snapshot first.
+  New fixtures: `clear_refused`, `clear_interrupted`, `clear_unverified`.
+- **The clock is now independent of the poll loop.** It was ticked only
+  inside the loop, so a hung link froze every tile at its last value —
+  stale rendering as live, which hard rule 4 exists to prevent.
+- Also: `connect` failure paths no longer leak the transport, `ElmSession`
+  and state subscription; the watchdog is 3 consecutive timeouts, not 5,
+  per §9.2; `busInitError`/`busBusy`/`badCommand` are handled rather than
+  silently swallowed; the `BUFFER FULL` ramp is time-gated to §4.4's 30 s
+  rather than running every cycle; a transient error on one support query
+  no longer writes off every PID above it; and `_onLinkLost` is idempotent,
+  so a BLE stack emitting `disconnected` then `failed` starts one ladder.
+
+Three tests were replaced for asserting nothing: one compared `0 == 0`, and
+one asserted `expect(ok, isA<bool>())`.
+
 **Still to do in Phase 6:** the screens themselves. `lib/screens/` and
 `lib/widgets/` are still the older Industry design on Provider, and the
 Part B design system in `lib/design_system/` is still unused by them.
