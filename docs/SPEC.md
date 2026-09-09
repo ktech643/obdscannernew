@@ -1021,7 +1021,42 @@ mattered, and what they say about the fixtures:
 Three tests were replaced for asserting nothing: one compared `0 == 0`, and
 one asserted `expect(ok, isA<bool>())`.
 
-**Still to do in Phase 6:** the screens themselves. `lib/screens/` and
+## B.12 The Dashboard (Phase 6, slice 2 — 2026-09-09)
+
+`lib/features/dashboard/dashboard_screen.dart` is the first screen on the
+Part B system, and the first anywhere in the app fed by real decoded data
+rather than a fixture: its tiles read `ObdSession.bus`, so what is on
+screen is what the protocol engine took off the wire.
+
+- **The grid decides what is asked for.** Only PIDs with a tile are handed
+  to `setVisible`, so removing a tile stops costing a round trip at once.
+- **Nothing rebuilds at 10 Hz.** The screen listens to the *session*, which
+  changes state rarely; each tile listens to its own notifier and repaints
+  alone. One shared clock drives decay.
+- **`lib/features/session_banner.dart`** reproduces the §2.1 table
+  literally, so no screen invents its own wording. A healthy link shows no
+  banner at all.
+- **The six states are real, not decoration.** Loading is a skeleton grid
+  matching the final geometry; Error names the failure and offers one
+  action; Partial keeps an unsupported tile in place saying "Not supported"
+  rather than leaving a hole; Stale and Unavailable are the tile's own
+  states; Offline never appears, because the app has nothing to be offline
+  from.
+
+**Testing note.** The widget tests drive a real `ObdSession` replaying a
+recorded car. Three traps cost time and are worth knowing: inside
+`testWidgets` the clock is fake, so (a) awaiting anything the session does
+deadlocks rather than fails — drive it by pumping and observing; (b) real
+file I/O never completes, so fixtures must be read in `setUpAll`; and (c)
+the poll loop's own delay outlives the test body unless the session is shut
+down and pumped dry first.
+
+**Still to do in Phase 6:** the Dashboard is built and tested but not yet
+reachable in the running app — that needs the Connect screen to produce a
+session, which is the next slice. Diagnostics, Garage, Settings and
+Onboarding remain on the older Industry/Provider stack, as does the tab
+shell. Editing the grid (drag reorder, change PID, swipe to remove) and the
+trip strip are deferred with them. `lib/screens/` and
 `lib/widgets/` are still the older Industry design on Provider, and the
 Part B design system in `lib/design_system/` is still unused by them.
 
@@ -1035,6 +1070,7 @@ Phase 4  Persistence — Drift, migrations with a schema test per step.   ✅ do
 Phase 5  Design system — Part B before any screen. Goldens.   ✅ done 2026-09-05 — see §B.10
 Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 1 done 2026-09-07 — the session layer, see §B.11
+         ◐ slice 2 done 2026-09-09 — the Dashboard, see §B.12
 Phase 7  Android FGS, OEM battery helper, permission matrix.
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.
 Phase 9  Demo Mode. Required for store review, not optional.
