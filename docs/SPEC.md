@@ -1088,15 +1088,43 @@ timeout — a 3 ms margin that any machine load blew through, and two runs in
 three failed. `timeScale` is now 0.05, which leaves replay exactly as fast
 and gives the deadline 60 ms.
 
-**Still to do in Phase 6:** Connect and the Dashboard are built and tested
-but not yet
-reachable in the running app — that needs the Connect screen to produce a
-session, which is the next slice. Diagnostics, Garage, Settings and
-Onboarding remain on the older Industry/Provider stack, as does the tab
-shell. Editing the grid (drag reorder, change PID, swipe to remove) and the
-trip strip are deferred with them. `lib/screens/` and
-`lib/widgets/` are still the older Industry design on Provider, and the
-Part B design system in `lib/design_system/` is still unused by them.
+## B.14 Wired into the app (Phase 6, slice 4 — 2026-09-10)
+
+`lib/features/live_tabs.dart` holds the one live `ObdSession` and the
+discovery feeding it, and the Connect and Dashboard tabs are now the Part B
+screens on the real protocol engine. The other three tabs are still the
+older Industry design, so the new theme is applied per-screen rather than
+at the app root; it moves to the root once every screen has migrated.
+
+**Demo Mode (§11.1)** is a *recorded session* replayed through the same
+transport, engine and session the real thing uses, so a store reviewer with
+no car sees what a car produces rather than a mock-up. Nothing in it
+invents a number; values hold steady once the recording runs out.
+
+### Three defects that only running it could show
+
+- **★ A tight budget starved PIDs instead of delaying them.** `nextCycle`
+  sorted by priority and then truncated to the budget — a stable sort with a
+  stable cut, so the same tail fell off *every* cycle and was never asked
+  for at all. On the six default tiles with a four-PID budget, Throttle and
+  Battery read "No data" permanently on a car answering both. Criticals are
+  now never dropped and the rest take turns. (The first attempt at the
+  rotation keyed off the cycle counter, which lands on the same offset every
+  time, because a high-priority PID is only due on alternate cycles.)
+- **★ The compatibility gate was unreachable.** It appears when a scan finds
+  nothing, but the Wi-Fi endpoints are offered unconditionally — they do not
+  advertise — so the list was never empty. The one affordance that explains
+  to an iPhone user why their cheap adapter cannot work would never have
+  appeared. It now ignores the unconditional entries.
+- The adapter identity carried the ELM prompt (`ELM327 v1.5 >`), fixed in
+  §B.13.
+
+**Still to do in Phase 6:** Diagnostics, Garage, Settings and Onboarding are
+still the older Industry design on the old providers, and the tab shell
+itself is still the old one. Editing the grid (drag reorder, change PID,
+swipe to remove) and the trip strip are deferred with them. BLE scanning is
+wired but unexercised — it needs hardware (§10.1), so on the simulator only
+the Wi-Fi endpoints appear.
 
 # PART C — BUILD ORDER
 
@@ -1110,6 +1138,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 1 done 2026-09-07 — the session layer, see §B.11
          ◐ slice 2 done 2026-09-09 — the Dashboard, see §B.12
          ◐ slice 3 done 2026-09-10 — Connect + discovery, see §B.13
+         ◐ slice 4 done 2026-09-10 — wired into the app + Demo Mode, see §B.14
 Phase 7  Android FGS, OEM battery helper, permission matrix.
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.
 Phase 9  Demo Mode. Required for store review, not optional.
