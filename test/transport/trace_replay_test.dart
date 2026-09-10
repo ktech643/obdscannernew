@@ -17,6 +17,12 @@ import 'package:torque_obd2/transport/obd_trace.dart';
 ///
 /// This is the integration tier of the pyramid: no device, no plugin, no car,
 /// and every clone quirk the field has produced replayed on every commit.
+/// Replay timing note: `speed: 100` makes recorded replies arrive at a
+/// hundredth of their real latency (a 900 ms NO DATA lands in 9 ms), while
+/// `timeScale` scales the *timeouts* waiting for them. At 0.01 the deadline
+/// was 12 ms against a 9 ms reply — a 3 ms margin, which any machine load
+/// blows through, and the suite flaked. 0.05 keeps replay just as fast and
+/// gives the deadline 60 ms, which is a margin rather than a coin toss.
 void main() {
   const traceDir = 'assets/traces';
 
@@ -31,7 +37,7 @@ void main() {
   open(String name) async {
     final source = await File('$traceDir/$name.obdtrace').readAsString();
     final transport = MockTransport(ObdTrace.parse(source), speed: 100);
-    final session = ElmSession(transport, timeScale: 0.01);
+    final session = ElmSession(transport, timeScale: 0.05);
     await transport.connect();
     return (
       transport: transport,

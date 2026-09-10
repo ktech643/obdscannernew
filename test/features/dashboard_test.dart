@@ -14,6 +14,12 @@ import 'package:torque_obd2/transport/obd_trace.dart';
 /// The Dashboard driven by a real [ObdSession] replaying a recorded car —
 /// no fake providers, no stubbed values. What the tiles show is what the
 /// protocol engine decoded off the wire.
+/// Replay timing note: `speed: 100` makes recorded replies arrive at a
+/// hundredth of their real latency (a 900 ms NO DATA lands in 9 ms), while
+/// `timeScale` scales the *timeouts* waiting for them. At 0.01 the deadline
+/// was 12 ms against a 9 ms reply — a 3 ms margin, which any machine load
+/// blows through, and the suite flaked. 0.05 keeps replay just as fast and
+/// gives the deadline 60 ms, which is a margin rather than a coin toss.
 void main() {
   // Traces are read once, outside the widget tests. Inside `testWidgets`
   // the clock is fake and real file I/O never completes, so loading a
@@ -42,7 +48,7 @@ void main() {
   /// does — connect, disconnect — deadlocks the test rather than failing
   /// it. Everything below drives the session by pumping and observing.
   ObdSession newSession() {
-    final s = ObdSession(timeScale: 0.01);
+    final s = ObdSession(timeScale: 0.05);
     addTearDown(s.dispose);
     return s;
   }

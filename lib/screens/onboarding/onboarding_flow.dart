@@ -230,11 +230,11 @@ class _A2Adapter extends StatelessWidget {
         Text(
           android
               ? 'Torque talks to your car through an OBD2 adapter that plugs in '
-                'under the dash. Almost any ELM327 adapter works — Bluetooth, '
-                'Bluetooth LE, or Wi-Fi.'
+                    'under the dash. Almost any ELM327 adapter works — Bluetooth, '
+                    'Bluetooth LE, or Wi-Fi.'
               : 'Torque talks to your car through an OBD2 adapter that plugs in '
-                'under the dash. On iPhone it must be a Bluetooth LE or Wi-Fi '
-                'adapter.',
+                    'under the dash. On iPhone it must be a Bluetooth LE or Wi-Fi '
+                    'adapter.',
           style: Type.body16Muted,
         ),
         const SizedBox(height: 22),

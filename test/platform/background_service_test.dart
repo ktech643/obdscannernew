@@ -14,27 +14,27 @@ void main() {
     calls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      calls.add(call);
-      switch (call.method) {
-        case 'isForegroundServiceRunning':
-          return true;
-        case 'hasNotificationPermission':
-          return true;
-        case 'batteryOptimizationIntent':
-          return {
-            'package': 'com.miui.securitycenter',
-            'label': 'Xiaomi — Autostart',
-            'component':
-                'com.miui.securitycenter/'
-                'com.miui.permcenter.autostart.AutoStartManagementActivity',
-            'action': null,
-          };
-        case 'openBatterySettings':
-          return true;
-        default:
-          return null;
-      }
-    });
+          calls.add(call);
+          switch (call.method) {
+            case 'isForegroundServiceRunning':
+              return true;
+            case 'hasNotificationPermission':
+              return true;
+            case 'batteryOptimizationIntent':
+              return {
+                'package': 'com.miui.securitycenter',
+                'label': 'Xiaomi — Autostart',
+                'component':
+                    'com.miui.securitycenter/'
+                    'com.miui.permcenter.autostart.AutoStartManagementActivity',
+                'action': null,
+              };
+            case 'openBatterySettings':
+              return true;
+            default:
+              return null;
+          }
+        });
   });
 
   tearDown(() {

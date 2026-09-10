@@ -35,17 +35,9 @@ class RevenueCatConfig {
   ];
 
   /// Fallback prices shown when RevenueCat isn't configured. Mirrors §7.1.
-  static const fallbackPrices = <String>[
-    r'$4.99',
-    r'$9.99',
-    r'$49.99',
-  ];
+  static const fallbackPrices = <String>[r'$4.99', r'$9.99', r'$49.99'];
 
-  static const fallbackPeriods = <String>[
-    '/week',
-    '/month',
-    'once',
-  ];
+  static const fallbackPeriods = <String>['/week', '/month', 'once'];
 
   /// The offline grace for a cached Pro entitlement, SPEC §7.5. A user who
   /// verified Pro but launches with no network keeps Pro for this long before

@@ -7,15 +7,14 @@ import 'package:torque_obd2/providers/connection_provider.dart';
 import 'package:torque_obd2/screens/connect/connect_screen.dart';
 
 void main() {
-  testWidgets('Demo Mode is reachable from Connect and marks the session',
-      (tester) async {
+  testWidgets('Demo Mode is reachable from Connect and marks the session', (
+    tester,
+  ) async {
     final c = ConnectionProvider();
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: c,
-        child: const MaterialApp(
-          home: Scaffold(body: ConnectScreen()),
-        ),
+        child: const MaterialApp(home: Scaffold(body: ConnectScreen())),
       ),
     );
 

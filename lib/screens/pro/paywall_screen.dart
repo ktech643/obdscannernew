@@ -61,12 +61,8 @@ class PaywallScreen extends StatelessWidget {
         gutter: T.gutterWide,
         children: [
           PrimaryButton(
-            e.purchaseInFlight
-                ? 'Starting…'
-                : e.planAction(e.selectedPlan),
-            onPressed: e.purchaseInFlight
-                ? null
-                : () => _buy(context, e),
+            e.purchaseInFlight ? 'Starting…' : e.planAction(e.selectedPlan),
+            onPressed: e.purchaseInFlight ? null : () => _buy(context, e),
           ),
           const SizedBox(height: 6),
           GhostButton(
@@ -282,9 +278,7 @@ class _LegalLinks extends StatelessWidget {
         'Restore purchases',
         color: T.neutral700,
         onPressed: () async {
-          final ok = await context
-              .read<EntitlementProvider>()
-              .restore();
+          final ok = await context.read<EntitlementProvider>().restore();
           if (!context.mounted) return;
           Toast.show(
             context,

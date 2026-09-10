@@ -1051,7 +1051,45 @@ file I/O never completes, so fixtures must be read in `setUpAll`; and (c)
 the poll loop's own delay outlives the test body unless the session is shut
 down and pumped dry first.
 
-**Still to do in Phase 6:** the Dashboard is built and tested but not yet
+## B.13 Connect (Phase 6, slice 3 — 2026-09-10)
+
+`lib/features/connect/connect_screen.dart` plus
+`lib/session/adapter_discovery.dart`. The screen finds adapters, connects
+to one, and names each of the seven handshake steps while it happens.
+
+- **Discovery is an interface.** `RealAdapterDiscovery` reads the BLE scan,
+  the Android paired list and the well-known Wi-Fi endpoints;
+  `FakeAdapterDiscovery` scripts a result set. The screen cannot tell them
+  apart, which is what makes the whole flow testable without a radio — and
+  is also what Demo Mode will use.
+- **The compatibility list is compiled in and short.** Anything absent is
+  `unknown` and gets *no badge*: claiming to have verified an adapter that
+  nobody tested would be worse than saying nothing. No lookup leaves the
+  device (AC-14).
+- **§9.1 in full.** Bluetooth off, permission refused, permission refused
+  permanently, the Android ≤30 location trap, and no radio at all each get
+  their own message and their own remedy. None of them is a spinner —
+  including the case that used to slip through, where the screen kept
+  saying "Looking for adapters…" while the radio was off.
+- **The compatibility gate** appears only after a full 15 s scan with
+  nothing found, and is platform-branched: iOS names the classic-Bluetooth
+  impossibility as an Apple platform rule; Android points at Settings
+  pairing with the PIN hint.
+- **Adapter ids are stable** (`ble:…`, `spp:<MAC>`, `wifi:<host>:<port>`)
+  and `buildTransport` turns one back into a transport without scanning, so
+  a remembered adapter can be reconnected directly.
+
+Also fixed here: the adapter identity shown on the card was the raw `ATZ`
+reply, so it carried the `>` prompt — "ELM327 v1.5 >" on every real
+connection. It is cleaned once, at the source.
+
+**Test stability.** The replay suites ran replies at 9 ms against a 12 ms
+timeout — a 3 ms margin that any machine load blew through, and two runs in
+three failed. `timeScale` is now 0.05, which leaves replay exactly as fast
+and gives the deadline 60 ms.
+
+**Still to do in Phase 6:** Connect and the Dashboard are built and tested
+but not yet
 reachable in the running app — that needs the Connect screen to produce a
 session, which is the next slice. Diagnostics, Garage, Settings and
 Onboarding remain on the older Industry/Provider stack, as does the tab
@@ -1071,6 +1109,7 @@ Phase 5  Design system — Part B before any screen. Goldens.   ✅ done 2026-09
 Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 1 done 2026-09-07 — the session layer, see §B.11
          ◐ slice 2 done 2026-09-09 — the Dashboard, see §B.12
+         ◐ slice 3 done 2026-09-10 — Connect + discovery, see §B.13
 Phase 7  Android FGS, OEM battery helper, permission matrix.
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.
 Phase 9  Demo Mode. Required for store review, not optional.

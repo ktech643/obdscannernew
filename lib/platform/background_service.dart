@@ -12,11 +12,9 @@ import 'battery_optimizer.dart';
 /// foreground service. Feature code never branches on platform directly; it
 /// asks this object, which is also how a test can substitute an answer.
 class BackgroundService {
-  BackgroundService({
-    MethodChannel? channel,
-    PlatformInfo? platform,
-  })  : _channel = channel ?? const MethodChannel('ktc.torque/fgs'),
-        _platform = platform ?? PlatformInfo.current;
+  BackgroundService({MethodChannel? channel, PlatformInfo? platform})
+    : _channel = channel ?? const MethodChannel('ktc.torque/fgs'),
+      _platform = platform ?? PlatformInfo.current;
 
   final MethodChannel _channel;
   final PlatformInfo _platform;
@@ -54,7 +52,9 @@ class BackgroundService {
   Future<bool> requestNotificationPermission() async {
     if (!_platform.isAndroid) return true;
     try {
-      return await _channel.invokeMethod<bool>('requestNotificationPermission') ??
+      return await _channel.invokeMethod<bool>(
+            'requestNotificationPermission',
+          ) ??
           true;
     } on PlatformException {
       return true;
@@ -65,10 +65,9 @@ class BackgroundService {
   Future<BatteryOptimization?> batteryOptimization() async {
     if (!_platform.isAndroid) return null;
     try {
-      final raw =
-          await _channel.invokeMethod<Map<dynamic, dynamic>>(
-            'batteryOptimizationIntent',
-          );
+      final raw = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+        'batteryOptimizationIntent',
+      );
       if (raw == null) return null;
       return BatteryOptimization.fromMap(raw);
     } on PlatformException {

@@ -121,43 +121,45 @@ void main() {
     expect(e.isPro, isFalse);
   });
 
-  test('offline grace keeps a recently verified Pro when the store is down',
-      () async {
-    store.setEnum(Keys.entitlementTier, Entitlement.pro);
-    store.setInt(
-      Keys.entitlementVerifiedAt,
-      DateTime.now().millisecondsSinceEpoch,
-    );
-    final e = EntitlementProvider(
-      store,
-      billing: _FakeBilling(reachable: false),
-    );
-    await settle();
-    expect(e.isPro, isTrue);
-  });
+  test(
+    'offline grace keeps a recently verified Pro when the store is down',
+    () async {
+      store.setEnum(Keys.entitlementTier, Entitlement.pro);
+      store.setInt(
+        Keys.entitlementVerifiedAt,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      final e = EntitlementProvider(
+        store,
+        billing: _FakeBilling(reachable: false),
+      );
+      await settle();
+      expect(e.isPro, isTrue);
+    },
+  );
 
-  test('confirmed not-Pro within grace keeps Pro (billing grace period)',
-      () async {
-    store.setEnum(Keys.entitlementTier, Entitlement.pro);
-    store.setInt(
-      Keys.entitlementVerifiedAt,
-      DateTime.now().millisecondsSinceEpoch,
-    );
-    final e = EntitlementProvider(
-      store,
-      billing: _FakeBilling(pro: false, reachable: true),
-    );
-    await settle();
-    expect(e.isPro, isTrue);
-  });
+  test(
+    'confirmed not-Pro within grace keeps Pro (billing grace period)',
+    () async {
+      store.setEnum(Keys.entitlementTier, Entitlement.pro);
+      store.setInt(
+        Keys.entitlementVerifiedAt,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+      final e = EntitlementProvider(
+        store,
+        billing: _FakeBilling(pro: false, reachable: true),
+      );
+      await settle();
+      expect(e.isPro, isTrue);
+    },
+  );
 
   test('confirmed not-Pro after grace expires revokes', () async {
     store.setEnum(Keys.entitlementTier, Entitlement.pro);
     store.setInt(
       Keys.entitlementVerifiedAt,
-      DateTime.now()
-          .subtract(const Duration(days: 8))
-          .millisecondsSinceEpoch,
+      DateTime.now().subtract(const Duration(days: 8)).millisecondsSinceEpoch,
     );
     final e = EntitlementProvider(
       store,

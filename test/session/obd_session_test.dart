@@ -19,6 +19,12 @@ import '../data/support.dart';
 /// Replay runs at 100x with every internal delay scaled to match, so a full
 /// conversation with a car takes milliseconds and nothing is mocked except
 /// the wire itself.
+/// Replay timing note: `speed: 100` makes recorded replies arrive at a
+/// hundredth of their real latency (a 900 ms NO DATA lands in 9 ms), while
+/// `timeScale` scales the *timeouts* waiting for them. At 0.01 the deadline
+/// was 12 ms against a 9 ms reply — a 3 ms margin, which any machine load
+/// blows through, and the suite flaked. 0.05 keeps replay just as fast and
+/// gives the deadline 60 ms, which is a margin rather than a coin toss.
 void main() {
   const traceDir = 'assets/traces';
 
@@ -30,7 +36,7 @@ void main() {
   /// A session wired to [name], at replay speed. Always disconnected at the
   /// end of the test so no poll loop outlives it.
   Future<ObdSession> sessionFor(String name, {DtcRepository? dtcs}) async {
-    final s = ObdSession(timeScale: 0.01, dtcs: dtcs);
+    final s = ObdSession(timeScale: 0.05, dtcs: dtcs);
     addTearDown(() async {
       await s.disconnect();
       s.dispose();
@@ -68,6 +74,9 @@ void main() {
         expect(session.state, SessionState.connected);
         expect(session.protocol?.number, 6);
         expect(session.adapterIdentity, contains('ELM327'));
+        // The raw ATZ reply still carries the '>' prompt and its carriage
+        // returns; what reaches the UI must be a name, not framing.
+        expect(session.adapterIdentity, 'ELM327 v1.5');
         expect(session.batteryVolts, closeTo(14.2, 0.01));
         expect(states, contains(SessionState.handshaking));
 
@@ -344,7 +353,7 @@ void main() {
 
   group('lifecycle', () {
     test('disconnect stops the loop and clears the bus', () async {
-      final session = ObdSession(timeScale: 0.01);
+      final session = ObdSession(timeScale: 0.05);
       final transport = await transportFor('clean_can');
       await session.connect(transport);
       await waitFor(() => session.bus.of('010C').value != null);
@@ -367,7 +376,7 @@ void main() {
     test(
       '★ a second connect supersedes the first; the loser is closed',
       () async {
-        final session = ObdSession(timeScale: 0.01);
+        final session = ObdSession(timeScale: 0.05);
         final first = await transportFor('clean_can');
         final second = await transportFor('clean_can');
 

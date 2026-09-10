@@ -156,7 +156,7 @@ class ProtocolNegotiator {
     return HandshakeResult(
       ok: true,
       protocol: protocol,
-      adapterIdentity: reset.trim(),
+      adapterIdentity: _cleanIdentity(reset),
       batteryVolts: volts,
       headersUnavailable: headersUnavailable,
       echoActive: echoActive,
@@ -229,6 +229,18 @@ class ProtocolNegotiator {
     _supportFrames = r.frames;
     return true;
   }
+
+  /// The `ATZ` reply as a name a person would recognise.
+  ///
+  /// The raw value still carries the framing the adapter sent — the `>`
+  /// prompt and any stray carriage returns — and that ends up on the
+  /// Connect screen verbatim, so it is cleaned once, here, rather than by
+  /// every caller that wants to show it.
+  static String _cleanIdentity(String raw) => raw
+      .replaceAll('>', ' ')
+      .replaceAll(RegExp(r'[\r\n]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 
   static bool _isPositive(ElmResponse r) =>
       r.isOk && r.frames.any((f) => f.contains('4100'));

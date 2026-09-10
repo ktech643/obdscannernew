@@ -24,7 +24,9 @@ void main() {
   });
 
   testWidgets('opens on the first-run flow', (tester) async {
-    await tester.pumpWidget(TorqueApp(store: store, billing: RevenueCatService()));
+    await tester.pumpWidget(
+      TorqueApp(store: store, billing: RevenueCatService()),
+    );
     await tester.pump();
     expect(find.text('You need an adapter'), findsNothing);
     expect(
@@ -36,7 +38,9 @@ void main() {
   testWidgets('the safety step is reachable and starts unacknowledged', (
     tester,
   ) async {
-    await tester.pumpWidget(TorqueApp(store: store, billing: RevenueCatService()));
+    await tester.pumpWidget(
+      TorqueApp(store: store, billing: RevenueCatService()),
+    );
     await tester.pump();
 
     final o = Provider.of<OnboardingProvider>(

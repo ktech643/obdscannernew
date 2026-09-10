@@ -13,7 +13,7 @@ import 'persistence.dart';
 /// against a network the app otherwise never uses.
 class EntitlementProvider extends ChangeNotifier {
   EntitlementProvider(this._store, {RevenueCatService? billing})
-      : _billing = billing ?? RevenueCatService() {
+    : _billing = billing ?? RevenueCatService() {
     _tier = _store.enumValue(
       Keys.entitlementTier,
       Entitlement.values,
@@ -104,8 +104,9 @@ class EntitlementProvider extends ChangeNotifier {
       _setTier(Entitlement.free);
       return;
     }
-    final age = DateTime.now()
-        .difference(DateTime.fromMillisecondsSinceEpoch(v));
+    final age = DateTime.now().difference(
+      DateTime.fromMillisecondsSinceEpoch(v),
+    );
     if (age > RevenueCatConfig.offlineGrace) {
       _setTier(Entitlement.free);
     }
@@ -162,8 +163,7 @@ class EntitlementProvider extends ChangeNotifier {
       notifyListeners();
       return PurchaseOutcome.success;
     }
-    final plan =
-        _selectedPlan < _plans.length ? _plans[_selectedPlan] : null;
+    final plan = _selectedPlan < _plans.length ? _plans[_selectedPlan] : null;
     if (plan == null) {
       _lastOutcome = PurchaseOutcome.unavailable;
       notifyListeners();

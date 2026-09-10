@@ -18,7 +18,7 @@ enum PurchaseOutcome { success, pending, cancelled, failed, unavailable }
 /// testable without store keys and a release build is forced to pass real keys.
 class RevenueCatService {
   RevenueCatService({PlatformInfo? platform})
-      : _platform = platform ?? PlatformInfo.current;
+    : _platform = platform ?? PlatformInfo.current;
 
   final PlatformInfo _platform;
 
@@ -48,8 +48,9 @@ class RevenueCatService {
     if (!_configured) return null;
     try {
       final info = await Purchases.getCustomerInfo();
-      return info.entitlements.active
-          .containsKey(RevenueCatConfig.entitlementId);
+      return info.entitlements.active.containsKey(
+        RevenueCatConfig.entitlementId,
+      );
     } catch (_) {
       return null;
     }
@@ -125,8 +126,9 @@ class RevenueCatService {
   void Function() addEntitlementListener(void Function(bool isPro) onChanged) {
     if (!_configured) return () {};
     void listener(CustomerInfo info) {
-      final pro = info.entitlements.active
-          .containsKey(RevenueCatConfig.entitlementId);
+      final pro = info.entitlements.active.containsKey(
+        RevenueCatConfig.entitlementId,
+      );
       onChanged(pro);
     }
 
