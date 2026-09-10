@@ -32,6 +32,9 @@ class PidScheduler {
 
   int _cycle = 0;
 
+  /// Where the round-robin over non-critical PIDs has got to.
+  int _rotation = 0;
+
   Set<String> get droppedPids => Set.unmodifiable(_dropped);
 
   void setSupported(Set<String> pids) {
@@ -64,7 +67,36 @@ class PidScheduler {
 
     _cycle++;
     final limit = maxPids ?? _maxPidsPerCycle;
-    return due.length <= limit ? due : due.sublist(0, limit);
+    if (due.length <= limit) return due;
+
+    // Truncating a stably-sorted list starves its tail: the same lowest
+    // priority PIDs fall off every single cycle and are never asked for at
+    // all, so their tiles read "No data" on a car that answers them
+    // perfectly well. Criticals are never dropped; everything else takes
+    // turns, which delays a PID instead of losing it.
+    final criticals = <String>[];
+    final rest = <String>[];
+    for (final pid in due) {
+      if (PidRegistry.lookup(pid)!.priority == PidPriority.critical) {
+        criticals.add(pid);
+      } else {
+        rest.add(pid);
+      }
+    }
+    if (criticals.length >= limit) return criticals;
+
+    // The rotation advances once per *truncated* cycle, not per cycle: a
+    // high-priority PID is only due every other cycle, so a counter keyed
+    // on the cycle number lands on the same offset every time and rotates
+    // nothing.
+    final slots = limit - criticals.length;
+    final start = rest.isEmpty ? 0 : _rotation % rest.length;
+    _rotation += slots;
+    return [
+      ...criticals,
+      for (var i = 0; i < slots && i < rest.length; i++)
+        rest[(start + i) % rest.length],
+    ];
   }
 
   static int _interval(PidPriority p) => switch (p) {
@@ -128,6 +160,7 @@ class PidScheduler {
 
   void reset() {
     _cycle = 0;
+    _rotation = 0;
     _noDataStreak.clear();
     _dropped.clear();
     _targetHz = 10;

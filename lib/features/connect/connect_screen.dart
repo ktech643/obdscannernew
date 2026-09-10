@@ -148,7 +148,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 widget.discovery.isScanning &&
                 _problem == DiscoveryProblem.none,
           ),
-          if (_adapters.isEmpty && _gateReached) ...[
+          // The gate is about *scanning* finding nothing. The Wi-Fi
+          // endpoints are offered unconditionally — they do not advertise,
+          // so there is nothing to discover — and counting them would make
+          // the list never empty and the gate dead code.
+          if (_gateReached &&
+              !_adapters.any((a) => a.kind != AdapterKind.wifi)) ...[
             const SizedBox(height: Space.x16),
             _CompatibilityGate(platform: widget.platform),
           ],

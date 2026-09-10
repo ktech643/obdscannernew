@@ -353,4 +353,54 @@ void main() {
       expect(s.maxPidsPerCycle, 1);
     });
   });
+
+  group('★ a tight budget delays PIDs, it never starves them', () {
+    // Found by running the app: with six default tiles and a budget of
+    // four, the two that sorted last were never asked for at all, so their
+    // tiles read "No data" on a car that answers them.
+    const layout = {'010C', '010D', '0105', '0104', '0111', '0142'};
+
+    test('every visible PID is served within a few cycles', () {
+      final s = PidScheduler()
+        ..setSupported(layout)
+        ..setVisible(layout);
+
+      final served = <String>{};
+      for (var i = 0; i < 12; i++) {
+        served.addAll(s.nextCycle(maxPids: 4));
+      }
+      expect(
+        served,
+        containsAll(layout),
+        reason: 'nothing may be permanently dropped',
+      );
+    });
+
+    test('criticals are in every cycle they are due', () {
+      final s = PidScheduler()
+        ..setSupported(layout)
+        ..setVisible(layout);
+      for (var i = 0; i < 8; i++) {
+        expect(s.nextCycle(maxPids: 4), containsAll(['010C', '010D']));
+      }
+    });
+
+    test('a budget smaller than the criticals still returns them', () {
+      final s = PidScheduler()
+        ..setSupported(layout)
+        ..setVisible(layout);
+      final cycle = s.nextCycle(maxPids: 1);
+      expect(cycle, isNotEmpty);
+      expect(cycle.every((p) => p == '010C' || p == '010D'), isTrue);
+    });
+
+    test('the budget is still respected when it can be', () {
+      final s = PidScheduler()
+        ..setSupported(layout)
+        ..setVisible(layout);
+      for (var i = 0; i < 8; i++) {
+        expect(s.nextCycle(maxPids: 4).length, lessThanOrEqualTo(4));
+      }
+    });
+  });
 }

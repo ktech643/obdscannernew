@@ -8,8 +8,7 @@ import 'providers/connection_provider.dart';
 import 'providers/dashboard_provider.dart';
 import 'providers/diagnostics_provider.dart';
 import 'providers/garage_provider.dart';
-import 'screens/connect/connect_screen.dart';
-import 'screens/dashboard/dashboard_screen.dart';
+import 'features/live_tabs.dart';
 import 'screens/diagnostics/diagnostics_screen.dart';
 import 'screens/garage/garage_screen.dart';
 import 'screens/onboarding/onboarding_flow.dart';
@@ -44,6 +43,10 @@ class TorqueApp extends StatelessWidget {
       ),
       ChangeNotifierProvider(create: (_) => AccountProvider(store)),
       ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
+      // The one live connection. Connect and Dashboard are the Part B
+      // screens on the real protocol engine; the other three tabs are
+      // still the older design and still read their own providers.
+      ChangeNotifierProvider(create: (_) => LiveSession()),
     ],
     child: MaterialApp(
       title: 'Torque OBD2',
@@ -93,12 +96,12 @@ class _AppShellState extends State<AppShell> {
   int _tab = 1; // opens on Dashboard
   final _navKeys = List.generate(5, (_) => GlobalKey<NavigatorState>());
 
-  static const _tabs = [
-    ConnectScreen(),
-    DashboardScreen(),
-    DiagnosticsScreen(),
-    GarageScreen(),
-    SettingsScreen(),
+  late final _tabs = <Widget>[
+    LiveConnectTab(onConnected: () => _select(1)),
+    LiveDashboardTab(onConnect: () => _select(0)),
+    const DiagnosticsScreen(),
+    const GarageScreen(),
+    const SettingsScreen(),
   ];
 
   void _select(int i) {

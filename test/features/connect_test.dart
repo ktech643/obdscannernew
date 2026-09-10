@@ -281,6 +281,28 @@ void main() {
       expect(find.textContaining('1234 or 0000'), findsOneWidget);
     });
 
+    testWidgets('★ the always-offered Wi-Fi endpoints do not suppress it', (
+      tester,
+    ) async {
+      // Wi-Fi adapters do not advertise, so they are listed unconditionally.
+      // Counting them as "found" would make the gate unreachable in the
+      // real app — which is exactly what running it showed.
+      const wifi = Adapter(
+        id: 'wifi:192.168.0.10:35000',
+        name: 'Wi-Fi adapter',
+        kind: AdapterKind.wifi,
+        detail: '192.168.0.10:35000',
+      );
+      await pumpConnect(
+        tester,
+        session: newSession(),
+        discovery: newDiscovery(results: const [wifi]),
+      );
+      await tester.pump(ConnectScreen.gateAfter);
+      await tester.pump();
+      expect(find.text("Can't find your adapter?"), findsOneWidget);
+    });
+
     testWidgets('it never appears when adapters were found', (tester) async {
       await pumpConnect(
         tester,
