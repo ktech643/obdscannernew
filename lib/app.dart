@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'data/db/app_database.dart';
+import 'data/repositories/dtc_repository.dart';
+import 'data/repositories/vehicle_repository.dart';
 import 'monetization/revenuecat_service.dart';
 import 'providers/app_providers.dart';
 import 'providers/persistence.dart';
@@ -9,7 +12,6 @@ import 'providers/dashboard_provider.dart';
 import 'providers/diagnostics_provider.dart';
 import 'providers/garage_provider.dart';
 import 'features/live_tabs.dart';
-import 'screens/diagnostics/diagnostics_screen.dart';
 import 'screens/garage/garage_screen.dart';
 import 'screens/onboarding/onboarding_flow.dart';
 import 'screens/settings/settings_screen.dart';
@@ -20,7 +22,12 @@ import 'dev_panel.dart';
 
 /// Root. Every provider is registered once, here; nothing constructs its own.
 class TorqueApp extends StatelessWidget {
-  const TorqueApp({super.key, required this.store, required this.billing});
+  const TorqueApp({
+    super.key,
+    required this.store,
+    required this.billing,
+    required this.db,
+  });
 
   /// Opened before the first frame so every provider can restore its state in
   /// its constructor — no screen renders a default and then flickers.
@@ -29,6 +36,9 @@ class TorqueApp extends StatelessWidget {
   /// Configured in main() before runApp; shared so the entitlement provider
   /// sees the same configured instance.
   final RevenueCatService billing;
+
+  /// Opened in main(); the repositories below are thin wrappers over it.
+  final AppDatabase db;
 
   @override
   Widget build(BuildContext context) => MultiProvider(
@@ -46,7 +56,15 @@ class TorqueApp extends StatelessWidget {
       // The one live connection. Connect and Dashboard are the Part B
       // screens on the real protocol engine; the other three tabs are
       // still the older design and still read their own providers.
-      ChangeNotifierProvider(create: (_) => LiveSession()),
+      Provider<AppDatabase>.value(value: db),
+      Provider<DtcRepository>(create: (_) => DtcRepository(db)),
+      Provider<VehicleRepository>(create: (_) => VehicleRepository(db)),
+      ChangeNotifierProvider(
+        create: (c) => LiveSession(
+          dtcs: c.read<DtcRepository>(),
+          vehicles: c.read<VehicleRepository>(),
+        ),
+      ),
     ],
     child: MaterialApp(
       title: 'Torque OBD2',
@@ -99,7 +117,7 @@ class _AppShellState extends State<AppShell> {
   late final _tabs = <Widget>[
     LiveConnectTab(onConnected: () => _select(1)),
     LiveDashboardTab(onConnect: () => _select(0)),
-    const DiagnosticsScreen(),
+    LiveDiagnosticsTab(onConnect: () => _select(0)),
     const GarageScreen(),
     const SettingsScreen(),
   ];

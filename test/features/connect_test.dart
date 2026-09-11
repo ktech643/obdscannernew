@@ -159,10 +159,40 @@ void main() {
       );
       await tester.pump();
 
-      expect(connected, greaterThanOrEqualTo(1));
+      expect(connected, 1);
       expect(find.text('Connected'), findsOneWidget);
       expect(find.text('ISO 15765-4 CAN 11-bit 500k'), findsOneWidget);
       expect(find.textContaining('14.2 V'), findsOneWidget);
+      await quiesce(tester, session);
+    });
+
+    testWidgets('★ a live link hands over once, not on every notification', (
+      tester,
+    ) async {
+      // Found by running the app: the session notifies for changes *inside*
+      // a live link too — degraded and back, a fresh voltage — and handing
+      // the user on each time dragged them out of whatever tab they were
+      // in and back to the Dashboard mid-task.
+      final session = newSession();
+      var connected = 0;
+      await pumpConnect(
+        tester,
+        session: session,
+        discovery: newDiscovery(results: const [good]),
+        onConnected: () => connected++,
+      );
+      await tester.tap(find.text('OBDLink MX+'));
+      await pumpUntil(tester, () => session.isLive);
+      await tester.pump();
+      expect(connected, 1);
+
+      for (var i = 0; i < 3; i++) {
+        unawaited(session.readBatteryVolts());
+        await tester.pump(const Duration(milliseconds: 60));
+      }
+      await tester.pump();
+      expect(session.isLive, isTrue, reason: 'the link never dropped');
+      expect(connected, 1, reason: 'one hand-over, not four');
       await quiesce(tester, session);
     });
 

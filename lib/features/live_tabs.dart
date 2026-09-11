@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/platform/platform_info.dart';
+import '../data/repositories/dtc_repository.dart';
+import '../data/repositories/vehicle_repository.dart';
 import '../design_system/design_system.dart';
 import '../session/adapter_discovery.dart';
 import '../session/obd_session.dart';
 import 'connect/connect_screen.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'demo/demo_mode.dart';
+import 'diagnostics/diagnostics_controller.dart';
+import 'diagnostics/diagnostics_screen.dart';
 
 /// Holds the one live [ObdSession] and the discovery feeding it, so the
 /// Connect and Dashboard tabs are looking at the same connection.
@@ -16,11 +20,33 @@ import 'demo/demo_mode.dart';
 /// swapping to the recorded one when Demo Mode starts. The session's own
 /// state changes are broadcast by the session itself.
 class LiveSession extends ChangeNotifier {
-  LiveSession({ObdSession? session, AdapterDiscovery? discovery})
-    : session = session ?? ObdSession(),
-      _discovery = discovery ?? RealAdapterDiscovery();
+  LiveSession({
+    ObdSession? session,
+    AdapterDiscovery? discovery,
+    DtcRepository? dtcs,
+    VehicleRepository? vehicles,
+  }) : session = session ?? ObdSession(dtcs: dtcs),
+       _discovery = discovery ?? RealAdapterDiscovery() {
+    _vehicles = vehicles;
+    diagnostics = DiagnosticsController(session: this.session, dtcs: dtcs);
+    _resolveVehicle();
+  }
 
   final ObdSession session;
+
+  /// One controller for the whole app, so a scan survives switching tabs
+  /// and the §9.5 pending-clear check runs once rather than per rebuild.
+  late final DiagnosticsController diagnostics;
+
+  VehicleRepository? _vehicles;
+
+  /// The snapshots a scan writes belong to a car. Until the Garage names
+  /// one there is no id, and the clear sheet says the history is not being
+  /// kept rather than silently keeping none.
+  Future<void> _resolveVehicle() async {
+    final primary = await _vehicles?.primary();
+    diagnostics.vehicleId = primary?.id;
+  }
 
   AdapterDiscovery _discovery;
   AdapterDiscovery get discovery => _discovery;
@@ -52,6 +78,7 @@ class LiveSession extends ChangeNotifier {
   @override
   void dispose() {
     _discovery.dispose();
+    diagnostics.dispose();
     session.dispose();
     super.dispose();
   }
@@ -112,6 +139,24 @@ class LiveDashboardTab extends StatelessWidget {
     return _Backlit(
       child: DashboardScreen(
         session: live.session,
+        onConnect: onConnect,
+        adapterName: live.isDemo ? DemoMode.adapter.name : null,
+      ),
+    );
+  }
+}
+
+/// The Diagnostics tab, on the live session.
+class LiveDiagnosticsTab extends StatelessWidget {
+  const LiveDiagnosticsTab({super.key, this.onConnect});
+  final VoidCallback? onConnect;
+
+  @override
+  Widget build(BuildContext context) {
+    final live = context.watch<LiveSession>();
+    return _Backlit(
+      child: DiagnosticsScreen(
+        controller: live.diagnostics,
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
       ),

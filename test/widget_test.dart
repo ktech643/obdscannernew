@@ -2,7 +2,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
+import 'package:drift/native.dart';
 import 'package:torque_obd2/app.dart';
+import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/models/enums.dart';
 import 'package:torque_obd2/models/models.dart';
 import 'package:torque_obd2/monetization/revenuecat_service.dart';
@@ -15,17 +17,22 @@ import 'package:torque_obd2/widgets/gauge_tile.dart';
 
 void main() {
   late Persistence store;
+  late AppDatabase db;
 
   setUp(() async {
     // A clean store per test, so one test's saved layout can't leak into the
     // next.
     SharedPreferences.setMockInitialValues({});
     store = await Persistence.open();
+    // In memory: the shell only needs the repositories to exist, and a
+    // real file would outlive the test.
+    db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
   });
 
   testWidgets('opens on the first-run flow', (tester) async {
     await tester.pumpWidget(
-      TorqueApp(store: store, billing: RevenueCatService()),
+      TorqueApp(store: store, billing: RevenueCatService(), db: db),
     );
     await tester.pump();
     expect(find.text('You need an adapter'), findsNothing);
@@ -39,7 +46,7 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      TorqueApp(store: store, billing: RevenueCatService()),
+      TorqueApp(store: store, billing: RevenueCatService(), db: db),
     );
     await tester.pump();
 

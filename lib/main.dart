@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app.dart';
+import 'data/db/open.dart';
 import 'monetization/revenuecat_service.dart';
 import 'providers/persistence.dart';
 
@@ -16,10 +17,14 @@ Future<void> main() async {
   // Storage opens before the first frame: the app is local-first, so the
   // stored state *is* the state.
   final store = await Persistence.open();
+  // The Drift database backs the diagnostic history. It is opened here
+  // rather than lazily because §9.5's reconciliation — a clear the app
+  // died in the middle of — has to be answerable on the first frame.
+  final db = openAppDatabase();
   // RevenueCat configures before runApp so a purchase that completed while
   // the app was dead reconciles on the first frame (SPEC §7.5). No-op when
   // the SDK keys are absent.
   final billing = RevenueCatService();
   await billing.configure();
-  runApp(TorqueApp(store: store, billing: billing));
+  runApp(TorqueApp(store: store, billing: billing, db: db));
 }

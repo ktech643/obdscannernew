@@ -55,9 +55,17 @@ class _ConnectScreenState extends State<ConnectScreen> {
   /// progress rather than a modal covering the list.
   Adapter? _connecting;
 
+  /// Whether the link was already live at the last notification, so
+  /// [_onSession] can tell a new connection from a state change inside
+  /// one that is already up.
+  bool _wasLive = false;
+
   @override
   void initState() {
     super.initState();
+    // Seeded from the current state so re-entering an already-connected
+    // screen does not read as a fresh connection and bounce straight out.
+    _wasLive = widget.session.isLive;
     widget.session.addListener(_onSession);
     _adaptersSub = widget.discovery.adapters.listen((a) {
       if (mounted) setState(() => _adapters = a);
@@ -81,10 +89,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
   void _onSession() {
     if (!mounted) return;
     setState(() {});
-    if (widget.session.isLive) {
-      _connecting = null;
-      widget.onConnected?.call();
-    }
+    final live = widget.session.isLive;
+    if (live) _connecting = null;
+    // Only the *edge* into a live link hands the user on. Calling this on
+    // every notification while live drags them back to the Dashboard from
+    // whatever tab they are on, because the session flips between
+    // connected and degraded whenever a PID stops answering — which a
+    // diagnostic scan does several times.
+    if (live && !_wasLive) widget.onConnected?.call();
+    _wasLive = live;
   }
 
   void _startScan() {

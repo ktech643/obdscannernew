@@ -719,7 +719,10 @@ class ObdSession extends ChangeNotifier {
   /// Pro gates permanent codes (§7.2) — the caller decides whether to ask;
   /// this returns everything the car gave, and records which modes did not
   /// answer at all.
-  Future<DtcReadResult> readDtcs({bool includePermanent = true}) async {
+  Future<DtcReadResult> readDtcs({
+    bool includePermanent = true,
+    void Function(String mode)? onStep,
+  }) async {
     final elm = _elm;
     if (elm == null) {
       return const DtcReadResult(
@@ -731,13 +734,9 @@ class ObdSession extends ChangeNotifier {
     }
 
     final failed = <String>{};
-    final summary = await elm.send('0101', timeout: ElmSession.slowTimeout);
-    final readiness = summary.isOk
-        ? ReadinessDecoder.decode(_payload(summary))
-        : null;
-    if (readiness == null) failed.add('0101');
 
     Future<List<RawDtc>> read(String mode, DtcMode kind) async {
+      onStep?.call(mode);
       final r = await elm.send(mode, timeout: ElmSession.slowTimeout);
       if (r.isOk) {
         return DtcDecoder.decode(r.frames, kind, headerChars: _headerChars);
@@ -749,12 +748,25 @@ class ObdSession extends ChangeNotifier {
       return const [];
     }
 
+    // §5.4 fixes the order — 03, 07, 0A, then the Mode 01 summary — so the
+    // per-step label the user reads matches what is actually on the wire.
+    final stored = await read('03', DtcMode.stored);
+    final pending = await read('07', DtcMode.pending);
+    final permanent = includePermanent
+        ? await read('0A', DtcMode.permanent)
+        : const <RawDtc>[];
+
+    onStep?.call('0101');
+    final summary = await elm.send('0101', timeout: ElmSession.slowTimeout);
+    final readiness = summary.isOk
+        ? ReadinessDecoder.decode(_payload(summary))
+        : null;
+    if (readiness == null) failed.add('0101');
+
     return DtcReadResult(
-      stored: await read('03', DtcMode.stored),
-      pending: await read('07', DtcMode.pending),
-      permanent: includePermanent
-          ? await read('0A', DtcMode.permanent)
-          : const [],
+      stored: stored,
+      pending: pending,
+      permanent: permanent,
       readiness: readiness,
       milOn: readiness?.milOn,
       reportedCount: readiness?.dtcCount,
@@ -769,7 +781,10 @@ class ObdSession extends ChangeNotifier {
   ///
   /// [vehicleId] is required for the snapshot; without a repository this
   /// still clears, it just keeps no history.
-  Future<ClearResult> clearDtcs({String? vehicleId}) async {
+  Future<ClearResult> clearDtcs({
+    String? vehicleId,
+    void Function(DtcReadResult)? onReread,
+  }) async {
     final elm = _elm;
     if (elm == null) return ClearResult.interrupted;
 
@@ -812,6 +827,10 @@ class ObdSession extends ChangeNotifier {
     // Always re-read: "cleared" that didn't clear is the single most
     // damaging thing this app could claim.
     final after = await readDtcs();
+    // Handed to the caller so the screen shows the reading the verdict was
+    // decided on. A second re-read of its own would cost four more round
+    // trips and could disagree with the verdict it sits next to.
+    onReread?.call(after);
     if (!after.complete) {
       // The re-read could not be trusted, so neither can "cleared". The
       // snapshot stays pending rather than being stamped with a result
@@ -827,7 +846,12 @@ class ObdSession extends ChangeNotifier {
         protocol: _protocol?.number,
       );
     }
-    return after.all.isEmpty ? ClearResult.cleared : ClearResult.codesReturned;
+    // A permanent code is *expected* to survive Mode 04 — only the ECU
+    // releases those, and the sheet says so before the button is
+    // reachable. Counting one as "the code came straight back" would
+    // report a clean clear as a live fault.
+    final returned = after.stored.isNotEmpty || after.pending.isNotEmpty;
+    return returned ? ClearResult.codesReturned : ClearResult.cleared;
   }
 
   static bool _hasPair(List<int> bytes, int a, int b) {
@@ -835,6 +859,26 @@ class ObdSession extends ChangeNotifier {
       if (bytes[i] == a && bytes[i + 1] == b) return true;
     }
     return false;
+  }
+
+  /// One read of [pid], outside the poll rotation.
+  ///
+  /// The diagnostics scan needs values the Dashboard may not be showing —
+  /// coolant, fuel trims — and a hard gate needs a *fresh* speed, not
+  /// whatever the rotation last left on the bus (hard rule 4). Safe to
+  /// call while polling: `ElmSession` keeps exactly one command
+  /// outstanding (hard rule 2), so this queues rather than pipelines.
+  ///
+  /// Null means the ECU did not answer. A successful read of a PID the car
+  /// has no data for publishes null too, which is an absence, not a zero.
+  Future<double?> readPidOnce(String pid) async {
+    final elm = _elm;
+    if (elm == null) return null;
+    final r = await elm.send(pid);
+    if (!r.isOk) return null;
+    final value = PidRegistry.decodeResponse(pid, _payload(r));
+    bus.publish(PidSample(pid: pid, value: value, at: DateTime.now()));
+    return value;
   }
 
   /// Mode 09 PID 02. Null when the car doesn't answer — common pre-2008,

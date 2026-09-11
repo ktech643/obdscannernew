@@ -1126,6 +1126,66 @@ swipe to remove) and the trip strip are deferred with them. BLE scanning is
 wired but unexercised — it needs hardware (§10.1), so on the simulator only
 the Wi-Fi endpoints appear.
 
+## B.15 Diagnostics (Phase 6, slice 5 — 2026-09-11)
+
+`lib/features/diagnostics/` — the scan, the codes, the readiness monitors,
+the health score and the guarded clear, on the Part B system and the real
+session. `DiagnosticsController` holds every decision about what the car
+said, so the wording is decided in one place and tested without a widget
+tree.
+
+**The scan runs §5.4's order on the wire** — 03, 07, 0A, then the Mode 01
+summary, then the VIN — and the label names the command in flight.
+`ObdSession.readDtcs` was reordered to match and now reports each step, so
+the progress the user reads is the conversation rather than a decoration.
+
+**The headline table is reproduced literally**, plus the rows it does not
+cover, because real cars produce all of them: the light on with nothing
+stored, codes with the light off, and the light not reported at all. The
+count is of **distinct** codes — one fault can sit in two lists, and
+counting it twice overstates what is wrong with the car.
+
+**Hard rule 7 has a home: `lib/data/dtc_dictionary.dart`.** The bundled
+`dtc.sqlite` still needs a licensed source (§6.1), so the app ships on
+`EmptyDtcDictionary` and every code renders through `DtcText`, which says
+only what SAE J2012 defines *structurally* — the system letter, and whether
+the second digit makes the code manufacturer-specific. An unknown generic
+code is named as unknown. Nothing describes a fault it did not look up.
+
+**The clear is guarded twice over.** The sheet states all four
+consequences uncollapsed — a disclosure triangle is how you hide the
+emissions reset while claiming you didn't — then the speed gate, then
+`DestructiveButton`'s two taps. The gate **reads the car** rather than the
+bus: a stale zero from a stop sign ten seconds ago is exactly the reading
+that must not open it (hard rule 4), and a speed it could not read is not
+permission. A pending `beforeClear` row on disk surfaces as "a clear was
+never verified" with an offer to settle it from the car.
+
+### Things building it found
+
+- **★ A permanent code surviving Mode 04 was reported as "the code came
+  straight back".** `clearDtcs` judged the outcome on `after.all`, so the
+  one kind of code that is *supposed* to survive a clear turned a clean
+  result into a live-fault warning. It now judges on stored and pending,
+  and the sheet names the code that stayed.
+- **★ Connect handed the user on at every notification, not on the edge.**
+  Found by running it: tapping "Scan now" bounced to the Dashboard,
+  because a scan flips the session between connected and degraded and
+  `_onSession` called `onConnected` each time. Any tab, mid-task.
+- The demo recording answered 03 and 07 but not 0A or 0902, so Demo Mode's
+  own scan would have reported itself incomplete. `clean_can.obdtrace` now
+  answers the whole scan, as the car it is recorded from does.
+- The Drift database is opened in `main()` and provided at the root. It
+  has been built since Phase 4 but nothing was using it; §9.5's
+  reconciliation has to be answerable on the first frame. Snapshots still
+  need a vehicle, and until the Garage names one the sheet says the
+  history is not being kept rather than quietly keeping none.
+
+**Deferred with the Garage:** the −5 per overdue reminder is an input the
+health score takes and nothing yet supplies, and freeze-frame capture
+(§4.5) is not read before a clear — the sheet says the data is erased, it
+does not offer to keep it.
+
 # PART C — BUILD ORDER
 
 ```
@@ -1139,6 +1199,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 2 done 2026-09-09 — the Dashboard, see §B.12
          ◐ slice 3 done 2026-09-10 — Connect + discovery, see §B.13
          ◐ slice 4 done 2026-09-10 — wired into the app + Demo Mode, see §B.14
+         ◐ slice 5 done 2026-09-11 — Diagnostics + the clear, see §B.15
 Phase 7  Android FGS, OEM battery helper, permission matrix.
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.
 Phase 9  Demo Mode. Required for store review, not optional.
