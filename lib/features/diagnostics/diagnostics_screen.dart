@@ -302,7 +302,10 @@ class _Result extends StatelessWidget {
         _Headline(headline: headline, scannedAt: controller.scannedAt),
         if (!result.complete) _Incomplete(modes: result.failedModes),
         if (controller.lastClear != null)
-          _ClearOutcome(outcome: controller.lastClear!),
+          _ClearOutcome(
+            outcome: controller.lastClear!,
+            surviving: result.permanent,
+          ),
         if (codes.isNotEmpty) ...[
           const SizedBox(height: Space.x8),
           for (final dtc in codes)
@@ -490,13 +493,27 @@ class _UnverifiedClear extends StatelessWidget {
 
 /// What the last clear actually did — never "cleared" on its own.
 class _ClearOutcome extends StatelessWidget {
-  const _ClearOutcome({required this.outcome});
+  const _ClearOutcome({required this.outcome, this.surviving = const []});
   final ClearResult outcome;
+
+  /// Permanent codes still present in the verifying re-read. `cleared`
+  /// means no stored and no pending codes — permanent ones are *expected*
+  /// to survive — so this line must not claim the car came back empty
+  /// while those codes are listed directly beneath it.
+  final List<RawDtc> surviving;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     final (String text, Tell tone) = switch (outcome) {
+      ClearResult.cleared when surviving.isNotEmpty => (
+        'Stored and pending codes cleared. '
+            '${surviving.map((d) => d.code).join(', ')} '
+            '${surviving.length == 1 ? 'is permanent and stays' : 'are permanent and stay'} '
+            'until the ECU releases '
+            '${surviving.length == 1 ? 'it' : 'them'}.',
+        Tell.green,
+      ),
       ClearResult.cleared => (
         'Codes cleared, and the re-read came back empty.',
         Tell.green,

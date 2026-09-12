@@ -31,8 +31,15 @@ class CodeDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = context.tokens;
     final def = definition;
+    // Pushed onto the tab's Navigator, which sits *above* the tab's theme,
+    // so this screen brings the Part B ground with it rather than opening
+    // with the old light chrome.
+    return Backlit(child: Builder(builder: (context) => _page(context, def)));
+  }
+
+  Widget _page(BuildContext context, DtcDefinition? def) {
+    final t = context.tokens;
     final tone = toneFor(dtc, def);
     return Scaffold(
       backgroundColor: t.surfaceDeep,

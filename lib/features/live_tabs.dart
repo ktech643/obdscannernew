@@ -94,15 +94,9 @@ class _Backlit extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Theme(
-    data: torqueTheme(),
-    child: AdaptiveScope(
-      platform: PlatformInfo.current,
-      child: ColoredBox(
-        color: TorqueTokens.dark.surfaceDeep,
-        child: SafeArea(bottom: false, child: child),
-      ),
-    ),
+  Widget build(BuildContext context) => Backlit(
+    platform: PlatformInfo.current,
+    child: SafeArea(bottom: false, child: child),
   );
 }
 

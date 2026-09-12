@@ -621,6 +621,236 @@ void main() {
     });
   });
 
+  // ------------------------------------------- what the review turned up
+
+  group('★ regressions the adversarial review found', () {
+    testWidgets('★ the screen never denies the codes listed under it', (
+      tester,
+    ) async {
+      // `cleared` means no stored and no pending. A permanent code is
+      // *expected* to survive Mode 04, so the line above the list must not
+      // say the car came back empty while P0420 sits directly beneath it.
+      final c = await connectedAndScanned(tester, 'dtc_scan_can');
+      expect(await pumping(tester, c.clear()), ClearResult.cleared);
+      await tester.pump();
+
+      expect(find.textContaining('came back empty'), findsNothing);
+      expect(
+        find.textContaining('P0420 is permanent and stays'),
+        findsOneWidget,
+      );
+      expect(find.text('P0420'), findsWidgets, reason: 'still listed');
+      await quiesce(tester, c.session);
+    });
+
+    testWidgets('★ reconcile moves the score with the codes, not apart', (
+      tester,
+    ) async {
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = DtcRepository(db);
+      final vehicle = await VehicleRepository(db).create(
+        nickname: 'The Mazda',
+        fuel: VehicleFuel.petrol,
+        make: 'Mazda',
+        model: '3',
+        year: 2015,
+      );
+      await repo.beginClear(
+        vehicleId: vehicle.id,
+        codes: const [RawDtc('P0301', DtcMode.stored)],
+        milOn: true,
+      );
+
+      final c = await connectedAndScanned(
+        tester,
+        'dtc_scan_can',
+        dtcs: repo,
+        vehicleId: vehicle.id,
+      );
+      // The scan found three codes, so the score is well under 100.
+      final before = c.health!;
+      expect(before.deductions, isNotEmpty);
+
+      await pumping(tester, c.reconcile());
+      await tester.pump();
+
+      // The re-read is clean of stored and pending, so the breakdown must
+      // not still itemise them.
+      expect(c.result!.stored, isEmpty);
+      expect(
+        c.health!.deductions.map((d) => d.reason),
+        isNot(contains('Confirmed code P0301')),
+      );
+      expect(c.health!.value, greaterThan(before.value));
+      for (final d in c.health!.deductions) {
+        expect(find.text(d.reason), findsOneWidget, reason: d.reason);
+      }
+      await quiesce(tester, c.session);
+    });
+
+    testWidgets('★ a new scan drops the previous clear\'s verdict', (
+      tester,
+    ) async {
+      final c = await connectedAndScanned(tester, 'dtc_scan_can');
+      await pumping(tester, c.clear());
+      await tester.pump();
+      expect(find.textContaining('permanent and stays'), findsOneWidget);
+
+      await pumping(tester, c.scan());
+      await tester.pump();
+      expect(c.lastClear, isNull);
+      expect(find.textContaining('permanent and stays'), findsNothing);
+      await quiesce(tester, c.session);
+    });
+
+    testWidgets('★ the clear sheet reflows at text scale 2.0', (tester) async {
+      // Both progress lines were a bare Text inside a Row, so they ran off
+      // the edge instead of wrapping. 320pt is an iPhone with Display Zoom
+      // on — the narrowest real phone this has to survive.
+      final session = newSession();
+      final c = newController(session);
+      tester.view.physicalSize = const Size(320, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      // Connected first: the sheet reads the speed in initState, and with
+      // no link that read returns null and the gate never opens.
+      await tester.pumpWidget(const SizedBox.shrink());
+      unawaited(session.connect(transportFor('dtc_scan_can')));
+      await pumpUntil(tester, () => session.isLive);
+
+      await tester.pumpWidget(
+        AdaptiveScope(
+          platform: const FakePlatform(isAndroid: false),
+          child: MaterialApp(
+            theme: torqueTheme(),
+            debugShowCheckedModeBanner: false,
+            home: Builder(
+              builder: (ctx) => MediaQuery(
+                data: MediaQuery.of(
+                  ctx,
+                ).copyWith(textScaler: const TextScaler.linear(2)),
+                child: Scaffold(body: ClearCodesSheet(controller: c)),
+              ),
+            ),
+          ),
+        ),
+      );
+      // The very first frame is _Stage.checking — "Checking the car is
+      // stopped…", the line that used to overflow by 155 pixels here.
+      expect(tester.takeException(), isNull, reason: 'checking');
+
+      // Through the gate, the two-step button and the clear itself.
+      await pumpUntil(
+        tester,
+        () => find.byType(DestructiveButton).evaluate().isNotEmpty,
+        reason: 'the gate to open on a stopped car',
+      );
+      // At scale 2.0 the consent copy is taller than the viewport, so the
+      // button has to be scrolled to — which is the real user's path too.
+      await tester.ensureVisible(find.byType(DestructiveButton));
+      await tester.pump();
+      await tester.tap(find.byType(DestructiveButton));
+      await tester.pump();
+      await tester.ensureVisible(find.byType(DestructiveButton));
+      await tester.pump();
+      await tester.tap(find.byType(DestructiveButton));
+      for (var i = 0; i < 60; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+        expect(tester.takeException(), isNull, reason: 'clearing');
+      }
+      expect(find.textContaining('permanent and stays'), findsOneWidget);
+      await quiesce(tester, session);
+    });
+
+    testWidgets('★ a pushed detail page brings its own dark ground', (
+      tester,
+    ) async {
+      // A pushed route is a *sibling* of the widget that pushed it, so it
+      // inherits MaterialApp.theme — which in the real app is still the
+      // old light Industry theme. The shell is replicated here exactly.
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(scaffoldBackgroundColor: const Color(0xFFF2F2F3)),
+          home: Navigator(
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => Theme(
+                data: torqueTheme(),
+                child: Builder(
+                  builder: (context) => Scaffold(
+                    body: Center(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const CodeDetailScreen(
+                              dtc: RawDtc('P0420', DtcMode.stored),
+                            ),
+                          ),
+                        ),
+                        child: const Text('open'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      final ctx = tester.element(find.text('Trouble code'));
+      expect(
+        Theme.of(ctx).extension<TorqueTokens>(),
+        isNotNull,
+        reason: 'the Part B tokens reached the pushed route',
+      );
+      expect(
+        Theme.of(ctx).appBarTheme.backgroundColor,
+        TorqueTokens.dark.surfaceDeep,
+      );
+    });
+
+    testWidgets('★ a scan interrupted by a reconnect reports unanswered', (
+      tester,
+    ) async {
+      // The reply that lands after the link was replaced belongs to a
+      // different conversation. Folding it in would mix two cars.
+      final session = newSession();
+      await pumpScreen(tester, newController(session));
+      unawaited(session.connect(transportFor('dtc_scan_can')));
+      await pumpUntil(tester, () => session.isLive);
+
+      DtcReadResult? result;
+      unawaited(
+        session
+            .readDtcs(
+              onStep: (mode) {
+                // Drop the link while the first mode is on the wire. A
+                // microtask, so the command already sent is not written
+                // to a transport that is closing underneath it.
+                if (mode == '03') {
+                  Future.microtask(() => unawaited(session.disconnect()));
+                }
+              },
+            )
+            .then((r) => result = r),
+      );
+      await pumpUntil(
+        tester,
+        () => result != null,
+        reason: 'the interrupted scan to give up',
+      );
+
+      expect(result!.complete, isFalse, reason: 'modes went unanswered');
+      expect(result!.failedModes, containsAll(<String>['07', '0A', '0101']));
+      expect(result!.all, isEmpty, reason: 'nothing merged from two links');
+      await quiesce(tester, session);
+    });
+  });
+
   // ------------------------------------------------------ the health score
 
   group('★ §5.4 — the health score and its breakdown', () {

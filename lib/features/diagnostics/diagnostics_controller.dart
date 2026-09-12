@@ -160,41 +160,25 @@ class DiagnosticsController extends ChangeNotifier {
     _phase = ScanPhase.running;
     _stepIndex = 0;
     _stepLabel = ScanStep.all.first.label;
+    // A previous clear's verdict describes a reading this scan is about to
+    // replace. Leaving it up would put "codes cleared" above a fresh list
+    // it says nothing about.
+    _lastClear = null;
     _notify();
 
     try {
       final result = await session.readDtcs(onStep: _onStep);
+      // Installed before the VIN so a car that does not answer Mode 09
+      // does not leave the previous scan's codes on screen while it times
+      // out.
       _result = result;
-      await _loadDefinitions(result.all);
+      _notify();
 
       _step('0902');
       _vin = await session.readVin();
 
       _step('live');
-      final live = <String, double?>{};
-      for (final pid in _healthPids) {
-        live[pid] = await session.readPidOnce(pid);
-      }
-      // The adapter's own voltage is the reliable one — PID 0142 is the
-      // ECU's control-module voltage and plenty of cars do not answer it.
-      final volts = await session.readBatteryVolts() ?? live['0142'];
-
-      _scannedAt = DateTime.now();
-      _health = HealthScore.compute(
-        stored: result.stored,
-        pending: result.pending,
-        permanent: result.permanent,
-        milOn: result.milOn,
-        readiness: result.readiness,
-        severities: {
-          for (final d in result.all) d.code: _definitions[d.code]?.severity,
-        },
-        batteryVolts: volts,
-        coolantC: live['0105'],
-        fuelTrims: [live['0106'], live['0107']],
-        overdueReminders: overdueReminders,
-        failedModes: result.failedModes,
-      );
+      await _install(result);
 
       final vehicle = _vehicleId;
       if (dtcs != null && vehicle != null) {
@@ -208,11 +192,56 @@ class DiagnosticsController extends ChangeNotifier {
         );
       }
       _phase = ScanPhase.done;
+    } catch (_) {
+      // Nothing below the session throws today, but a scan is the longest
+      // thing this screen does and a stranded "Scanning…" with no way out
+      // is the worst way to be wrong. Whatever was read stays on screen,
+      // labelled with the time it was read.
+      _phase = ScanPhase.done;
     } finally {
       _busy = false;
       _stepLabel = null;
       _notify();
     }
+  }
+
+  /// Makes [result] what the screen shows: its codes, their definitions,
+  /// the time it was read, and a health score computed from it and from
+  /// live values read *now*.
+  ///
+  /// One place on purpose. Every caller — scan, clear, reconcile — has to
+  /// do the same four things, and a reconcile that swapped the codes but
+  /// left the old score beside them is precisely what happens when they
+  /// drift apart.
+  Future<void> _install(DtcReadResult result) async {
+    _result = result;
+    await _loadDefinitions(result.all);
+
+    final live = <String, double?>{};
+    for (final pid in _healthPids) {
+      live[pid] = await session.readPidOnce(pid);
+    }
+    // The adapter's own voltage is the reliable one — PID 0142 is the
+    // ECU's control-module voltage and plenty of cars do not answer it.
+    final volts = await session.readBatteryVolts() ?? live['0142'];
+
+    _scannedAt = DateTime.now();
+    _health = HealthScore.compute(
+      stored: result.stored,
+      pending: result.pending,
+      permanent: result.permanent,
+      milOn: result.milOn,
+      readiness: result.readiness,
+      severities: {
+        for (final d in result.all) d.code: _definitions[d.code]?.severity,
+      },
+      batteryVolts: volts,
+      coolantC: live['0105'],
+      fuelTrims: [live['0106'], live['0107']],
+      overdueReminders: overdueReminders,
+      failedModes: result.failedModes,
+    );
+    _notify();
   }
 
   void _onStep(String mode) => _step(mode);
@@ -258,23 +287,7 @@ class DiagnosticsController extends ChangeNotifier {
       _lastClear = outcome;
 
       final reread = after;
-      if (reread != null) {
-        _result = reread;
-        await _loadDefinitions(reread.all);
-        _scannedAt = DateTime.now();
-        _health = HealthScore.compute(
-          stored: reread.stored,
-          pending: reread.pending,
-          permanent: reread.permanent,
-          milOn: reread.milOn,
-          readiness: reread.readiness,
-          severities: {
-            for (final d in reread.all) d.code: _definitions[d.code]?.severity,
-          },
-          overdueReminders: overdueReminders,
-          failedModes: reread.failedModes,
-        );
-      }
+      if (reread != null) await _install(reread);
       await refreshUnreconciled();
       return outcome;
     } finally {
@@ -317,9 +330,7 @@ class DiagnosticsController extends ChangeNotifier {
           protocol: session.protocol?.number,
         );
       }
-      _result = after;
-      await _loadDefinitions(after.all);
-      _scannedAt = DateTime.now();
+      await _install(after);
       return true;
     } finally {
       _busy = false;

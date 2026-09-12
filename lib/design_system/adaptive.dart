@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../core/platform/platform_info.dart';
 import 'spacing.dart';
+import 'theme.dart';
 import 'tokens.dart';
 
 /// SPEC Part B.4 — one visual language, two chromes.
@@ -29,6 +30,42 @@ class AdaptiveScope extends InheritedWidget {
 }
 
 bool _ios(BuildContext c) => AdaptiveScope.of(c).isIOS;
+
+/// Puts a subtree on the Part B ground: the dark theme, the platform
+/// scope, and the deep surface behind it.
+///
+/// **A pushed route is a sibling of the widget that pushed it, not a
+/// descendant.** A screen reached by `Navigator.push` therefore inherits
+/// the ambient `MaterialApp.theme`, not the theme of the screen it was
+/// pushed from — so any screen that can be pushed wraps itself in this
+/// rather than borrowing its parent's. Nesting is harmless: the inner one
+/// simply re-applies what is already there.
+///
+/// It deliberately does *not* add a `SafeArea`. Insets belong to the
+/// screen, and a second one here would double the padding on anything
+/// already inside one.
+class Backlit extends StatelessWidget {
+  const Backlit({super.key, required this.child, this.tokens, this.platform});
+
+  final Widget child;
+  final TorqueTokens? tokens;
+
+  /// Defaults to whatever scope is already in context, so a test's
+  /// [FakePlatform] survives a push.
+  final PlatformInfo? platform;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = tokens ?? TorqueTokens.dark;
+    return Theme(
+      data: torqueTheme(tokens: t),
+      child: AdaptiveScope(
+        platform: platform ?? AdaptiveScope.of(context),
+        child: ColoredBox(color: t.surfaceDeep, child: child),
+      ),
+    );
+  }
+}
 
 class AdaptiveSwitch extends StatelessWidget {
   const AdaptiveSwitch({

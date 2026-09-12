@@ -153,9 +153,13 @@ class _ClearCodesSheetState extends State<ClearCodesSheet> {
             children: [
               const AdaptiveLoading(size: 16),
               const SizedBox(width: Space.x12),
-              Text(
-                'Checking the car is stopped…',
-                style: TorqueType.body.copyWith(color: t.inkSecondary),
+              // Flexible, or the sentence runs off the edge rather than
+              // wrapping at text scale 2.0 (B.8).
+              Expanded(
+                child: Text(
+                  'Checking the car is stopped…',
+                  style: TorqueType.body.copyWith(color: t.inkSecondary),
+                ),
               ),
             ],
           ),
@@ -190,9 +194,13 @@ class _ClearCodesSheetState extends State<ClearCodesSheet> {
             children: [
               const AdaptiveLoading(size: 16),
               const SizedBox(width: Space.x12),
-              Text(
-                'Clearing, then reading the codes back…',
-                style: TorqueType.body.copyWith(color: t.inkSecondary),
+              // Flexible, or the sentence runs off the edge rather than
+              // wrapping at text scale 2.0 (B.8).
+              Expanded(
+                child: Text(
+                  'Clearing, then reading the codes back…',
+                  style: TorqueType.body.copyWith(color: t.inkSecondary),
+                ),
               ),
             ],
           ),

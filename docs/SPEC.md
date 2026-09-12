@@ -1186,6 +1186,47 @@ health score takes and nothing yet supplies, and freeze-frame capture
 (§4.5) is not read before a clear — the sheet says the data is erased, it
 does not offer to keep it.
 
+### What the adversarial review found (2026-09-12)
+
+Six lenses looked for defects, three independent refuters tried to kill
+each finding, and what survived was real. Every one now has a test that
+fails without its fix.
+
+- **★ The screen denied the codes listed directly under it.** Making
+  `cleared` mean "no stored and no pending" was right, and the sheet was
+  updated for it — the *screen's* outcome line was not, so it read "the
+  re-read came back empty" with the surviving permanent code one row
+  below. The same class of misreport this slice set out to fix, left in
+  the second widget.
+- **★ `reconcile()` swapped the codes and left the old score beside them.**
+  Three call sites each had to do the same four things — install the
+  result, load definitions, stamp the time, recompute the score — and one
+  of them did three. There is now one `_install` path, which is the actual
+  fix; the drift was the defect.
+- **★ The clear sheet overflowed at text scale 2.0.** Both progress lines
+  were a bare `Text` in a `Row` with no `Expanded`, so they ran off the
+  edge instead of wrapping — 155 px at 320 pt, which is an iPhone with
+  Display Zoom on. Every other row in the file wrapped correctly; these
+  two were missed.
+- **★ A pushed route does not inherit the theme of the screen that pushed
+  it.** It is a *sibling*, so the code-detail page opened with the old
+  light Industry nav bar sitting on the Part B body. `Backlit` is now a
+  design-system widget and any pushable screen carries its own ground.
+  The existing tests could not catch this because they mount the screen
+  under their own `MaterialApp(theme: torqueTheme())`, which the app does
+  not.
+- **A finished clear's verdict survived every later scan.** `_lastClear`
+  was never reset, so "codes cleared" stood above a fresh reading it said
+  nothing about.
+- **A scan outliving its link could merge two conversations.** Five round
+  trips is long enough for a drop and a reconnect to land inside one.
+  Every step is now pinned to the generation it started on and reports the
+  modes as unanswered instead — which is what they are. `readPidOnce` is
+  pinned too, so a late reply cannot put another car's number on a tile.
+
+The `truthfulness` lens died to repeated agent stalls and was re-run
+separately.
+
 # PART C — BUILD ORDER
 
 ```

@@ -734,10 +734,24 @@ class ObdSession extends ChangeNotifier {
     }
 
     final failed = <String>{};
+    // A scan is five round trips long; a link can drop and a reconnect can
+    // land inside one. Every step is pinned to the connection it started
+    // on, so a reply from a *different* session is never folded into this
+    // result — the modes are reported as unanswered instead, which is what
+    // they are.
+    final gen = _generation;
 
     Future<List<RawDtc>> read(String mode, DtcMode kind) async {
+      if (gen != _generation) {
+        failed.add(mode);
+        return const [];
+      }
       onStep?.call(mode);
       final r = await elm.send(mode, timeout: ElmSession.slowTimeout);
+      if (gen != _generation) {
+        failed.add(mode);
+        return const [];
+      }
       if (r.isOk) {
         return DtcDecoder.decode(r.frames, kind, headerChars: _headerChars);
       }
@@ -756,12 +770,17 @@ class ObdSession extends ChangeNotifier {
         ? await read('0A', DtcMode.permanent)
         : const <RawDtc>[];
 
-    onStep?.call('0101');
-    final summary = await elm.send('0101', timeout: ElmSession.slowTimeout);
-    final readiness = summary.isOk
-        ? ReadinessDecoder.decode(_payload(summary))
-        : null;
-    if (readiness == null) failed.add('0101');
+    ReadinessReport? readiness;
+    if (gen != _generation) {
+      failed.add('0101');
+    } else {
+      onStep?.call('0101');
+      final summary = await elm.send('0101', timeout: ElmSession.slowTimeout);
+      readiness = gen != _generation || !summary.isOk
+          ? null
+          : ReadinessDecoder.decode(_payload(summary));
+      if (readiness == null) failed.add('0101');
+    }
 
     return DtcReadResult(
       stored: stored,
@@ -874,8 +893,11 @@ class ObdSession extends ChangeNotifier {
   Future<double?> readPidOnce(String pid) async {
     final elm = _elm;
     if (elm == null) return null;
+    final gen = _generation;
     final r = await elm.send(pid);
-    if (!r.isOk) return null;
+    // A reply that arrived after the link was replaced belongs to the old
+    // connection. Publishing it would put another car's number on a tile.
+    if (gen != _generation || !r.isOk) return null;
     final value = PidRegistry.decodeResponse(pid, _payload(r));
     bus.publish(PidSample(pid: pid, value: value, at: DateTime.now()));
     return value;
