@@ -1241,10 +1241,92 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 3 done 2026-09-10 — Connect + discovery, see §B.13
          ◐ slice 4 done 2026-09-10 — wired into the app + Demo Mode, see §B.14
          ◐ slice 5 done 2026-09-11 — Diagnostics + the clear, see §B.15
+         ◐ slice 6 done 2026-09-12 — Garage + §9.6 identity, see §B.16
 Phase 7  Android FGS, OEM battery helper, permission matrix.
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.
 Phase 9  Demo Mode. Required for store review, not optional.
 ```
+
+## B.16 Garage (Phase 6, slice 6 — 2026-09-12)
+
+The vehicles, on the Part B system and the Drift repositories, with the one
+thing every other record needs: a `vehicleId`.
+
+**What was built.** `lib/features/garage/`: `GarageController` (the list,
+exactly one primary, delete that takes the trip *files* with it because the
+row cascade cannot reach disk), `GarageScreen` (the primary as a card,
+the others as rows, the free-tier gate on a second vehicle), the
+`VehicleFormScreen` (§9.8 for everything typed — name ≤ 40, year bounded,
+odometer 0–2,000,000 km with comma-decimal parsing, VIN refused with the
+reason or allowed flagged), `DtcHistoryScreen` (every §9.5 snapshot as what
+it was), and `Distance` — kilometres on disk, the user's unit on screen,
+nothing else converts. The Drift repositories for services and trips are now
+provided at the root, and `main()` resolves the documents directory for trip
+files.
+
+**§9.6 — two vehicles, one adapter.** `resolveIdentity` is a pure function
+of (what the car said, the primary, the garage) with five outcomes: no VIN
+(pre-2008; the primary stands, nothing blocks), the primary's own, *attached*
+(the primary had none on record — not a mismatch), *another vehicle's* (prompt,
+named), and *unknown* (prompt; offered as a new vehicle with the VIN filled
+in). `GarageController.onConnected` runs on the live edge only, re-reads once
+on a failed check digit, and on the two prompting outcomes leaves the verdict
+*pending*. While it is pending `LiveSession` sets the diagnostics vehicle to
+null, so a scan in that window is not recorded under the wrong car — which is
+what "prompt before recording" means in code. `IdentityPromptHost` sits above
+the tab stack and asks with a sheet that cannot be swiped away, because there
+is no safe default to fall back to. The §4.2 connection cache (protocol,
+supported PIDs) is written on the vehicle only once the car's identity is
+settled.
+
+**Two fixtures, both on a real CAN wire with headers:** `vin_reread` (the last
+character arrives as `7` — one dropped bit — and the second read is clean) and
+`vin_corrupt` (every read the same; stored flagged, compared as read, never
+decoded). Both derived from `headers_can`.
+
+**The health score's −5 per overdue reminder** now has a source. The Garage
+counts reminders past their date or their odometer (paused and completed
+excluded), and Diagnostics asks it at scan time. When there is no vehicle to
+ask about, the input is `null` — a *gap* in the breakdown ("Service reminders
+— no vehicle selected"), not a zero. The same rule as every other input.
+
+**Waiting for the first read.** A connect can land before the garage's first
+row does, and judging a VIN against an empty list would call every car a
+stranger. `onConnected` awaits `GarageController.ready` — a test connects
+first and constructs the controller second to prove it.
+
+**Deferred to their own slices:** the maintenance log, reminders, fuel log
+(economy between full fill-ups only), trip recordings and reports. The
+screen has a `GarageLinks` slot for each and offers none until they exist;
+the older Industry versions of those screens are not linked, because a light
+Industry page under a Part B card is the wrong thing to ship for the sake of
+a row. Vehicle photos and the free-tier cap on *records* (§7.2) also wait.
+
+**What the tests found before the app ran.** The identity sheet handed off
+to the vehicle form and the host, seeing the question still open, put the
+sheet straight back up *on top of the form*. The host now owns the whole
+hand-off inside one guard. And "Switch to The Civic" left the last verdict
+saying *other*, so the card never showed the car as connected; answering now
+settles the verdict.
+
+**What running it found that the tests had not.**
+- The card said a VIN "failed its check digit **twice**" — the re-read story
+  for a VIN read from the car, shown for one that was typed. The card
+  cannot tell which, so it no longer claims a re-read.
+- "Petrol" twice: the subtitle fell back to the fuel when make, model and
+  year were empty, and the list has a Fuel row. No subtitle now.
+- The §9.6 sheet's "Add it as a new vehicle" walked round the one-vehicle
+  free plan that the garage's own button enforces. Same door, same lock:
+  on the free plan the sheet names Pro and offers only the other answer.
+- **"0 scans" after a scan.** The count was memoised on (vehicle, odometer,
+  list length) and the Garage never leaves the tab stack, so it showed the
+  number it read on first build for ever. The controller now watches the
+  snapshot and reminder streams for the primary and bumps a `revision`;
+  the screen re-reads when it moves. The subscriptions live on the
+  controller, not the widget, because drift schedules a `Timer.run` on
+  cancel and a widget-lifetime cancel fails `testWidgets`' pending-timer
+  invariant — which is how the first attempt at this fix broke a passing
+  test.
 
 ## HARD RULES
 

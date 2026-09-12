@@ -55,7 +55,7 @@ class DiagnosticsController extends ChangeNotifier {
     this.dictionary = const EmptyDtcDictionary(),
     this.dtcs,
     String? vehicleId,
-    this.overdueReminders = 0,
+    this.countOverdue,
   }) {
     _vehicleId = vehicleId;
   }
@@ -80,8 +80,11 @@ class DiagnosticsController extends ChangeNotifier {
     _notify();
   }
 
-  /// Counted by the Garage; feeds the −5 each in the health breakdown.
-  final int overdueReminders;
+  /// Asked at scan time for the −5 per overdue reminder in the health
+  /// breakdown. The Garage supplies it. Null means there is no garage to
+  /// ask, and the breakdown then says reminders were not checked rather
+  /// than counting zero.
+  final Future<int> Function(String vehicleId)? countOverdue;
 
   /// PIDs the health score wants that the Dashboard may not be polling.
   static const _healthPids = ['0105', '0106', '0107', '0142'];
@@ -225,6 +228,11 @@ class DiagnosticsController extends ChangeNotifier {
     // ECU's control-module voltage and plenty of cars do not answer it.
     final volts = await session.readBatteryVolts() ?? live['0142'];
 
+    final vehicle = _vehicleId;
+    final overdue = vehicle != null && countOverdue != null
+        ? await countOverdue!(vehicle)
+        : null;
+
     _scannedAt = DateTime.now();
     _health = HealthScore.compute(
       stored: result.stored,
@@ -238,7 +246,7 @@ class DiagnosticsController extends ChangeNotifier {
       batteryVolts: volts,
       coolantC: live['0105'],
       fuelTrims: [live['0106'], live['0107']],
-      overdueReminders: overdueReminders,
+      overdueReminders: overdue,
       failedModes: result.failedModes,
     );
     _notify();

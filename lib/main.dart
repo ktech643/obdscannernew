@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'app.dart';
 import 'data/db/open.dart';
@@ -21,10 +22,13 @@ Future<void> main() async {
   // rather than lazily because §9.5's reconciliation — a clear the app
   // died in the middle of — has to be answerable on the first frame.
   final db = openAppDatabase();
+  // Trip files and, later, attachments go on disk under the app's own
+  // documents directory — never as blobs in the database (Part 6).
+  final docsDir = await getApplicationDocumentsDirectory();
   // RevenueCat configures before runApp so a purchase that completed while
   // the app was dead reconciles on the first frame (SPEC §7.5). No-op when
   // the SDK keys are absent.
   final billing = RevenueCatService();
   await billing.configure();
-  runApp(TorqueApp(store: store, billing: billing, db: db));
+  runApp(TorqueApp(store: store, billing: billing, db: db, docsDir: docsDir));
 }

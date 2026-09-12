@@ -873,6 +873,7 @@ void main() {
         batteryVolts: 12.6,
         coolantC: 90,
         fuelTrims: const [1.5],
+        overdueReminders: 0,
       );
       expect(s.value, 100);
       expect(s.deductions, isEmpty);
@@ -948,6 +949,11 @@ void main() {
         s.notMeasured.any((g) => g.startsWith('Battery voltage')),
         isTrue,
         reason: 'an unread battery must not read as a healthy one',
+      );
+      expect(
+        s.notMeasured,
+        contains('Service reminders — no vehicle selected'),
+        reason: 'no garage to ask is not the same as none overdue',
       );
     });
   });

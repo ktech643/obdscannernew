@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'data/db/app_database.dart';
 import 'data/repositories/dtc_repository.dart';
+import 'data/repositories/service_repository.dart';
+import 'data/repositories/trip_repository.dart';
 import 'data/repositories/vehicle_repository.dart';
 import 'monetization/revenuecat_service.dart';
 import 'providers/app_providers.dart';
@@ -12,7 +16,6 @@ import 'providers/dashboard_provider.dart';
 import 'providers/diagnostics_provider.dart';
 import 'providers/garage_provider.dart';
 import 'features/live_tabs.dart';
-import 'screens/garage/garage_screen.dart';
 import 'screens/onboarding/onboarding_flow.dart';
 import 'screens/settings/settings_screen.dart';
 import 'theme/tokens.dart';
@@ -27,6 +30,7 @@ class TorqueApp extends StatelessWidget {
     required this.store,
     required this.billing,
     required this.db,
+    required this.docsDir,
   });
 
   /// Opened before the first frame so every provider can restore its state in
@@ -39,6 +43,10 @@ class TorqueApp extends StatelessWidget {
 
   /// Opened in main(); the repositories below are thin wrappers over it.
   final AppDatabase db;
+
+  /// Where trip files (and later attachments) live — never in the
+  /// database (Part 6).
+  final Directory docsDir;
 
   @override
   Widget build(BuildContext context) => MultiProvider(
@@ -59,10 +67,16 @@ class TorqueApp extends StatelessWidget {
       Provider<AppDatabase>.value(value: db),
       Provider<DtcRepository>(create: (_) => DtcRepository(db)),
       Provider<VehicleRepository>(create: (_) => VehicleRepository(db)),
+      Provider<ServiceRepository>(create: (_) => ServiceRepository(db)),
+      Provider<TripRepository>(
+        create: (_) => TripRepository(db, TripFiles(docsDir)),
+      ),
       ChangeNotifierProvider(
         create: (c) => LiveSession(
           dtcs: c.read<DtcRepository>(),
           vehicles: c.read<VehicleRepository>(),
+          services: c.read<ServiceRepository>(),
+          trips: c.read<TripRepository>(),
         ),
       ),
     ],
@@ -118,7 +132,7 @@ class _AppShellState extends State<AppShell> {
     LiveConnectTab(onConnected: () => _select(1)),
     LiveDashboardTab(onConnect: () => _select(0)),
     LiveDiagnosticsTab(onConnect: () => _select(0)),
-    const GarageScreen(),
+    LiveGarageTab(onConnect: () => _select(0)),
     const SettingsScreen(),
   ];
 
@@ -144,19 +158,21 @@ class _AppShellState extends State<AppShell> {
       child: Column(
         children: [
           Expanded(
-            child: IndexedStack(
-              index: _tab,
-              children: [
-                for (var i = 0; i < _tabs.length; i++)
-                  Navigator(
-                    key: _navKeys[i],
-                    onGenerateRoute: (settings) => PageRouteBuilder(
-                      settings: settings,
-                      pageBuilder: (_, _, _) => _tabs[i],
-                      transitionsBuilder: _slide,
+            child: LiveIdentityPrompt(
+              child: IndexedStack(
+                index: _tab,
+                children: [
+                  for (var i = 0; i < _tabs.length; i++)
+                    Navigator(
+                      key: _navKeys[i],
+                      onGenerateRoute: (settings) => PageRouteBuilder(
+                        settings: settings,
+                        pageBuilder: (_, _, _) => _tabs[i],
+                        transitionsBuilder: _slide,
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           // Tab change is 0 ms — no transition. In a diagnostic tool a

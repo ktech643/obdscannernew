@@ -1,0 +1,62 @@
+# torque.obdtrace v1
+# vehicle: 2015 Mazda 3 2.0 petrol
+# adapter: OBDLink MX+
+# protocol: 6 (ISO 15765-4 CAN 11/500)
+# notes: Headers ON, as ATH1 actually produces. Every reply below
+# notes: carries a 3-character 7E8 header — an odd count, which is
+# notes: what breaks byte-pairing if it is not stripped.
+# notes: Derived from headers_can. The VIN's last character arrives as
+# notes: '7' instead of '6' — one dropped bit on a cheap clone — which
+# notes: leaves 17 legal characters whose ISO 3779 check digit no longer
+# notes: matches. SPEC 9.6: re-read once.
+# notes: The second read is clean.
+T+0000  > ATZ
+T+0980  < ELM327 v1.5\r\r>
+T+1010  > ATE0
+T+1045  < OK\r\r>
+T+1075  > ATL0
+T+1110  < OK\r\r>
+T+1140  > ATS0
+T+1175  < OK\r\r>
+T+1205  > ATH1
+T+1240  < OK\r\r>
+T+1270  > ATSP0
+T+1305  < OK\r\r>
+T+1335  > 0100
+T+3135  < SEARCHING...\r7E8 06 41 00 BE 3F A8 13\r\r>
+T+3165  > ATRV
+T+3205  < 13.7V\r\r>
+T+3235  > ATDPN
+T+3265  < A6\r\r>
+T+3295  > ATI
+T+3325  < ELM327 v1.5\r\r>
+T+3355  > 0120
+T+3450  < 7E8 06 41 20 90 07 E0 11\r\r>
+T+3480  > 0140
+T+3575  < 7E8 06 41 40 FA DC 80 00\r\r>
+T+3605  > 0160
+T+3700  < 7E8 06 41 60 00 00 00 00\r\r>
+T+3730  > 010C
+T+3818  < 7E8 04 41 0C 1A F8\r\r>
+T+3848  > 010D
+T+3932  < 7E8 03 41 0D 44\r\r>
+T+3962  > 0105
+T+4052  < 7E8 03 41 05 81\r\r>
+T+4082  > 0104
+T+4168  < 7E8 03 41 04 57\r\r>
+T+4198  > 0111
+T+4283  < 7E8 03 41 11 1F\r\r>
+T+4313  > 0142
+T+4404  < 7E8 04 41 42 37 72\r\r>
+T+4434  > 0101
+T+4524  < 7E8 06 41 01 82 07 65 05\r\r>
+T+4554  > 03
+T+4674  < 7E8 06 43 02 03 01 04 20\r\r>
+T+4704  > 07
+T+4804  < 7E8 02 47 00\r\r>
+T+4834  > 0A
+T+4934  < 7E8 02 4A 00\r\r>
+T+4964  > 0902
+T+5124  < 7E8 10 14 49 02 01 31 48 47\r7E8 21 42 48 34 31 4A 58 4D\r7E8 22 4E 31 30 39 31 38 37\r\r>
+T+5154  > 0902
+T+5314  < 7E8 10 14 49 02 01 31 48 47\r7E8 21 42 48 34 31 4A 58 4D\r7E8 22 4E 31 30 39 31 38 36\r\r>

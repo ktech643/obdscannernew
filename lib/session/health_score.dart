@@ -81,7 +81,7 @@ class HealthScore {
     double? batteryVolts,
     double? coolantC,
     List<double?> fuelTrims = const [],
-    int overdueReminders = 0,
+    int? overdueReminders,
     Set<String> failedModes = const {},
   }) {
     final out = <HealthDeduction>[];
@@ -121,10 +121,7 @@ class HealthScore {
       gaps.add('Battery voltage — not read');
     } else if (batteryVolts < lowBatteryVolts) {
       out.add(
-        HealthDeduction(
-          'Battery at ${batteryVolts.toStringAsFixed(1)} V',
-          10,
-        ),
+        HealthDeduction('Battery at ${batteryVolts.toStringAsFixed(1)} V', 10),
       );
     }
 
@@ -156,7 +153,11 @@ class HealthScore {
       );
     }
 
-    if (overdueReminders > 0) {
+    // Null is "nobody asked" — no vehicle is selected, so there is no
+    // reminder list to check. That is a gap in the score, not a zero.
+    if (overdueReminders == null) {
+      gaps.add('Service reminders — no vehicle selected');
+    } else if (overdueReminders > 0) {
       out.add(
         HealthDeduction(
           overdueReminders == 1
