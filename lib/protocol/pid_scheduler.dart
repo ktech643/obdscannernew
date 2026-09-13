@@ -13,6 +13,20 @@ class PidScheduler {
   int _targetHz;
   int get targetHz => _targetHz;
 
+  int? _maxHz;
+
+  /// SPEC §5.6 "Polling rate" — a ceiling the user chose, or null for
+  /// Auto. The adaptive rate never rises above it and never needs to be
+  /// asked to fall below it; the adaptation still runs underneath, so a
+  /// slow adapter on a 4 Hz ceiling still drops to 2 Hz and says so.
+  int? get maxHz => _maxHz;
+  set maxHz(int? hz) {
+    _maxHz = hz?.clamp(1, 10);
+    _targetHz = _capped(_targetHz);
+  }
+
+  int _capped(int hz) => _maxHz == null ? hz : hz.clamp(1, _maxHz!);
+
   Duration get cycleBudget =>
       Duration(milliseconds: (1000 / _targetHz).round());
 
@@ -119,11 +133,11 @@ class PidScheduler {
   void recordP95Rtt(int? p95Ms) {
     if (p95Ms == null || p95Ms <= 0) return;
     if (p95Ms > 600) {
-      _targetHz = 2;
+      _targetHz = _capped(2);
     } else if (p95Ms > 250) {
-      _targetHz = 5;
+      _targetHz = _capped(5);
     } else {
-      _targetHz = 10;
+      _targetHz = _capped(10);
     }
     _maxPidsPerCycle = (cycleBudget.inMilliseconds / p95Ms).floor().clamp(
       1,
@@ -134,13 +148,15 @@ class PidScheduler {
   /// The adapter's own buffer overflowed. Halve the rate immediately — this
   /// is not negotiable, the adapter is already dropping data.
   void onBufferFull() {
-    _targetHz = (_targetHz / 2).ceil().clamp(1, 10);
+    _targetHz = _capped((_targetHz / 2).ceil().clamp(1, 10));
     _maxPidsPerCycle = (_maxPidsPerCycle / 2).ceil().clamp(1, 12);
   }
 
   /// Ramp back gently once the adapter recovers.
   void relax() {
-    if (_targetHz < 10) _targetHz = (_targetHz * 1.1).ceil().clamp(1, 10);
+    if (_targetHz < 10) {
+      _targetHz = _capped((_targetHz * 1.1).ceil().clamp(1, 10));
+    }
   }
 
   void recordNoData(String pid) {
@@ -163,7 +179,7 @@ class PidScheduler {
     _rotation = 0;
     _noDataStreak.clear();
     _dropped.clear();
-    _targetHz = 10;
+    _targetHz = _capped(10); // the ceiling is the user's, and survives
     _maxPidsPerCycle = 6;
   }
 }

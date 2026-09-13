@@ -10,6 +10,7 @@ import '../data/repositories/service_repository.dart';
 import '../data/repositories/trip_repository.dart';
 import '../data/repositories/vehicle_repository.dart';
 import '../design_system/design_system.dart';
+import '../protocol/protocol_log.dart';
 import '../providers/app_providers.dart';
 import '../session/adapter_discovery.dart';
 import '../session/obd_session.dart';
@@ -36,8 +37,12 @@ class LiveSession extends ChangeNotifier {
     VehicleRepository? vehicles,
     ServiceRepository? services,
     TripRepository? trips,
-  }) : session = session ?? ObdSession(dtcs: dtcs),
+  }) : log = ProtocolLog(),
        _discovery = discovery ?? RealAdapterDiscovery() {
+    // Built in the body, not the initializer list, so it can pass this
+    // session's own `log` — a field can't see a sibling field yet while
+    // the initializer list is still running.
+    this.session = session ?? ObdSession(dtcs: dtcs, log: log);
     garage = vehicles == null
         ? null
         : GarageController(
@@ -56,7 +61,14 @@ class LiveSession extends ChangeNotifier {
     this.session.addListener(_onSession);
   }
 
-  final ObdSession session;
+  late final ObdSession session;
+
+  /// SPEC §10.4 — every command and reply this session's `ObdSession` has
+  /// sent over the wire. Fed automatically; nothing here is generated.
+  /// The screen that shows it is still the old Settings stack's fake one
+  /// (see `docs/SPEC.md` §B.17) — this just makes sure the real data is
+  /// there and waiting for it.
+  final ProtocolLog log;
 
   /// One controller for the whole app, so a scan survives switching tabs
   /// and the §9.5 pending-clear check runs once rather than per rebuild.
@@ -92,6 +104,15 @@ class LiveSession extends ChangeNotifier {
     final live = session.isLive;
     if (live && !_wasLive) unawaited(garage?.onConnected(session));
     _wasLive = live;
+  }
+
+  /// SPEC §5.6 — the two connection settings that mean something to a live
+  /// link. Idempotent: [LiveSettingsSync] calls this every rebuild, so an
+  /// unchanged value is just a couple of field writes, not a resubscribe
+  /// or a reconnect.
+  void applySettings({required bool autoReconnect, int? maxPollingHz}) {
+    session.autoReconnect = autoReconnect;
+    session.scheduler.maxHz = maxPollingHz;
   }
 
   AdapterDiscovery _discovery;
@@ -255,4 +276,37 @@ class LiveIdentityPrompt extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Keeps the live link's behaviour in step with SPEC §5.6 Settings —
+/// auto-reconnect and the polling-rate ceiling — which the user still sets
+/// on the older Industry Settings screen. Wraps the whole tab stack next
+/// to [LiveIdentityPrompt], so a change reaches the session on the next
+/// frame no matter which tab is open, without the session needing to know
+/// `SettingsProvider` exists.
+class LiveSettingsSync extends StatelessWidget {
+  const LiveSettingsSync({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final live = context.watch<LiveSession>();
+    final settings = context.watch<SettingsProvider>();
+    live.applySettings(
+      autoReconnect: settings.autoReconnect,
+      maxPollingHz: _hzFor(settings.pollingRate),
+    );
+    return child;
+  }
+
+  /// [SettingsProvider.pollingRates] as a ceiling in Hz; "Auto" — the
+  /// default — is null, meaning no ceiling beyond what the adapter itself
+  /// can sustain.
+  static int? _hzFor(String rate) => switch (rate) {
+    '10 Hz' => 10,
+    '8 Hz' => 8,
+    '4 Hz' => 4,
+    '2 Hz' => 2,
+    _ => null,
+  };
 }

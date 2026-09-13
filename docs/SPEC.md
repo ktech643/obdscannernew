@@ -1242,9 +1242,10 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 4 done 2026-09-10 — wired into the app + Demo Mode, see §B.14
          ◐ slice 5 done 2026-09-11 — Diagnostics + the clear, see §B.15
          ◐ slice 6 done 2026-09-12 — Garage + §9.6 identity, see §B.16
-Phase 7  Android FGS, OEM battery helper, permission matrix.
-Phase 8  Monetisation — RevenueCat, all §7.5 cases.
-Phase 9  Demo Mode. Required for store review, not optional.
+         ◐ slice 7 done 2026-09-13 — connection settings wired, see §B.17
+Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
+Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
+Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
 ```
 
 ## B.16 Garage (Phase 6, slice 6 — 2026-09-12)
@@ -1327,6 +1328,71 @@ settles the verdict.
   cancel and a widget-lifetime cancel fails `testWidgets`' pending-timer
   invariant — which is how the first attempt at this fix broke a passing
   test.
+
+## B.17 Connection settings, wired (2026-09-13)
+
+§5.6 lists Polling rate, Auto-reconnect and Haptics as things the user can
+set. `SettingsProvider` has stored the first two since the app was built —
+but nothing downstream ever read them. A toggle that changes a preference
+and nothing else is worse than no toggle: it tells the user something
+happened.
+
+**What was built.**
+- `ObdSession.autoReconnect` (`lib/session/obd_session.dart`) — a plain
+  `bool`, default `true`. `_onLinkLost` checks it: off, a dropped link tears
+  down like a deliberate disconnect (tiles decay, the loop stops) and is
+  reported as `'Connection lost'` rather than silently retried; on, the
+  existing §9.2 ladder runs exactly as before.
+- `PidScheduler.maxHz` (`lib/protocol/pid_scheduler.dart`) — a ceiling the
+  adaptive rate never rises above, applied at every place the rate can
+  climb (`recordP95Rtt`, `relax`, `reset`) and at every place it can fall
+  (`onBufferFull`), so a user who chose "4 Hz" still sees the adapter drop
+  to 2 Hz and say so on a slow link — the ceiling caps the *rate*, it does
+  not disable the *adaptation*. Null (Auto) is the default and means no
+  ceiling beyond what the protocol itself allows (10 Hz).
+- `AdaptiveHaptics.enabled` (`lib/design_system/adaptive.dart`) — a static
+  switch every haptic call already goes through. §5.6 lists a Haptics
+  toggle; no such preference exists yet in `SettingsProvider`; and the
+  Settings screen itself is still the old Industry stack (Phase 6 slice 7,
+  not yet built). Wiring a real toggle to a screen that does not exist yet
+  would be inventing a UI. The switch is built, defaults to the app's
+  existing always-on behaviour, and is one line for that future slice to
+  connect.
+- `ProtocolLog` (`lib/protocol/protocol_log.dart`) — SPEC §10.4, "the last
+  500 protocol events... this is your entire support infrastructure." A
+  capped ring of real commands and replies, fed from inside `ElmSession`
+  (the one place both the write and the read already pass through), so
+  nothing upstream can forget to log something. `ElmSession.describe`
+  turns a reply into the value it decoded to (`ObdSession._describeReply`
+  supplies this — a PID's value, a VIN, or the status word for a failure);
+  never a guess, and a reply this cannot decode gets no description at
+  all. `render()` masks the VIN by default, in **both** the plain text and
+  its hex encoding: a Mode 09 reply carries the VIN as hex-encoded ASCII
+  split across ISO-TP frames, and a naive string-replace on the decoded
+  VIN would miss it there. `LiveSession.log` is now real and accumulating;
+  the visible screen is still the old one showing nine years of fake
+  static rows (`lib/screens/settings/diagnostics_log_screen.dart`) — that
+  rewrite is Settings' own slice, not this one.
+
+**The bridge.** None of the above widgets know `SettingsProvider` exists —
+the session layer has no Provider dependency, by design. `LiveSettingsSync`
+(`lib/features/live_tabs.dart`) is a small `StatelessWidget` that watches
+both `LiveSession` and `SettingsProvider` and calls
+`LiveSession.applySettings` on every rebuild; the calls are idempotent
+field writes, so re-applying an unchanged value costs nothing. It wraps the
+tab stack in `app.dart` next to `LiveIdentityPrompt`, so a change made on
+the Settings tab reaches the session on the very next frame no matter which
+tab is open.
+
+**Deferred, honestly:** the Haptics preference and its UI; rewiring the old
+diagnostics-log screen to `LiveSession.log`; Adapter prefs, Background &
+battery, Notifications, Data & privacy, Export/Delete/Restore, Manage
+subscription, Support and Legal — all of §5.6 not named above. Settings and
+Onboarding remain the one screen pair still fully on the Industry/Provider
+stack; this slice only made sure the two preferences that already existed
+were not silently inert.
+
+546 tests, analyzer clean.
 
 ## HARD RULES
 

@@ -158,20 +158,22 @@ class _AppShellState extends State<AppShell> {
       child: Column(
         children: [
           Expanded(
-            child: LiveIdentityPrompt(
-              child: IndexedStack(
-                index: _tab,
-                children: [
-                  for (var i = 0; i < _tabs.length; i++)
-                    Navigator(
-                      key: _navKeys[i],
-                      onGenerateRoute: (settings) => PageRouteBuilder(
-                        settings: settings,
-                        pageBuilder: (_, _, _) => _tabs[i],
-                        transitionsBuilder: _slide,
+            child: LiveSettingsSync(
+              child: LiveIdentityPrompt(
+                child: IndexedStack(
+                  index: _tab,
+                  children: [
+                    for (var i = 0; i < _tabs.length; i++)
+                      Navigator(
+                        key: _navKeys[i],
+                        onGenerateRoute: (settings) => PageRouteBuilder(
+                          settings: settings,
+                          pageBuilder: (_, _, _) => _tabs[i],
+                          transitionsBuilder: _slide,
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

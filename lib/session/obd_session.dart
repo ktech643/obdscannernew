@@ -10,6 +10,7 @@ import '../protocol/elm_session.dart';
 import '../protocol/isotp_reassembler.dart';
 import '../protocol/pid_registry.dart';
 import '../protocol/pid_scheduler.dart';
+import '../protocol/protocol_log.dart';
 import '../protocol/protocol_negotiator.dart';
 import '../protocol/readiness_decoder.dart';
 import '../protocol/response_parser.dart';
@@ -118,6 +119,7 @@ class ObdSession extends ChangeNotifier {
     DashboardClock? clock,
     PidScheduler? scheduler,
     this.dtcs,
+    this.log,
     this.timeScale = 1.0,
   }) : bus = bus ?? PidBus(),
        clock = clock ?? DashboardClock(),
@@ -135,6 +137,10 @@ class ObdSession extends ChangeNotifier {
   /// Where the §9.5 before/after-clear snapshots go. Null in tests that
   /// don't exercise clearing.
   final DtcRepository? dtcs;
+
+  /// SPEC §10.4 — the diagnostics log, fed by every `ElmSession` this
+  /// object opens. Null when nobody is keeping one.
+  final ProtocolLog? log;
 
   /// Compresses every internal delay, so a test can replay a whole session
   /// in milliseconds. 1.0 in the app.
@@ -249,7 +255,12 @@ class ObdSession extends ChangeNotifier {
       }
     });
 
-    final elm = _elm = ElmSession(transport, timeScale: timeScale);
+    final elm = _elm = ElmSession(
+      transport,
+      timeScale: timeScale,
+      log: log,
+      describe: _describeReply,
+    );
     _set(SessionState.handshaking);
     _startTicker();
 
@@ -392,6 +403,29 @@ class ObdSession extends ChangeNotifier {
       }
     }
     _headerChars = 0;
+  }
+
+  /// The log's parsed column: a PID reply as the value it decodes to, a
+  /// Mode 09 reply as the VIN, any failure as its status word. Never a
+  /// guess — a reply this cannot decode gets no description at all.
+  String? _describeReply(ElmResponse r) {
+    if (!r.isOk) return r.status.name;
+    final cmd = r.command.toUpperCase();
+    if (cmd == '0902') {
+      return VinReader.parse(r.frames, headerChars: _headerChars)?.vin;
+    }
+    if (cmd.length == 4 && cmd.startsWith('01')) {
+      final def = PidRegistry.lookup(cmd);
+      final v = def == null
+          ? null
+          : PidRegistry.decodeResponse(cmd, _payload(r));
+      if (def == null || v == null) return null;
+      final text = v == v.roundToDouble()
+          ? v.round().toString()
+          : v.toStringAsFixed(1);
+      return '${def.name} $text ${def.unit}'.trimRight();
+    }
+    return null;
   }
 
   List<int> _payload(ElmResponse r) =>
@@ -668,11 +702,29 @@ class ObdSession extends ChangeNotifier {
 
   // ------------------------------------------------------------- reconnect
 
+  /// SPEC §5.6 "Auto-reconnect". Off means a dropped link is reported and
+  /// left dropped: the state goes to `disconnected` with the reason and
+  /// the §9.2 ladder does not run — the user asked to decide for
+  /// themselves. On, which is the default, the ladder runs as §9.2 says.
+  bool autoReconnect = true;
+
   void _onLinkLost() {
     if (_state == SessionState.disconnected || _reconnecting) return;
+    if (!autoReconnect) {
+      unawaited(_dropLink());
+      return;
+    }
     _reconnecting = true;
     _set(SessionState.lost, error: 'Connection lost');
     unawaited(_reconnect(++_reconnectToken));
+  }
+
+  /// A drop with auto-reconnect off: tear down like a deliberate
+  /// disconnect — the tiles decay, the loop stops — but keep the reason,
+  /// so the banner says "lost", not "not connected".
+  Future<void> _dropLink() async {
+    await disconnect();
+    _set(SessionState.disconnected, error: 'Connection lost');
   }
 
   /// SPEC §9.2 — 0.5 / 1 / 2 / 4 / 8 s, then stop and let the user decide.

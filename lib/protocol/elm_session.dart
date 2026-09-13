@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import '../transport/obd_transport.dart';
+import 'protocol_log.dart';
 import 'response_parser.dart';
 
 /// The serial command queue.
@@ -12,11 +13,20 @@ import 'response_parser.dart';
 /// disaster in this category traces back to violating that, so the invariant is
 /// enforced here and asserted in tests rather than left to callers.
 class ElmSession {
-  ElmSession(this._transport, {this.timeScale = 1.0}) {
+  ElmSession(this._transport, {this.timeScale = 1.0, this.log, this.describe}) {
     _sub = _transport.inbound.listen(_onBytes);
   }
 
   final ObdTransport _transport;
+
+  /// SPEC §10.4 — every command written and every reply received, if
+  /// anyone is keeping them. This is the one place both pass through, so
+  /// it is the one place the log is fed; nothing upstream can forget to.
+  final ProtocolLog? log;
+
+  /// What a reply *meant*, for the log's parsed column. This class knows
+  /// statuses; the caller knows PIDs and VINs, so it supplies this.
+  final String? Function(ElmResponse response)? describe;
 
   /// Multiplies every timeout. 1.0 in production; a replayed trace at 100×
   /// speed passes 0.01 so a dead adapter times out in 50 ms, not 5 s.
@@ -83,6 +93,7 @@ class ElmSession {
     _active = next;
     _rx.clear();
     next.startedAt = DateTime.now();
+    log?.command(next.cmd, at: next.startedAt);
     _timeout = Timer(scaled(next.timeout), _onTimeout);
     _transport.write('${next.cmd}\r'.codeUnits);
   }
@@ -136,10 +147,20 @@ class ElmSession {
         ? ElmResponse(command: active.cmd, raw: raw, status: forced)
         : ResponseParser.parse(active.cmd, raw);
 
+    int? ms;
     if (forced == null && active.startedAt != null) {
-      final ms = DateTime.now().difference(active.startedAt!).inMilliseconds;
+      ms = DateTime.now().difference(active.startedAt!).inMilliseconds;
       _rtt.add(ms);
       if (_rtt.length > 20) _rtt.removeAt(0);
+    }
+
+    if (log != null) {
+      // A forced status (timeout, overflow) is a reply that did not arrive
+      // as one; whatever text did arrive is kept, and the status names it.
+      final parsed =
+          describe?.call(response) ??
+          (response.isOk ? null : response.status.name);
+      log!.reply(raw, parsed: parsed, latencyMs: ms);
     }
 
     if (!active.completer.isCompleted) active.completer.complete(response);
@@ -151,6 +172,10 @@ class ElmSession {
   void flush() {
     _timeout?.cancel();
     _timeout = null;
+    // The active command went on the wire and will never be answered; the
+    // queued ones never went out, so they were never logged as commands
+    // and get no reply line either.
+    if (_active != null) log?.reply('', parsed: 'link closed');
     final dropped = [?_active, ..._queue];
     _active = null;
     _queue.clear();

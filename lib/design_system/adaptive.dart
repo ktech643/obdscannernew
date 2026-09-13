@@ -118,9 +118,17 @@ ScrollPhysics adaptiveScrollPhysics(BuildContext context) => _ios(context)
 /// Haptics are a vocabulary: selection ticks, a fault thuds.
 class AdaptiveHaptics {
   AdaptiveHaptics._();
-  static Future<void> select() => HapticFeedback.selectionClick();
-  static Future<void> light() => HapticFeedback.lightImpact();
-  static Future<void> fault() => HapticFeedback.heavyImpact();
+
+  /// SPEC §5.6 "Haptics". Off means every call below is a no-op; the
+  /// callers do not check, so there is exactly one place to get it right.
+  static bool enabled = true;
+
+  static Future<void> select() =>
+      enabled ? HapticFeedback.selectionClick() : Future.value();
+  static Future<void> light() =>
+      enabled ? HapticFeedback.lightImpact() : Future.value();
+  static Future<void> fault() =>
+      enabled ? HapticFeedback.heavyImpact() : Future.value();
 }
 
 /// The top bar. Centred title and a chevron on iOS; leading title and an
