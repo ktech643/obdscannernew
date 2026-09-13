@@ -27,6 +27,16 @@ class PidScheduler {
 
   int _capped(int hz) => _maxHz == null ? hz : hz.clamp(1, _maxHz!);
 
+  /// Whether the rate has recovered as far as it currently *can* — the
+  /// literal 10 Hz when Auto, or the user's chosen ceiling otherwise.
+  ///
+  /// A caller latched into its own backoff (the session's BUFFER FULL
+  /// handling) has to clear that backoff against this, not against a
+  /// hardcoded 10: with a ceiling below 10 the rate can never reach
+  /// literal 10 again, and a check against that literal would leave the
+  /// backoff latched for the rest of the connection.
+  bool get hasRecovered => _targetHz >= (_maxHz ?? 10);
+
   Duration get cycleBudget =>
       Duration(milliseconds: (1000 / _targetHz).round());
 

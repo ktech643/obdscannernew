@@ -104,5 +104,35 @@ void main() {
       log.reply(mode09);
       expect(log.render(), contains('42 48 34 31 4A 58 4D'));
     });
+
+    test(
+      '★ a repeated substring cannot make an interior fragment reveal itself',
+      () {
+        // "HGB" occurs at index 1-3 (straddling the disclosed prefix, so a
+        // window ending there is correctly allowed a partial reveal) and
+        // again at index 6-8 (entirely inside the always-masked interior).
+        // Both spans hex-encode to the identical byte run "48 47 42" — an
+        // adversarial-review find: an earlier version let whichever window
+        // ran first stamp its replacement onto both occurrences, so a
+        // fragmented reply carrying only the interior "HGB" leaked two real
+        // VIN characters as "48 47 ••" instead of masking all three.
+        const repeatVin = '1HGBXXHGBMN109186';
+        expect(repeatVin.substring(1, 4), 'HGB');
+        expect(repeatVin.substring(6, 9), 'HGB');
+
+        // Exactly the isolated K-line-style fragment the class's own docs
+        // anticipate: a header/PCI byte, the three-character VIN fragment,
+        // a trailer byte — nothing else in the log to coincidentally match.
+        final text = ProtocolLog.maskVinIn(
+          '48 6B 10 49 02 03 48 47 42 F1',
+          repeatVin,
+        );
+        expect(
+          text,
+          contains('48 6B 10 49 02 03 •• •• •• F1'),
+          reason: 'the interior fragment is masked in full, not "48 47 ••"',
+        );
+      },
+    );
   });
 }

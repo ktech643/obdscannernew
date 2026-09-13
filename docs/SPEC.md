@@ -1394,6 +1394,39 @@ were not silently inert.
 
 546 tests, analyzer clean.
 
+**What the adversarial review found (2026-09-13).** A focused review of
+just this slice — three lenses, three refuters each — confirmed three real
+defects, none caught by the tests above.
+
+- ★ **Blocker.** `maskVinIn`'s hex masking computed a run's reveal/mask
+  pattern from *where in the VIN* it sat, then did a global text-replace
+  per window. Two different positions can hex-encode to the identical
+  byte run — any VIN with a repeated ≥3-character substring does this
+  whenever one copy sits next to the disclosed prefix or suffix and
+  another sits entirely in the masked interior — and a text-replace
+  cannot tell which physical occurrence it is looking at. On a fragmented
+  reply (a K-line frame can carry as few as three VIN characters between
+  its headers) whichever window ran first stamped its answer onto both,
+  and real interior digits survived in the rendered log. Fixed by
+  resolving every distinct hex-byte run's answer once, before touching any
+  text: if two positions that produce the same bytes disagree, the run is
+  masked in full rather than guessed at.
+- **Major.** The poll loop's BUFFER FULL backoff cleared on
+  `_scheduler.targetHz >= 10` literally. Under any ceiling below 10 the
+  rate can never reach literal 10 again, so a single transient overflow
+  left the backoff latched — and `maxPidsPerCycle` frozen at half its
+  normal value — for the rest of the connection, even though the rate
+  itself correctly climbed back to the user's ceiling. Fixed with
+  `PidScheduler.hasRecovered`, which compares against the ceiling that
+  actually applies rather than a hardcoded top.
+- **Minor.** Turning Auto-reconnect off while the §9.2 ladder was already
+  running changed nothing — the setting was only ever read at the moment
+  the link dropped. The ladder now checks it at both ends of every rung's
+  wait, so a mid-ladder toggle stops it within one rung rather than the
+  full remaining 0.5–8 s sequence.
+
+551 tests, analyzer clean.
+
 ## HARD RULES
 
 1. `lib/protocol/` imports nothing from `package:flutter`. Ever.

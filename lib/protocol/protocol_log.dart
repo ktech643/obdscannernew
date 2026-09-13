@@ -140,6 +140,25 @@ class ProtocolLog {
 
   /// `1HGBH41JXMN109186` → `1HG••••••••••9186`, applied to the plain text
   /// and to its hex encoding, spaced or unspaced, upper or lower case.
+  ///
+  /// A window that touches the disclosed prefix or suffix — the whole VIN,
+  /// or a fragment of it that happens to include those characters — is
+  /// allowed to keep just those; a window entirely inside the masked
+  /// interior is always fully masked.
+  ///
+  /// **Every distinct hex-byte run gets exactly one answer, decided
+  /// before any text is touched.** Different positions in the VIN can
+  /// hex-encode to the identical byte run — this happens whenever the VIN
+  /// has a repeated ≥3-character substring and one copy sits next to the
+  /// disclosed prefix or suffix while another sits entirely in the masked
+  /// interior — and a text-replace cannot tell which physical occurrence
+  /// it is looking at. An earlier version let whichever window's replace
+  /// ran first win, which on a fragmented reply (a K-line frame can carry
+  /// as few as three VIN characters between its headers) let real interior
+  /// digits survive. Fixed by resolving every run's answer in one map
+  /// first: if two positions that produce the same bytes disagree on the
+  /// answer, the ambiguous run is masked in full — over-masking a few
+  /// bytes is the side to be wrong on; a partial reveal is not.
   static String maskVinIn(String text, String vin) {
     if (vin.length < 8) return text;
     final masked =
@@ -149,33 +168,52 @@ class ProtocolLog {
 
     // The hex form: each character as two hex digits, optionally separated
     // by single spaces, and possibly split across ISO-TP frame boundaries
-    // where a header and PCI byte sit between fragments. Masking the
-    // *whole* VIN's hex run is enough for the unbroken case; fragments are
-    // masked character by character below, which also covers the whole.
+    // where a header and PCI byte sit between fragments.
     final hexChars = [
       for (final c in vin.codeUnits) c.toRadixString(16).padLeft(2, '0'),
     ];
-    // Mask every run of ≥ 3 consecutive VIN characters' hex bytes, longest
-    // first. Three, because a legacy 4-byte K-line frame can carry as few
-    // as three VIN characters between its headers; one or two would
-    // clobber unrelated bytes that merely share a value with a character.
-    // A false match on three is over-masking a log line, which is the
-    // right side to be wrong on.
-    for (var len = vin.length; len >= 3; len--) {
-      for (var start = 0; start + len <= vin.length; start++) {
-        if (start < 3 && start + len <= 3) continue; // the kept prefix
-        if (start >= vin.length - 4) continue; // the kept suffix
-        final run = hexChars.sublist(start, start + len);
-        final replacement = [
+    final n = vin.length;
+
+    // key: the exact hex bytes of a candidate run, joined with no
+    // separator — the run's identity, independent of how it is written in
+    // the text. value: the single settled reveal/mask pattern for it.
+    final settled = <String, List<String>>{};
+
+    bool sameAnswer(List<String> a, List<String> b) {
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (a[i] != b[i]) return false;
+      }
+      return true;
+    }
+
+    // Mask every run of ≥ 3 consecutive VIN characters' hex bytes. Three,
+    // because a legacy 4-byte K-line frame can carry as few as three VIN
+    // characters between its headers; one or two would clobber unrelated
+    // bytes that merely share a value with a character.
+    for (var len = n; len >= 3; len--) {
+      for (var start = 0; start + len <= n; start++) {
+        if (start < 3 && start + len <= 3) continue; // the kept prefix alone
+        if (start >= n - 4) continue; // the kept suffix alone
+        final key = hexChars.sublist(start, start + len).join();
+        final answer = [
           for (var i = 0; i < len; i++)
-            (start + i < 3 || start + i >= vin.length - 4) ? run[i] : '••',
+            (start + i < 3 || start + i >= n - 4) ? hexChars[start + i] : '••',
         ];
-        for (final sep in const [' ', '']) {
-          final needle = run.join(sep);
-          final repl = replacement.join(sep);
-          out = out.replaceAll(needle, repl);
-          out = out.replaceAll(needle.toUpperCase(), repl.toUpperCase());
-        }
+        final existing = settled[key];
+        settled[key] = existing == null || sameAnswer(existing, answer)
+            ? answer
+            : List.filled(len, '••'); // two positions disagree — mask both
+      }
+    }
+
+    for (final entry in settled.entries) {
+      final run = [for (var i = 0; i < entry.key.length; i += 2) entry.key.substring(i, i + 2)];
+      for (final sep in const [' ', '']) {
+        final needle = run.join(sep);
+        final repl = entry.value.join(sep);
+        out = out.replaceAll(needle, repl);
+        out = out.replaceAll(needle.toUpperCase(), repl.toUpperCase());
       }
     }
     return out;

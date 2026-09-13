@@ -635,7 +635,7 @@ class ObdSession extends ChangeNotifier {
               _scaled(const Duration(seconds: 30))) {
             _scheduler.relax();
             _lastRelax = now;
-            if (_scheduler.targetHz >= 10) _backedOff = false;
+            if (_scheduler.hasRecovered) _backedOff = false;
           }
         } else {
           _scheduler.recordP95Rtt(_elm!.p95Rtt);
@@ -746,10 +746,22 @@ class ObdSession extends ChangeNotifier {
     try {
       for (var i = 0; i < reconnectDelays.length; i++) {
         if (token != _reconnectToken) return;
+        // Checked at both ends of the wait: the user can turn this off
+        // while the banner is showing "reconnecting" and the ladder must
+        // not keep running "as if" it were still on, however long is left
+        // of the 0.5/1/2/4/8 s sequence.
+        if (!autoReconnect) {
+          await _dropLink();
+          return;
+        }
         _reconnectAttempt = i + 1;
         notifyListeners();
         await Future<void>.delayed(_scaled(reconnectDelays[i]));
         if (token != _reconnectToken) return;
+        if (!autoReconnect) {
+          await _dropLink();
+          return;
+        }
 
         // connect() bumps the generation itself, so the ladder cannot use
         // it to tell "my own attempt" from "someone else took over" — that
