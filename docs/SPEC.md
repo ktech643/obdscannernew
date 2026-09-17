@@ -1119,12 +1119,11 @@ invents a number; values hold steady once the recording runs out.
 - The adapter identity carried the ELM prompt (`ELM327 v1.5 >`), fixed in
   §B.13.
 
-**Still to do in Phase 6:** Diagnostics, Garage, Settings and Onboarding are
-still the older Industry design on the old providers, and the tab shell
-itself is still the old one. Editing the grid (drag reorder, change PID,
-swipe to remove) and the trip strip are deferred with them. BLE scanning is
-wired but unexercised — it needs hardware (§10.1), so on the simulator only
-the Wi-Fi endpoints appear.
+**Still to do in Phase 6:** The tab shell itself is still the older one, and
+the deferred UI pieces are editing the grid (drag reorder, change PID, swipe
+to remove), the full graph screen, and the trip strip. BLE scanning is wired but
+unexercised — it needs hardware (§10.1), so on the simulator only the Wi-Fi
+endpoints appear.
 
 ## B.15 Diagnostics (Phase 6, slice 5 — 2026-09-11)
 
@@ -1243,6 +1242,8 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 5 done 2026-09-11 — Diagnostics + the clear, see §B.15
          ◐ slice 6 done 2026-09-12 — Garage + §9.6 identity, see §B.16
          ◐ slice 7 done 2026-09-13 — connection settings wired, see §B.17
+         ◐ slice 8 done 2026-09-17 — Settings + diagnostics log on Part B, see §B.18
+         ◐ slice 9 done 2026-09-17 — Onboarding on Part B, see §B.19
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1464,6 +1465,43 @@ empty state, command/reply rendering, VIN masking, clear and clipboard copy.
 `test/features/live_settings_sync_test.dart` adds the haptics wiring case.
 
 561 tests, analyzer clean.
+
+## B.19 Onboarding on Part B (Phase 6, slice 9 — 2026-09-17)
+
+`lib/features/onboarding/onboarding_flow.dart` replaces the last main screen
+still on the Industry/Provider stack. The four frames — what Torque does, the
+adapter explainer, add your car, and the non-skippable safety acknowledgement —
+are rebuilt on the Part B design system and wrapped in `Backlit`.
+
+**What was built.**
+- A new `OnboardingFlow` under `lib/features/onboarding/` using `Backlit`,
+  `_Page`, `PrimaryButton`, `GhostButton`, `RaisedSurface`, and the design
+  system's typography and spacing tokens.
+- The adapter explainer keeps its platform branch: Android sees one "Works"
+  cell, iPhone sees "Works" (Bluetooth LE / Wi-Fi) and "Can't work"
+  (Bluetooth Classic) side by side, with the note that Classic is an Apple
+  platform rule.
+- The add-car screen now actually creates the primary vehicle through
+  `VehicleRepository.create` when a nickname is entered. Make, model, year and
+  odometer are optional; the unit toggle sets the odometer conversion. The
+  "I'll do this later" button advances without creating a vehicle.
+- The safety screen is non-skippable, disables the "Agree and continue" button
+  until the checkbox is checked, and calls `OnboardingProvider.finish()` to
+  flip `onboardingComplete`.
+- `app.dart` now uses the new `OnboardingFlow`; the old
+  `lib/screens/onboarding/onboarding_flow.dart` is deleted.
+
+**Deferred to their own slices:** the bundled adapter compatibility list that
+"Help me pick one" would open; the paywall, account and privacy sub-screens;
+and the tab shell itself.
+
+**What the tests cover.** `test/features/onboarding/onboarding_test.dart`
+proves the four screens advance correctly, Skip finishes, the iOS adapter
+limits are shown, the add-car form creates a primary vehicle, and the safety
+acknowledgement gate works. `test/widget_test.dart` was updated to
+`pumpAndSettle` through the new screen transition.
+
+566 tests, analyzer clean.
 
 ## HARD RULES
 

@@ -70,7 +70,7 @@ void main() {
       listen: false,
     );
     o.goTo(3);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Before you start'), findsOneWidget);
     expect(find.text('Agree and continue'), findsOneWidget);

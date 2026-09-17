@@ -16,7 +16,7 @@ import 'providers/dashboard_provider.dart';
 import 'providers/diagnostics_provider.dart';
 import 'providers/garage_provider.dart';
 import 'features/live_tabs.dart';
-import 'screens/onboarding/onboarding_flow.dart';
+import 'features/onboarding/onboarding_flow.dart';
 import 'theme/tokens.dart';
 import 'theme/typography.dart';
 import 'widgets/chrome.dart';
@@ -109,8 +109,12 @@ class _Root extends StatelessWidget {
   Widget build(BuildContext context) {
     final o = context.watch<OnboardingProvider>();
     if (o.complete) return const AppShell();
-    // Onboarding has no tab bar, so it takes the top inset itself.
-    return SafeArea(bottom: false, child: OnboardingFlow(onDone: () {}));
+    // Onboarding handles its own safe area and Backlit theme.
+    return const OnboardingFlow(onDone: _onboardingDone);
+  }
+
+  static void _onboardingDone() {
+    // The provider has already flipped onboardingComplete; nothing else to do.
   }
 }
 
