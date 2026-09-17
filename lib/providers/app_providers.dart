@@ -365,6 +365,7 @@ class SettingsProvider extends ChangeNotifier {
     _keepScreenOn = _store.getBool(Keys.keepScreenOn) ?? true;
     _personalisedAds = _store.getBool(Keys.personalisedAds) ?? false;
     _maskVin = _store.getBool(Keys.maskVin) ?? true;
+    _haptics = _store.getBool(Keys.haptics) ?? true;
   }
 
   final Persistence _store;
@@ -393,6 +394,9 @@ class SettingsProvider extends ChangeNotifier {
 
   late bool _maskVin;
   bool get maskVin => _maskVin;
+
+  late bool _haptics;
+  bool get haptics => _haptics;
 
   /// The choices offered by the polling-rate row. "Auto" lets the app drop
   /// the rate when the adapter is slow, which is the honest default.
@@ -452,6 +456,12 @@ class SettingsProvider extends ChangeNotifier {
   void setMaskVin(bool v) {
     _maskVin = v;
     _store.setBool(Keys.maskVin, v);
+    notifyListeners();
+  }
+
+  void setHaptics(bool v) {
+    _haptics = v;
+    _store.setBool(Keys.haptics, v);
     notifyListeners();
   }
 

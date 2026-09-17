@@ -93,6 +93,7 @@ class Keys {
   static const keepScreenOn = 'settings.keepScreenOn';
   static const personalisedAds = 'settings.personalisedAds';
   static const maskVin = 'settings.maskVin';
+  static const haptics = 'settings.haptics';
 
   static const entitlementTier = 'entitlement.tier';
 

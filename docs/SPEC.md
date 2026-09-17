@@ -1427,6 +1427,44 @@ defects, none caught by the tests above.
 
 551 tests, analyzer clean.
 
+## B.18 Settings screen, on Part B (Phase 6, slice 8 — 2026-09-17)
+
+`lib/features/settings/settings_screen.dart` replaces the last Industry/Provider
+screen still in the tab shell. The connection settings wired in slice 7 now have
+a UI that reads them back, and the diagnostics log is no longer nine years of
+fake static rows.
+
+**What was built.**
+- A new `SettingsScreen` under `lib/features/settings/` using the Part B design
+  system: `RaisedSurface`-style sections, `_LinkRow`, `_SwitchRow`, and sheet
+  radio rows. Units and polling rate open honest sheets instead of segmented
+  controls that hide options.
+- `Haptics` preference added to `SettingsProvider` (`Keys.haptics`) and wired
+  through `LiveSettingsSync` to `AdaptiveHaptics.enabled`. It defaults to on,
+  preserving existing behaviour, and is now one toggle away from off.
+- `DiagnosticsLogScreen` on the real `ProtocolLog` from `LiveSession.log`. It
+  renders commands and replies as they happened, masks the VIN in both plain
+  and hex form when `SettingsProvider.maskVin` is true and a primary vehicle
+  VIN is known, copies the rendered log to the clipboard, and clears with a
+  two-step destructive confirmation.
+- `LiveSettingsTab` wraps the new screen in `_Backlit` like the other Part B
+  tabs, and `app.dart` now uses it as the fifth tab. The old
+  `lib/screens/settings/settings_screen.dart` and its fake diagnostics log are
+  deleted.
+
+**Deferred to their own slices:** the paywall, account and privacy sub-screens
+are still the older Industry screens. They still work, but they are the next
+pieces to move. Demo Mode remains reachable from Connect (§11.1); it no longer
+lives in Settings.
+
+**What the tests cover.** `test/features/settings/settings_screen_test.dart`
+proves the title, sections, unit sheet, haptics toggle and diagnostics-log
+navigation. `test/features/settings/diagnostics_log_screen_test.dart` covers
+empty state, command/reply rendering, VIN masking, clear and clipboard copy.
+`test/features/live_settings_sync_test.dart` adds the haptics wiring case.
+
+561 tests, analyzer clean.
+
 ## HARD RULES
 
 1. `lib/protocol/` imports nothing from `package:flutter`. Ever.

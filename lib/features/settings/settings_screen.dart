@@ -1,0 +1,514 @@
+import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/widgets.dart';
+import 'package:provider/provider.dart';
+
+import '../../design_system/design_system.dart';
+import '../../models/enums.dart';
+import '../../providers/app_providers.dart';
+import '../../screens/account/account_screens.dart';
+import '../../screens/pro/paywall_screen.dart';
+import '../../screens/settings/privacy_screen.dart';
+import '../live_tabs.dart';
+import 'diagnostics_log_screen.dart';
+
+/// SPEC §5.6 — Settings on the Part B design system.
+///
+/// The rows that open sub-screens (paywall, account, privacy) still push
+/// the older Industry screens; they are the next slices. This screen only
+/// owns the settings that are entirely local.
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final settings = context.watch<SettingsProvider>();
+    final ent = context.watch<EntitlementProvider>();
+    final account = context.watch<AccountProvider>();
+    final live = context.watch<LiveSession>();
+
+    return ListView(
+      physics: adaptiveScrollPhysics(context),
+      padding: const EdgeInsets.only(bottom: Space.x48),
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Space.gutter,
+            Space.x24,
+            Space.gutter,
+            Space.x8,
+          ),
+          child: Text(
+            'Settings',
+            style: TorqueType.titleLg.copyWith(color: t.inkPrimary),
+          ),
+        ),
+        const _Section(title: 'Units'),
+        _LinkRow(
+          title: 'Distance',
+          value: settings.distance.label,
+          onTap: () => _pickDistance(context, settings),
+        ),
+        _LinkRow(
+          title: 'Temperature',
+          value: settings.temperature.label,
+          onTap: () => _pickTemperature(context, settings),
+        ),
+        const _Section(title: 'Connection'),
+        _LinkRow(
+          title: 'Polling rate',
+          value: settings.pollingRate,
+          onTap: () => _pickPollingRate(context, settings),
+        ),
+        _SwitchRow(
+          title: 'Auto-reconnect',
+          value: settings.autoReconnect,
+          onChanged: settings.setAutoReconnect,
+        ),
+        _SwitchRow(
+          title: 'Keep the screen on',
+          value: settings.keepScreenOn,
+          onChanged: settings.setKeepScreenOn,
+        ),
+        _SwitchRow(
+          title: 'Haptics',
+          value: settings.haptics,
+          onChanged: settings.setHaptics,
+        ),
+        const _Section(title: 'Subscription'),
+        _LinkRow(
+          title: ent.isPro ? 'Torque Pro' : 'Free with ads',
+          value:
+              ent.isPro
+                  ? 'Unlimited gauges · no ads'
+                  : '6 gauges · 1 vehicle · ads',
+        ),
+        if (!ent.isPro)
+          _LinkRow(
+            title: 'Remove ads',
+            onTap: () => _openPaywall(context),
+          ),
+        _LinkRow(
+          title: 'Restore purchases',
+          onTap: () => _restorePurchases(context, ent),
+        ),
+        if (ent.isPro)
+          _LinkRow(
+            title: 'Manage subscription',
+            onTap: ent.manageSubscription,
+          ),
+        const _Section(title: 'Account'),
+        _LinkRow(
+          title:
+              account.status == AccountStatus.signedOut
+                  ? 'Sign in'
+                  : account.displayName,
+          value:
+              account.status == AccountStatus.signedOut
+                  ? 'Optional'
+                  : account.email,
+          onTap: () => _openAccount(context, account),
+        ),
+        const _Section(title: 'Your data'),
+        _LinkRow(
+          title: 'Data & privacy',
+          onTap: () => _openPrivacy(context),
+        ),
+        _LinkRow(
+          title: 'Diagnostics log',
+          value: '${live.log.length} events',
+          onTap: () => _openDiagnosticsLog(context, live),
+        ),
+      ],
+    );
+  }
+
+  void _pickDistance(BuildContext context, SettingsProvider settings) =>
+      _showChoiceSheet(
+        context,
+        title: 'Distance',
+        options: [
+          for (final u in DistanceUnit.values) _Choice(label: u.label, value: u),
+        ],
+        selected: settings.distance,
+        onSelect: settings.setDistance,
+      );
+
+  void _pickTemperature(BuildContext context, SettingsProvider settings) =>
+      _showChoiceSheet(
+        context,
+        title: 'Temperature',
+        options: [
+          for (final u in TemperatureUnit.values)
+            _Choice(label: u.label, value: u),
+        ],
+        selected: settings.temperature,
+        onSelect: settings.setTemperature,
+      );
+
+  void _pickPollingRate(BuildContext context, SettingsProvider settings) =>
+      _showChoiceSheet(
+        context,
+        title: 'Polling rate',
+        options: [
+          for (final r in SettingsProvider.pollingRates)
+            _Choice(
+              label: r,
+              value: r,
+              subtitle:
+                  r == 'Auto'
+                      ? 'Drops the rate when the adapter falls behind'
+                      : null,
+            ),
+        ],
+        selected: settings.pollingRate,
+        onSelect: settings.setPollingRate,
+      );
+
+  void _openPaywall(BuildContext context) {
+    Navigator.of(
+      context,
+    ).push(PageRouteBuilder<void>(pageBuilder: (_, _, _) => const PaywallScreen()));
+  }
+
+  Future<void> _restorePurchases(
+    BuildContext context,
+    EntitlementProvider ent,
+  ) async {
+    final ok = await ent.restore();
+    if (!context.mounted) return;
+    await showAdaptiveAlert(
+      context,
+      title: ok ? 'Purchases restored' : 'Nothing to restore',
+      message:
+          ok
+              ? 'Your previous purchases are active again.'
+              : "We couldn't find any purchases to restore for this store account.",
+      actions: [
+        AdaptiveAlertAction(
+          label: 'OK',
+          onPressed: () {},
+          isDefault: true,
+        ),
+      ],
+    );
+  }
+
+  void _openAccount(BuildContext context, AccountProvider account) {
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        pageBuilder:
+            (_, _, _) =>
+                account.status == AccountStatus.signedOut
+                    ? const SignInScreen()
+                    : const ProfileScreen(),
+      ),
+    );
+  }
+
+  void _openPrivacy(BuildContext context) {
+    Navigator.of(
+      context,
+    ).push(PageRouteBuilder<void>(pageBuilder: (_, _, _) => const PrivacyScreen()));
+  }
+
+  void _openDiagnosticsLog(BuildContext context, LiveSession live) {
+    final vehicle = live.garage?.primary;
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        pageBuilder:
+            (_, _, _) => DiagnosticsLogScreen(
+              log: live.log,
+              vin: vehicle?.vin,
+            ),
+      ),
+    );
+  }
+}
+
+void _showChoiceSheet<T>(
+  BuildContext context, {
+  required String title,
+  required List<_Choice<T>> options,
+  required T selected,
+  required ValueChanged<T> onSelect,
+}) => showAdaptiveSheet<void>(
+  context,
+  builder:
+      (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+          Space.gutter,
+          Space.x16,
+          Space.gutter,
+          Space.x24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TorqueType.titleMd.copyWith(
+                color: sheetContext.tokens.inkPrimary,
+              ),
+            ),
+            const SizedBox(height: Space.x16),
+            for (final option in options)
+              _SheetRadioRow<T>(
+                value: option.value,
+                label: option.label,
+                subtitle: option.subtitle,
+                selected: selected,
+                onSelect: (v) {
+                  onSelect(v);
+                  Navigator.of(sheetContext).pop();
+                },
+              ),
+          ],
+        ),
+      ),
+);
+
+class _Choice<T> {
+  const _Choice({required this.label, required this.value, this.subtitle});
+  final String label;
+  final T value;
+  final String? subtitle;
+}
+
+class _Section extends StatelessWidget {
+  const _Section({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Space.gutter,
+        Space.x24,
+        Space.gutter,
+        Space.x8,
+      ),
+      child: Text(
+        title,
+        style: TorqueType.titleMd.copyWith(color: t.inkPrimary),
+      ),
+    );
+  }
+}
+
+class _LinkRow extends StatelessWidget {
+  const _LinkRow({
+    required this.title,
+    this.value,
+    this.onTap,
+  });
+
+  final String title;
+  final String? value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final enabled = onTap != null;
+    return Semantics(
+      button: enabled,
+      enabled: enabled,
+      onTap: onTap,
+      label: value == null ? title : '$title, $value',
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: Targets.min),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: t.hairline)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Space.gutter,
+                  vertical: Space.x12,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TorqueType.body.copyWith(
+                          color: enabled ? t.inkPrimary : t.inkTertiary,
+                        ),
+                      ),
+                    ),
+                    if (value != null) ...[
+                      const SizedBox(width: Space.x12),
+                      Flexible(
+                        child: Text(
+                          value!,
+                          textAlign: TextAlign.end,
+                          style: TorqueType.body.copyWith(
+                            color: t.inkSecondary,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (enabled) ...[
+                      const SizedBox(width: Space.x8),
+                      Icon(
+                        Icons.chevron_right,
+                        size: 20,
+                        color: t.inkTertiary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Semantics(
+      toggled: value,
+      label: title,
+      onTap: () => onChanged(!value),
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTap: () => onChanged(!value),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: Targets.min),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(bottom: BorderSide(color: t.hairline)),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Space.gutter,
+                  vertical: Space.x8,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TorqueType.body.copyWith(color: t.inkPrimary),
+                      ),
+                    ),
+                    const SizedBox(width: Space.x12),
+                    AdaptiveSwitch(
+                      value: value,
+                      onChanged: onChanged,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetRadioRow<T> extends StatelessWidget {
+  const _SheetRadioRow({
+    required this.value,
+    required this.label,
+    this.subtitle,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  final T value;
+  final String label;
+  final String? subtitle;
+  final T selected;
+  final ValueChanged<T> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final active = value == selected;
+    return Semantics(
+      selected: active,
+      button: true,
+      label: label,
+      onTap: () => onSelect(value),
+      child: ExcludeSemantics(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: true,
+          onTap: () => onSelect(value),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: Targets.min),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: Space.x12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Icon(
+                      active ? Icons.radio_button_checked : Icons.radio_button_off,
+                      size: 20,
+                      color: active ? t.tellAmber : t.inkTertiary,
+                    ),
+                  ),
+                  const SizedBox(width: Space.x12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          label,
+                          style: TorqueType.body.copyWith(
+                            color: t.inkPrimary,
+                            fontWeight:
+                                active ? FontWeight.w500 : FontWeight.w400,
+                          ),
+                        ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: Space.x4),
+                          Text(
+                            subtitle!,
+                            style: TorqueType.meta.copyWith(
+                              color: t.inkSecondary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

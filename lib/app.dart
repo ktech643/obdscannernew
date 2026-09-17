@@ -17,7 +17,6 @@ import 'providers/diagnostics_provider.dart';
 import 'providers/garage_provider.dart';
 import 'features/live_tabs.dart';
 import 'screens/onboarding/onboarding_flow.dart';
-import 'screens/settings/settings_screen.dart';
 import 'theme/tokens.dart';
 import 'theme/typography.dart';
 import 'widgets/chrome.dart';
@@ -133,7 +132,7 @@ class _AppShellState extends State<AppShell> {
     LiveDashboardTab(onConnect: () => _select(0)),
     LiveDiagnosticsTab(onConnect: () => _select(0)),
     LiveGarageTab(onConnect: () => _select(0)),
-    const SettingsScreen(),
+    const LiveSettingsTab(),
   ];
 
   void _select(int i) {

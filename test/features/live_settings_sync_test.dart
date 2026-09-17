@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:torque_obd2/design_system/design_system.dart';
 import 'package:torque_obd2/features/live_tabs.dart';
 import 'package:torque_obd2/providers/app_providers.dart';
 import 'package:torque_obd2/providers/persistence.dart';
@@ -68,5 +69,24 @@ void main() {
     settings.setPollingRate('Auto');
     await tester.pump();
     expect(live.session.scheduler.maxHz, isNull);
+  });
+
+  testWidgets('★ haptics off reaches AdaptiveHaptics.enabled', (tester) async {
+    final live = LiveSession(session: ObdSession(timeScale: 0.05));
+    addTearDown(live.dispose);
+
+    await pump(tester, live);
+    expect(AdaptiveHaptics.enabled, isTrue, reason: 'the honest default');
+
+    final settings = Provider.of<SettingsProvider>(
+      tester.element(find.byType(SizedBox)),
+      listen: false,
+    );
+    settings.setHaptics(false);
+    await tester.pump();
+    expect(AdaptiveHaptics.enabled, isFalse);
+
+    // Reset so later tests are not surprised.
+    addTearDown(() => AdaptiveHaptics.enabled = true);
   });
 }

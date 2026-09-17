@@ -22,6 +22,7 @@ import 'diagnostics/diagnostics_screen.dart';
 import 'garage/garage_controller.dart';
 import 'garage/garage_screen.dart';
 import 'garage/identity_prompt.dart';
+import 'settings/settings_screen.dart';
 
 /// Holds the one live [ObdSession] and the discovery feeding it, so the
 /// Connect and Dashboard tabs are looking at the same connection.
@@ -110,9 +111,14 @@ class LiveSession extends ChangeNotifier {
   /// link. Idempotent: [LiveSettingsSync] calls this every rebuild, so an
   /// unchanged value is just a couple of field writes, not a resubscribe
   /// or a reconnect.
-  void applySettings({required bool autoReconnect, int? maxPollingHz}) {
+  void applySettings({
+    required bool autoReconnect,
+    required bool haptics,
+    int? maxPollingHz,
+  }) {
     session.autoReconnect = autoReconnect;
     session.scheduler.maxHz = maxPollingHz;
+    AdaptiveHaptics.enabled = haptics;
   }
 
   AdapterDiscovery _discovery;
@@ -254,6 +260,14 @@ class LiveGarageTab extends StatelessWidget {
   }
 }
 
+/// The Settings tab, on the live session.
+class LiveSettingsTab extends StatelessWidget {
+  const LiveSettingsTab({super.key});
+
+  @override
+  Widget build(BuildContext context) => const _Backlit(child: SettingsScreen());
+}
+
 /// Puts the §9.6 identity question above the whole tab stack, so it is
 /// asked wherever the user happens to be when the car answers.
 class LiveIdentityPrompt extends StatelessWidget {
@@ -294,6 +308,7 @@ class LiveSettingsSync extends StatelessWidget {
     final settings = context.watch<SettingsProvider>();
     live.applySettings(
       autoReconnect: settings.autoReconnect,
+      haptics: settings.haptics,
       maxPollingHz: _hzFor(settings.pollingRate),
     );
     return child;
