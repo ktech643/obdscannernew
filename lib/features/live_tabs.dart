@@ -66,9 +66,7 @@ class LiveSession extends ChangeNotifier {
 
   /// SPEC §10.4 — every command and reply this session's `ObdSession` has
   /// sent over the wire. Fed automatically; nothing here is generated.
-  /// The screen that shows it is still the old Settings stack's fake one
-  /// (see `docs/SPEC.md` §B.17) — this just makes sure the real data is
-  /// there and waiting for it.
+  /// Shown by Settings › Diagnostics log.
   final ProtocolLog log;
 
   /// One controller for the whole app, so a scan survives switching tabs
@@ -83,9 +81,21 @@ class LiveSession extends ChangeNotifier {
   /// The vehicle a scan is recorded under is the garage's primary — and
   /// *nothing* while a §9.6 identity question is open, because until it is
   /// answered the app does not know which car it is talking to.
+  ///
+  /// And nothing in Demo Mode: the recording is not the user's car, and a
+  /// demo scan or clear filed under their vehicle would sit in its history
+  /// as if it had happened to it.
   void _syncVehicle() {
-    final g = garage!;
-    diagnostics.vehicleId = g.pendingIdentity == null ? g.primary?.id : null;
+    final g = garage;
+    if (g == null) return;
+    diagnostics.vehicleId = _demo || g.pendingIdentity != null
+        ? null
+        : g.primary?.id;
+    diagnostics.notRecording = _demo
+        ? NotRecording.demo
+        : g.pendingIdentity != null
+        ? NotRecording.identityUnsettled
+        : NotRecording.noVehicle;
   }
 
   Future<int> _countOverdue(String vehicleId) {
@@ -101,9 +111,15 @@ class LiveSession extends ChangeNotifier {
   /// for changes inside a link too — degraded and back, a fresh voltage —
   /// and reading the VIN on each of those would cost a round trip a
   /// second and put the identity question up again every time.
+  ///
+  /// Demo Mode never asks: the recording's VIN is the ISO 3779 worked
+  /// example, and judging it against the real garage attached that VIN to
+  /// the user's own VIN-less car, cached the recording's protocol on it,
+  /// and left their real car a stranger on its next connect.
   void _onSession() {
     final live = session.isLive;
-    if (live && !_wasLive) unawaited(garage?.onConnected(session));
+    if (live && !_wasLive && !_demo) unawaited(garage?.onConnected(session));
+    if (!live && _wasLive) garage?.onDisconnected();
     _wasLive = live;
   }
 
@@ -136,6 +152,7 @@ class LiveSession extends ChangeNotifier {
     await session.disconnect();
     _discovery = await DemoMode.discovery();
     _demo = true;
+    _syncVehicle();
     notifyListeners();
     await session.connect(_discovery.transportFor(DemoMode.adapter));
   }
@@ -145,6 +162,7 @@ class LiveSession extends ChangeNotifier {
     await session.disconnect();
     _discovery = RealAdapterDiscovery();
     _demo = false;
+    _syncVehicle();
     notifyListeners();
   }
 

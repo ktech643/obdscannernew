@@ -34,6 +34,7 @@ class GarageController extends ChangeNotifier {
         _ready.complete();
       }
       _watchPrimary();
+      _reconsider();
       _notify();
     });
   }
@@ -147,8 +148,6 @@ class GarageController extends ChangeNotifier {
     plate: plate,
   );
 
-  Future<void> update(VehicleRow row) => vehicles.update(row);
-
   Future<void> setPrimary(String id) => vehicles.setPrimary(id);
 
   Future<void> updateOdometer(String id, double km) =>
@@ -213,6 +212,7 @@ class GarageController extends ChangeNotifier {
   /// Returns the verdict; a [IdentityVerdict.needsPrompt] one is also left
   /// in [pendingIdentity] until [answerIdentity] is called.
   Future<IdentityVerdict> onConnected(ObdSession session) async {
+    final epoch = ++_epoch;
     await ready;
     var read = await session.readVin();
     if (read != null && !read.checkDigitValid) {
@@ -226,21 +226,78 @@ class GarageController extends ChangeNotifier {
       primary: primary,
       garage: _rows,
     );
-    _last = verdict;
+    // The link went away, or a newer connect began, while the VIN was
+    // being read: this verdict is about a car no longer on the wire, and
+    // applying it now would ask a question — or cache a protocol — for the
+    // wrong connection.
+    if (epoch != _epoch) return verdict;
+    _session = session;
+    _read = read;
+    _readThisConnection = true;
+    await _apply(verdict);
+    return verdict;
+  }
 
+  /// Call when the link drops. A verdict describes the car *on the wire*;
+  /// with no wire there is no car to describe, so nothing about it may
+  /// carry into the next connection — or into Demo Mode, which must never
+  /// inherit a real car's "Connected".
+  void onDisconnected() {
+    _epoch++;
+    _session = null;
+    _read = null;
+    _readThisConnection = false;
+    _verdictPrimaryId = null;
+    _last = null;
+    _pending = null;
+    _notify();
+  }
+
+  int _epoch = 0;
+  ObdSession? _session;
+  VinResult? _read;
+  bool _readThisConnection = false;
+
+  /// The primary the current verdict was judged against.
+  String? _verdictPrimaryId;
+
+  /// A verdict is relative to the primary it was judged against. When the
+  /// primary changes under a live connection — "Make primary", or deleting
+  /// the primary so another is promoted — the same VIN has to be judged
+  /// again, or the new primary inherits the old one's "Connected" and the
+  /// next scan is filed under it unchallenged.
+  void _reconsider() {
+    if (!_readThisConnection) return;
+    if (primary?.id == _verdictPrimaryId) return;
+    unawaited(
+      _apply(resolveIdentity(read: _read, primary: primary, garage: _rows)),
+    );
+  }
+
+  Future<void> _apply(IdentityVerdict verdict) async {
     final p = primary;
+    // Set before any await, so a row change arriving mid-apply does not
+    // judge the same primary twice.
+    _verdictPrimaryId = p?.id;
+    _last = verdict;
+    final session = _session;
     switch (verdict.kind) {
       case IdentityKind.attached:
         // The primary had no VIN and now it does. Flagged if the check
         // digit failed twice, and never decoded from in that case.
-        await vehicles.update(
-          p!.copyWith(vin: Value(verdict.vin), vinUnverified: !verdict.trusted),
+        // Two columns, not the whole row: `p` is a snapshot from before
+        // the VIN reads, and writing it back would undo anything that
+        // changed on the row in the meantime.
+        await vehicles.updateDetails(
+          p!.id,
+          vin: Value(verdict.vin),
+          vinUnverified: Value(!verdict.trusted),
         );
-        await _cache(session, p.id);
+        if (session != null) await _cache(session, p.id);
         _pending = null;
       case IdentityKind.primary:
       case IdentityKind.noVin:
-        if (p != null) await _cache(session, p.id);
+        if (p != null && session != null) await _cache(session, p.id);
         _pending = null;
       case IdentityKind.other:
       case IdentityKind.unknown:
@@ -249,7 +306,6 @@ class GarageController extends ChangeNotifier {
         _pending = verdict;
     }
     _notify();
-    return verdict;
   }
 
   /// The user's answer to a pending verdict.

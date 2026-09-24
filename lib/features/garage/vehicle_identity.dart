@@ -72,10 +72,14 @@ IdentityVerdict resolveIdentity({
   if (primary.vin == vin) {
     return IdentityVerdict(IdentityKind.primary, vin: vin, trusted: trusted);
   }
-  if (primary.vin == null) {
-    return IdentityVerdict(IdentityKind.attached, vin: vin, trusted: trusted);
-  }
 
+  // The rest of the garage before anything is attached. A primary with no
+  // VIN on record is not evidence that *this* car is the primary: when the
+  // VIN is already on another vehicle, that vehicle is the one on the wire.
+  // Checking the primary's blank first gave the other car's VIN to the
+  // primary — two rows with one VIN, scans filed under the wrong car, and
+  // the real primary judged a stranger the next time it connected.
+  //
   // Several rows may share a VIN (§9.8 allows a duplicate, with a warning);
   // the garage's own order puts the primary first, so the first non-primary
   // match is the one to name.
@@ -88,6 +92,9 @@ IdentityVerdict resolveIdentity({
         match: row,
       );
     }
+  }
+  if (primary.vin == null) {
+    return IdentityVerdict(IdentityKind.attached, vin: vin, trusted: trusted);
   }
   return IdentityVerdict(IdentityKind.unknown, vin: vin, trusted: trusted);
 }

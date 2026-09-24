@@ -104,6 +104,46 @@ class VehicleRepository {
         ),
       );
 
+  /// Writes only the columns a person edits, and only the ones passed.
+  ///
+  /// Never `isPrimary`, `createdAt` or the §4.2 connection cache. A form
+  /// holds the row as it was when it opened, and [update] replaces the
+  /// whole row from that copy — so anything that changed behind the open
+  /// form was overwritten with the old value. `isPrimary` changes behind an
+  /// open form whenever the §9.6 prompt switches cars, and a whole-row save
+  /// then left the garage with two primaries or none. Callers that edit a
+  /// vehicle go through here; [update] stays for restoring whole rows.
+  Future<void> updateDetails(
+    String id, {
+    Value<String> nickname = const Value.absent(),
+    Value<VehicleFuel> fuelType = const Value.absent(),
+    Value<String?> vin = const Value.absent(),
+    Value<bool> vinUnverified = const Value.absent(),
+    Value<String> make = const Value.absent(),
+    Value<String> model = const Value.absent(),
+    Value<String> trim = const Value.absent(),
+    Value<int?> year = const Value.absent(),
+    Value<double?> odometerKm = const Value.absent(),
+    Value<DateTime?> odometerUpdatedAt = const Value.absent(),
+    Value<String?> plate = const Value.absent(),
+  }) => (_db.update(_t)..where((v) => v.id.equals(id))).write(
+    VehiclesCompanion(
+      nickname: nickname,
+      fuelType: fuelType,
+      vin: vin,
+      vinUnverified: vinUnverified,
+      make: make,
+      model: model,
+      trim: trim,
+      year: year,
+      odometerKm: odometerKm,
+      odometerUpdatedAt: odometerUpdatedAt.present
+          ? Value(utcOrNull(odometerUpdatedAt.value))
+          : const Value.absent(),
+      plate: plate,
+    ),
+  );
+
   Future<void> updateOdometer(String id, double km, {DateTime? now}) =>
       (_db.update(_t)..where((v) => v.id.equals(id))).write(
         VehiclesCompanion(

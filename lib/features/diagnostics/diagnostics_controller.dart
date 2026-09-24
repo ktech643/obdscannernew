@@ -9,6 +9,20 @@ import '../../session/health_score.dart';
 import '../../session/obd_session.dart';
 
 /// Where the scan is.
+/// Why nothing is being recorded, when nothing is. The screens say the
+/// true one — "no vehicle yet" is false while a §9.6 question is open or
+/// Demo Mode is running, and those are the other two ways to get here.
+enum NotRecording {
+  /// The garage is empty.
+  noVehicle,
+
+  /// A car is on the wire and the app has not been told which one it is.
+  identityUnsettled,
+
+  /// Demo Mode: the recording is not the user's car.
+  demo,
+}
+
 enum ScanPhase {
   /// Never run on this connection.
   idle,
@@ -77,6 +91,16 @@ class DiagnosticsController extends ChangeNotifier {
   set vehicleId(String? id) {
     if (_vehicleId == id) return;
     _vehicleId = id;
+    _notify();
+  }
+
+  NotRecording _notRecording = NotRecording.noVehicle;
+
+  /// Why [vehicleId] is null, when it is. Meaningless otherwise.
+  NotRecording get notRecording => _notRecording;
+  set notRecording(NotRecording why) {
+    if (_notRecording == why) return;
+    _notRecording = why;
     _notify();
   }
 

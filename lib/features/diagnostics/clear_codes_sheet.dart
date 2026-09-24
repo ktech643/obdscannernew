@@ -133,9 +133,19 @@ class _ClearCodesSheetState extends State<ClearCodesSheet> {
       const SizedBox(height: Space.x16),
       Text(
         _c.dtcs == null || _c.vehicleId == null
-            ? 'These codes are not being saved — no vehicle is selected in '
-                  'the Garage yet, so there will be no record of what was '
-                  'cleared.'
+            ? switch (_c.notRecording) {
+                NotRecording.demo =>
+                  'This is Demo Mode — a recorded car — so nothing is saved '
+                      'to your garage.',
+                NotRecording.identityUnsettled =>
+                  'These codes are not being saved — the app has not been '
+                      'told which vehicle this is yet, so there will be no '
+                      'record of what was cleared.',
+                NotRecording.noVehicle =>
+                  'These codes are not being saved — no vehicle is selected '
+                      'in the Garage yet, so there will be no record of what '
+                      'was cleared.',
+              }
             : 'The codes are saved to this vehicle’s history first, before '
                   'anything is sent to the car.',
         style: TorqueType.meta.copyWith(color: t.inkTertiary),

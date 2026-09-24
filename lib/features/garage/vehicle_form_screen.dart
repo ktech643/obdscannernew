@@ -193,26 +193,29 @@ class _VehicleFormScreenState extends State<VehicleFormScreen> {
       } else {
         final km = _odometerKm;
         final odometerChanged = km != existing.odometerKm;
-        saved = existing.copyWith(
-          nickname: _nickname.text.trim(),
-          fuelType: _fuel,
+        // Only the fields on this form, never the row as it was when the
+        // form opened: `isPrimary` can change behind an open form (the
+        // §9.6 prompt switching cars), and writing the stale copy back
+        // left the garage with two primaries or none.
+        await c.vehicles.updateDetails(
+          existing.id,
+          nickname: Value(_nickname.text.trim()),
+          fuelType: Value(_fuel),
           vin: Value(vinResult?.vin),
-          vinUnverified: vinResult != null && !vinResult.checkDigitValid,
-          make: _make.text.trim(),
-          model: _model.text.trim(),
-          trim: _trim.text.trim(),
+          vinUnverified: Value(vinResult != null && !vinResult.checkDigitValid),
+          make: Value(_make.text.trim()),
+          model: Value(_model.text.trim()),
+          trim: Value(_trim.text.trim()),
           year: Value(int.tryParse(_year.text.trim())),
-          odometerKm: Value(km),
           // Only a *changed* reading is a new reading; re-saving the form
           // must not make an old odometer look freshly read.
-          odometerUpdatedAt: Value(
-            odometerChanged
-                ? (km == null ? null : DateTime.now().toUtc())
-                : existing.odometerUpdatedAt,
-          ),
+          odometerKm: odometerChanged ? Value(km) : const Value.absent(),
+          odometerUpdatedAt: odometerChanged
+              ? Value(km == null ? null : DateTime.now().toUtc())
+              : const Value.absent(),
           plate: Value(_plate.text.trim().isEmpty ? null : _plate.text.trim()),
         );
-        await c.update(saved);
+        saved = (await c.vehicles.byId(existing.id)) ?? existing;
       }
       if (mounted) Navigator.of(context).pop(saved);
     } finally {

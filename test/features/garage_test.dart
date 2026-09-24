@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,7 @@ import 'package:torque_obd2/data/repositories/service_repository.dart';
 import 'package:torque_obd2/data/repositories/trip_repository.dart';
 import 'package:torque_obd2/data/repositories/vehicle_repository.dart';
 import 'package:torque_obd2/design_system/design_system.dart';
+import 'package:torque_obd2/features/diagnostics/diagnostics_controller.dart';
 import 'package:torque_obd2/features/garage/distance.dart';
 import 'package:torque_obd2/features/garage/dtc_history_screen.dart';
 import 'package:torque_obd2/features/garage/garage_controller.dart';
@@ -850,6 +852,169 @@ void main() {
       expect(find.text('Before clear · never verified'), findsOneWidget);
       expect(find.text('1 code · light on'), findsNWidgets(2));
       expect(find.text('P0301'), findsNWidgets(2));
+    });
+  });
+
+  // ------------------------------------ what the slice 8/9 review found
+
+  group('★ regressions the 2026-09-24 review found', () {
+    test('★ a VIN-less primary does not take another vehicle\'s VIN', () async {
+      // 'attached' used to be checked before the rest of the garage, so the
+      // onboarding-created Golf (no VIN) took the Civic's VIN the first
+      // time the adapter went into the Civic.
+      final db = newDb();
+      final g = newGarage(db);
+      final golf = await addCar(g, 'The Golf');
+      final civic = await addCar(g, 'The Civic', vin: civicVin);
+      final s = newSession();
+      expect(await s.connect(transportFor('headers_can')), isTrue);
+      addTearDown(s.disconnect);
+
+      final v = await g.onConnected(s);
+      expect(v.kind, IdentityKind.other);
+      expect(v.match?.id, civic.id);
+      final vehicles = VehicleRepository(db);
+      expect((await vehicles.byId(golf.id))!.vin, isNull);
+      expect((await vehicles.byId(golf.id))!.cachedProtocol, isNull);
+    });
+
+    test('★ a new primary under a live link is judged again', () async {
+      // "Make primary" while connected used to keep the old verdict: the
+      // new primary showed "Connected" and the next scan went under it.
+      final db = newDb();
+      final g = newGarage(db);
+      final civic = await addCar(g, 'The Civic', vin: civicVin);
+      final golf = await addCar(g, 'The Golf', vin: 'WVWZZZ1KZAW000001');
+      final s = newSession();
+      expect(await s.connect(transportFor('headers_can')), isTrue);
+      addTearDown(s.disconnect);
+      expect((await g.onConnected(s)).kind, IdentityKind.primary);
+
+      await g.setPrimary(golf.id);
+      for (var i = 0; i < 50 && g.pendingIdentity == null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(g.pendingIdentity?.kind, IdentityKind.other);
+      expect(g.pendingIdentity?.match?.id, civic.id);
+      expect(g.lastIdentity?.kind, isNot(IdentityKind.primary));
+    });
+
+    test('a verdict does not outlive its link', () async {
+      final g = newGarage(newDb());
+      await addCar(g, 'The Civic', vin: civicVin);
+      final s = newSession();
+      expect(await s.connect(transportFor('headers_can')), isTrue);
+      addTearDown(s.disconnect);
+      expect((await g.onConnected(s)).kind, IdentityKind.primary);
+
+      g.onDisconnected();
+      expect(g.lastIdentity, isNull, reason: 'no wire, no car to describe');
+      expect(g.pendingIdentity, isNull);
+    });
+
+    test(
+      'a VIN read that lands after the link dropped is not applied',
+      () async {
+        final g = newGarage(newDb());
+        await addCar(g, 'The Golf', vin: 'WVWZZZ1KZAW000001');
+        final s = newSession();
+        expect(await s.connect(transportFor('headers_can')), isTrue);
+        addTearDown(s.disconnect);
+
+        final pending = g.onConnected(s); // would judge 'unknown' and ask
+        g.onDisconnected();
+        expect((await pending).kind, IdentityKind.unknown);
+        expect(g.pendingIdentity, isNull, reason: 'the car is gone');
+        expect(g.lastIdentity, isNull);
+      },
+    );
+
+    test('★ Demo Mode never touches the real garage', () async {
+      // The demo car's VIN is the ISO 3779 example; judging it against the
+      // real garage wrote it onto the user's VIN-less car, cached the
+      // recording's protocol on it, and saved demo scans in its history.
+      TestWidgetsFlutterBinding.ensureInitialized(); // the recording is an asset
+      final db = newDb();
+      final vehicles = VehicleRepository(db);
+      final dtcs = DtcRepository(db);
+      final golf = await vehicles.create(
+        nickname: 'The Golf',
+        fuel: VehicleFuel.petrol,
+      );
+      // Real timeouts: Demo Mode replays at speed 4, slower than the suite's
+      // usual 100, and a compressed timeout would fail its handshake.
+      final live = LiveSession(
+        session: ObdSession(),
+        discovery: FakeAdapterDiscovery(results: const []),
+        dtcs: dtcs,
+        vehicles: vehicles,
+        services: ServiceRepository(db),
+      );
+      addTearDown(live.dispose);
+      await live.garage!.ready;
+      await Future<void>.delayed(Duration.zero);
+      expect(live.diagnostics.vehicleId, golf.id);
+
+      await live.startDemo();
+      expect(live.session.isLive, isTrue);
+      expect(live.diagnostics.vehicleId, isNull, reason: 'nothing recorded');
+      expect(live.diagnostics.notRecording, NotRecording.demo);
+
+      await live.diagnostics.scan();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final row = (await vehicles.byId(golf.id))!;
+      expect(row.vin, isNull, reason: 'the demo VIN is not the user\'s');
+      expect(row.cachedProtocol, isNull);
+      expect(live.garage!.lastIdentity, isNull);
+      expect(await dtcs.history(golf.id), isEmpty, reason: 'no demo scan');
+
+      await live.stopDemo();
+      expect(live.diagnostics.vehicleId, golf.id, reason: 'recording resumes');
+    }, timeout: const Timeout(Duration(seconds: 60)));
+
+    test('updateDetails writes what it is given and nothing else', () async {
+      final db = newDb();
+      final vehicles = VehicleRepository(db);
+      final a = await vehicles.create(nickname: 'A', fuel: VehicleFuel.petrol);
+      await vehicles.cacheConnection(
+        a.id,
+        protocol: 6,
+        supportedPids: ['010C'],
+      );
+      await vehicles.updateDetails(a.id, nickname: const Value('B'));
+      final row = (await vehicles.byId(a.id))!;
+      expect(row.nickname, 'B');
+      expect(row.isPrimary, isTrue, reason: 'untouched');
+      expect(row.cachedProtocol, 6, reason: 'untouched');
+    });
+
+    testWidgets('★ saving an open edit form keeps exactly one primary', (
+      tester,
+    ) async {
+      // The form wrote back the whole row as it was when it opened. The
+      // §9.6 sheet can switch the primary behind an open form, and the
+      // stale copy then left the garage with no primary (or two).
+      final db = newDb();
+      final g = newGarage(db);
+      final golf = await addCar(g, 'The Golf');
+      final civic = await addCar(g, 'The Civic');
+      await pumpGarage(tester, garage: g, session: newSession(), isPro: true);
+      await settle(tester);
+
+      await tester.tap(find.text('The Civic'));
+      await settle(tester);
+      await tester.tap(find.text('Edit'));
+      await settle(tester);
+      expect(find.text('Edit vehicle'), findsOneWidget);
+
+      await g.setPrimary(civic.id); // what "Switch to The Civic" does
+      await settle(tester);
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+
+      final vehicles = VehicleRepository(db);
+      expect((await vehicles.byId(civic.id))!.isPrimary, isTrue);
+      expect((await vehicles.byId(golf.id))!.isPrimary, isFalse);
     });
   });
 }
