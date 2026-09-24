@@ -84,7 +84,6 @@ class _TorqueAppState extends State<TorqueApp> {
       ChangeNotifierProvider(
         create: (_) => EntitlementProvider(store, billing: billing),
       ),
-      ChangeNotifierProvider(create: (_) => AccountProvider(store)),
       ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
       // The one live connection. Connect and Dashboard are the Part B
       // screens on the real protocol engine; the other three tabs are

@@ -101,10 +101,6 @@ class Keys {
   /// 7-day offline grace.
   static const entitlementVerifiedAt = 'entitlement.verifiedAt';
 
-  static const accountStatus = 'account.status';
-  static const accountEmail = 'account.email';
-  static const accountName = 'account.name';
-  static const accountVerified = 'account.verified';
 
   static const serviceRecords = 'garage.records';
   static const notificationsEnabled = 'garage.notifications';

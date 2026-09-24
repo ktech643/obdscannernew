@@ -119,36 +119,6 @@ void main() {
     });
   });
 
-  group('ad placement', () {
-    test('never over a fault result, mid-scan, or above 5 km/h', () {
-      final e = EntitlementProvider(store);
-      expect(
-        e.canShowBanner(onFaultResult: true, scanning: false, speedKmh: 0),
-        isFalse,
-      );
-      expect(
-        e.canShowBanner(onFaultResult: false, scanning: true, speedKmh: 0),
-        isFalse,
-      );
-      expect(
-        e.canShowBanner(onFaultResult: false, scanning: false, speedKmh: 60),
-        isFalse,
-      );
-      expect(
-        e.canShowBanner(onFaultResult: false, scanning: false, speedKmh: 0),
-        isTrue,
-      );
-    });
-
-    test('Pro never sees a banner', () {
-      final pro = EntitlementProvider(store)..subscribe();
-      expect(
-        pro.canShowBanner(onFaultResult: false, scanning: false, speedKmh: 0),
-        isFalse,
-      );
-    });
-  });
-
   group('typing rules', () {
     test('zero is a value, not missing data', () {
       final d = DashboardProvider(store)..setScenario(DashboardScenario.hybrid);

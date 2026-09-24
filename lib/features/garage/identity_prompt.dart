@@ -24,11 +24,15 @@ class IdentityPromptHost extends StatefulWidget {
     required this.child,
     this.unit = DistanceUnit.km,
     this.isPro = false,
+    this.onUpgrade,
   });
 
   final GarageController garage;
   final ObdSession session;
   final Widget child;
+
+  /// SPEC §7.3 — opens the paywall from the locked second-vehicle answer.
+  final VoidCallback? onUpgrade;
   final DistanceUnit unit;
 
   /// §7.2: one vehicle free. The sheet's "add it as a new vehicle" is
@@ -77,6 +81,7 @@ class _IdentityPromptHostState extends State<IdentityPromptHost> {
           garage: widget.garage,
           session: widget.session,
           isPro: widget.isPro,
+          onUpgrade: widget.onUpgrade,
         ),
       );
       // "Add it as a new vehicle" is answered by the form, not the sheet —
@@ -131,12 +136,14 @@ class IdentitySheet extends StatelessWidget {
     required this.garage,
     required this.session,
     this.isPro = false,
+    this.onUpgrade,
   });
 
   final IdentityVerdict verdict;
   final GarageController garage;
   final ObdSession session;
   final bool isPro;
+  final VoidCallback? onUpgrade;
 
   /// §5.5's copy for the gate, word for word with the garage's alert.
   static const proNote = 'Adding a second vehicle is part of Pro.';
@@ -193,6 +200,10 @@ class IdentitySheet extends StatelessWidget {
             label: 'Record under ${primary.nickname} anyway',
             onPressed: () => _answer(context, null),
           ),
+          if (onUpgrade != null) ...[
+            const SizedBox(height: Space.x8),
+            GhostButton(label: 'See Pro', onPressed: onUpgrade),
+          ],
         ],
       ),
       IdentityKind.unknown when primary != null => (

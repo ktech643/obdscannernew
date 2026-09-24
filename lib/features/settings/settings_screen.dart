@@ -5,17 +5,17 @@ import 'package:provider/provider.dart';
 import '../../design_system/design_system.dart';
 import '../../models/enums.dart';
 import '../../providers/app_providers.dart';
-import '../../screens/account/account_screens.dart';
-import '../../screens/pro/paywall_screen.dart';
 import '../../screens/settings/privacy_screen.dart';
 import '../live_tabs.dart';
+import '../pro/paywall_screen.dart';
 import 'diagnostics_log_screen.dart';
 
 /// SPEC §5.6 — Settings on the Part B design system.
 ///
-/// The rows that open sub-screens (paywall, account, privacy) still push
-/// the older Industry screens; they are the next slices. This screen only
-/// owns the settings that are entirely local.
+/// Data & privacy still pushes the older Industry screen; it is the next
+/// slice. There is no Account section: the app has no account (§8.3), and
+/// the row that used to be here signed anyone in as a hard-coded stranger.
+/// Nothing here mentions ads — there are none.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -24,7 +24,6 @@ class SettingsScreen extends StatelessWidget {
     final t = context.tokens;
     final settings = context.watch<SettingsProvider>();
     final ent = context.watch<EntitlementProvider>();
-    final account = context.watch<AccountProvider>();
     final live = context.watch<LiveSession>();
 
     return ListView(
@@ -77,16 +76,16 @@ class SettingsScreen extends StatelessWidget {
         ),
         const _Section(title: 'Subscription'),
         _LinkRow(
-          title: ent.isPro ? 'Torque Pro' : 'Free with ads',
+          title: ent.isPro ? 'Torque Pro' : 'Torque Free',
           value:
               ent.isPro
-                  ? 'Unlimited gauges · no ads'
-                  : '6 gauges · 1 vehicle · ads',
+                  ? 'Unlimited gauges, vehicles and recording'
+                  : '6 gauges · 1 vehicle · 2-minute recordings',
         ),
         if (!ent.isPro)
           _LinkRow(
-            title: 'Remove ads',
-            onTap: () => _openPaywall(context),
+            title: 'Go Pro',
+            onTap: () => openProPaywall(context),
           ),
         _LinkRow(
           title: 'Restore purchases',
@@ -97,18 +96,6 @@ class SettingsScreen extends StatelessWidget {
             title: 'Manage subscription',
             onTap: ent.manageSubscription,
           ),
-        const _Section(title: 'Account'),
-        _LinkRow(
-          title:
-              account.status == AccountStatus.signedOut
-                  ? 'Sign in'
-                  : account.displayName,
-          value:
-              account.status == AccountStatus.signedOut
-                  ? 'Optional'
-                  : account.email,
-          onTap: () => _openAccount(context, account),
-        ),
         const _Section(title: 'Your data'),
         _LinkRow(
           title: 'Data & privacy',
@@ -165,12 +152,6 @@ class SettingsScreen extends StatelessWidget {
         onSelect: settings.setPollingRate,
       );
 
-  void _openPaywall(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(PageRouteBuilder<void>(pageBuilder: (_, _, _) => const PaywallScreen()));
-  }
-
   Future<void> _restorePurchases(
     BuildContext context,
     EntitlementProvider ent,
@@ -191,18 +172,6 @@ class SettingsScreen extends StatelessWidget {
           isDefault: true,
         ),
       ],
-    );
-  }
-
-  void _openAccount(BuildContext context, AccountProvider account) {
-    Navigator.of(context).push(
-      PageRouteBuilder<void>(
-        pageBuilder:
-            (_, _, _) =>
-                account.status == AccountStatus.signedOut
-                    ? const SignInScreen()
-                    : const ProfileScreen(),
-      ),
     );
   }
 

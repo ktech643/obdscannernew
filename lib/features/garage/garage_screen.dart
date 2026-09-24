@@ -47,6 +47,7 @@ class GarageScreen extends StatefulWidget {
     this.links = const GarageLinks(),
     this.onConnect,
     this.adapterName,
+    this.onUpgrade,
   });
 
   final GarageController controller;
@@ -58,6 +59,9 @@ class GarageScreen extends StatefulWidget {
   final GarageLinks links;
   final VoidCallback? onConnect;
   final String? adapterName;
+
+  /// SPEC §7.3 — the second vehicle is a paywall trigger. Opens it.
+  final VoidCallback? onUpgrade;
 
   @override
   State<GarageScreen> createState() => _GarageScreenState();
@@ -130,7 +134,13 @@ class _GarageScreenState extends State<GarageScreen> {
             'Adding a second vehicle is part of Pro. The one you have keeps '
             'everything it has recorded.',
         actions: [
-          AdaptiveAlertAction(label: 'OK', onPressed: () {}, isDefault: true),
+          AdaptiveAlertAction(label: 'Not now', onPressed: () {}),
+          if (widget.onUpgrade != null)
+            AdaptiveAlertAction(
+              label: 'See Pro',
+              isDefault: true,
+              onPressed: widget.onUpgrade!,
+            ),
         ],
       );
       return;

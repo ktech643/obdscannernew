@@ -23,6 +23,7 @@ import 'diagnostics/diagnostics_screen.dart';
 import 'garage/garage_controller.dart';
 import 'garage/garage_screen.dart';
 import 'garage/identity_prompt.dart';
+import 'pro/paywall_screen.dart';
 import 'settings/settings_screen.dart';
 
 /// Holds the one live [ObdSession] and the discovery feeding it, so the
@@ -301,6 +302,7 @@ class LiveGarageTab extends StatelessWidget {
         isPro: context.watch<EntitlementProvider>().isPro,
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
+        onUpgrade: () => openProPaywall(context),
       ),
     );
   }
@@ -332,6 +334,7 @@ class LiveIdentityPrompt extends StatelessWidget {
         session: live.session,
         unit: context.watch<SettingsProvider>().distance,
         isPro: context.watch<EntitlementProvider>().isPro,
+        onUpgrade: () => openProPaywall(context),
         child: child,
       ),
     );

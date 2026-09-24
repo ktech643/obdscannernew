@@ -1248,6 +1248,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 10 done 2026-09-24 — the unit toggles reach the gauges, see §B.21
          ◐ slice 11 done 2026-09-24 — the freeze frame (Mode 02) on the scan and before the clear, see §B.22
          ◐ slice 12 done 2026-09-24 — the tab shell on Part B, see §B.23
+         ◐ slice 13 done 2026-09-24 — the paywall on Part B; the account flow and the ad code deleted, see §B.24
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1764,6 +1765,58 @@ than none. Demo Mode is what reaches every state without hardware now
 with the Part B bar and no Industry chrome, claims the status bar light,
 and switches tabs without an animation while keeping the others alive
 (offstage in the `IndexedStack`). 651 tests, analyzer clean.
+
+## B.24 The paywall on Part B; no account, no ads (Phase 6, slice 13 — 2026-09-24)
+
+The verification review in §B.20 refuted, as a named deferral, that the
+Settings rows "Free with ads" / "Remove ads" and "Account › Sign in"
+contradicted the privacy screen. They did, and they contradicted the spec:
+§7.2's free tier is limit-based and names no ads, the code has never had an
+ad SDK, and §8.3 says "No account" — the Industry account flow signed
+anyone in as a hard-coded stranger. This slice replaces the one and deletes
+the other.
+
+**The paywall** (`lib/features/pro/paywall_screen.dart`, `openProPaywall`).
+§7.2 row for row, with the hard rule stated above the table in words —
+"Reading and clearing codes: free on both stores, always." The plans are
+`EntitlementProvider`'s: the store's prices when RevenueCat is configured,
+the spec's fallback prices when not; weekly (with the 3-day trial),
+monthly, lifetime — the products §7.1 defines. §7.4's *recommendation* of
+an annual plan in place of monthly is a product decision that has not been
+taken; the paywall sells what the config defines and nothing it does not.
+§7.5's outcomes are each told as they happened: success grants and says so,
+pending is neither granted nor an error, cancelled is nothing, failed says
+nothing was charged. Restore says when there was nothing to restore. Pro
+users see the table and "Manage subscription". The legal line names the
+one thing that does leave the phone — the store and RevenueCat, an
+anonymous ID and the purchase — consistent with the privacy screen.
+
+**Where it opens** (§7.3, contextual only): Settings › "Go Pro"; the
+Garage's "Add a vehicle" alert on the free plan now offers "See Pro" beside
+"Not now"; the §9.6 identity sheet's locked second-vehicle answer offers it
+too, without closing the question. `LiveGarageTab` and `LiveIdentityPrompt`
+pass `onUpgrade`; nothing in `lib/features/garage/` imports the paywall.
+
+**Deleted, not restyled.** `AccountProvider`, `AccountStatus`, the account
+preference keys, and `lib/screens/account/`; the Industry paywall and
+`ad_screens.dart`; `AdState`, `AdBanner`, and every ad method on
+`EntitlementProvider` (`canShowBanner`, `rewardedOffered`,
+`continueFreeWithAds`, …); `lib/screens/system/system_screens.dart` (its
+sync-conflict screen read the account) and the Industry
+`lib/screens/dashboard/dashboard_screen.dart` (unreachable since §B.14; it
+drew the banner). Settings has no Account section; its subscription rows
+say "Torque Free — 6 gauges · 1 vehicle · 2-minute recordings" or "Torque
+Pro — Unlimited gauges, vehicles and recording". The one Industry
+sub-screen left is Data & privacy.
+
+**Tests.** `test/features/pro/paywall_screen_test.dart` (★ §7.2 with
+nothing about ads or an app account; the three plans at the provider's
+prices; choosing a plan; ★ buying grants Pro; not now; restore with nothing
+behind it; already Pro; text scale 2.0 at 320 pt); two ★ door tests in
+`garage_test.dart` (the alert and the identity answer call `onUpgrade`);
+the settings test's sections without Account; the ad-placement tests are
+gone with the code. Each ★ test seen failing with its piece removed. 667
+tests, analyzer clean.
 
 ## HARD RULES
 

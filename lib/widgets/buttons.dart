@@ -4,7 +4,6 @@ import '../models/enums.dart';
 import '../theme/tokens.dart';
 import '../theme/typography.dart';
 import 'blueprint.dart';
-import 'chrome.dart';
 import 'icons.dart';
 
 /// The solid accent primary button — the single deliberate exception to the
@@ -547,47 +546,6 @@ class NumberedFact extends StatelessWidget {
   );
 }
 
-/// The 320×50 anchored ad banner. The height is reserved whether or not a
-/// creative has loaded, so nothing shifts underneath it. Always labelled, and
-/// always carrying a "Remove ads" affordance.
-class AdBanner extends StatelessWidget {
-  const AdBanner({super.key, this.onRemoveAds});
-
-  final VoidCallback? onRemoveAds;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    height: T.adBannerHeight + 16,
-    color: T.bg,
-    padding: const EdgeInsets.symmetric(horizontal: T.gutter, vertical: 8),
-    child: Row(
-      children: [
-        const Badge('AD', color: T.neutral600),
-        const SizedBox(width: 10),
-        const Expanded(
-          child: Plate(
-            height: T.adBannerHeight,
-            child: Text('320 × 50', style: TextStyle(fontSize: 0)),
-          ),
-        ),
-        const SizedBox(width: 10),
-        _Tappable(
-          onPressed: onRemoveAds,
-          child: SizedBox(
-            width: 46,
-            child: Text(
-              'Remove\nads',
-              style: Type.chip(T.accent700).copyWith(letterSpacing: 0.2),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-/// An empty state: a headline saying what's absent, one sentence of why, one
-/// action. Never an apology, never a mascot.
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,

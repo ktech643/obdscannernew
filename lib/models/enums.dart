@@ -88,10 +88,6 @@ enum ProSource { direct, family }
 
 enum ScanPhase { idle, running, result }
 
-enum AdState { none, banner, rewardedOffered, rewardedPlaying }
-
-enum AccountStatus { signedOut, signedIn, pendingVerification }
-
 enum SyncStatus { off, synced, paused, conflict }
 
 enum MonitorState { complete, notComplete, notSupported }

@@ -515,6 +515,7 @@ void main() {
     required ObdSession session,
     bool isPro = false,
     DistanceUnit unit = DistanceUnit.km,
+    VoidCallback? onUpgrade,
   }) async {
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1;
@@ -530,6 +531,7 @@ void main() {
             session: session,
             unit: unit,
             isPro: isPro,
+            onUpgrade: onUpgrade,
             child: Scaffold(
               backgroundColor: TorqueTokens.dark.surfaceDeep,
               body: SafeArea(
@@ -538,6 +540,7 @@ void main() {
                   session: session,
                   isPro: isPro,
                   unit: unit,
+                  onUpgrade: onUpgrade,
                 ),
               ),
             ),
@@ -658,13 +661,33 @@ void main() {
       await settle(tester);
       expect(find.text('One vehicle on the free plan'), findsOneWidget);
       expect(find.text('Add vehicle'), findsNothing, reason: 'no form');
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Not now'));
       await settle(tester);
 
       await pumpGarage(tester, garage: g, session: newSession(), isPro: true);
       await tester.tap(find.text('Add a vehicle'));
       await settle(tester);
       expect(find.text('Add vehicle'), findsOneWidget, reason: 'the form');
+    });
+
+    testWidgets('★ §7.3 — the locked door opens the paywall', (tester) async {
+      final g = newGarage(newDb());
+      await addCar(g, 'The Golf');
+      var upgrades = 0;
+      await pumpGarage(
+        tester,
+        garage: g,
+        session: newSession(),
+        onUpgrade: () => upgrades++,
+      );
+      await settle(tester);
+
+      await tester.tap(find.text('Add a vehicle'));
+      await settle(tester);
+      await tester.tap(find.text('See Pro'));
+      await settle(tester);
+      expect(upgrades, 1);
+      expect(find.text('Add vehicle'), findsNothing, reason: 'still no form');
     });
 
     testWidgets('delete is two steps and names what goes with it', (
@@ -791,11 +814,18 @@ void main() {
     Future<(GarageController, ObdSession)> unknownCarOnTheWire(
       WidgetTester tester, {
       required bool isPro,
+      VoidCallback? onUpgrade,
     }) async {
       final g = newGarage(newDb());
       await addCar(g, 'The Golf', vin: 'WVWZZZ1KZAW000001');
       final session = newSession();
-      await pumpGarage(tester, garage: g, session: session, isPro: isPro);
+      await pumpGarage(
+        tester,
+        garage: g,
+        session: session,
+        isPro: isPro,
+        onUpgrade: onUpgrade,
+      );
       unawaited(session.connect(transportFor('headers_can')));
       await pumpUntil(tester, () => session.isLive);
       unawaited(g.onConnected(session));
@@ -816,6 +846,27 @@ void main() {
       await settle(tester);
       expect(g.all, hasLength(1));
       // The session's timers must be gone before the body ends.
+      unawaited(session.disconnect());
+      await settle(tester);
+    });
+
+    testWidgets('★ §7.3 — the locked answer opens the paywall too', (
+      tester,
+    ) async {
+      var upgrades = 0;
+      final (g, session) = await unknownCarOnTheWire(
+        tester,
+        isPro: false,
+        onUpgrade: () => upgrades++,
+      );
+      await tester.tap(find.text('See Pro'));
+      await settle(tester);
+      expect(upgrades, 1);
+      // The question is still open — Pro was only shown, not bought.
+      expect(g.pendingIdentity, isNotNull);
+      await tester.tap(find.text('Record under The Golf anyway'));
+      await pumpUntil(tester, () => g.pendingIdentity == null);
+      await settle(tester);
       unawaited(session.disconnect());
       await settle(tester);
     });

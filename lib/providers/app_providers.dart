@@ -19,7 +19,6 @@ class EntitlementProvider extends ChangeNotifier {
       Entitlement.values,
       Entitlement.free,
     );
-    _ads = isPro ? AdState.none : AdState.banner;
     _verifiedAt = _store.getInt(Keys.entitlementVerifiedAt);
     _init();
   }
@@ -36,9 +35,6 @@ class EntitlementProvider extends ChangeNotifier {
 
   ProSource _source = ProSource.direct;
   ProSource get source => _source;
-
-  AdState _ads = AdState.banner;
-  AdState get ads => _ads;
 
   bool get billingConfigured => _billing.configured;
 
@@ -115,7 +111,6 @@ class EntitlementProvider extends ChangeNotifier {
 
   void _setTier(Entitlement t) {
     _tier = t;
-    _ads = t == Entitlement.pro ? AdState.none : AdState.banner;
     _store.setEnum(Keys.entitlementTier, t);
   }
 
@@ -132,23 +127,6 @@ class EntitlementProvider extends ChangeNotifier {
       _setTier(Entitlement.free);
     }
   }
-
-  /// Ads never cover a fault result, never interrupt a scan, and never appear
-  /// while the car is moving. Callers pass the current context here rather
-  /// than the widget deciding on its own.
-  bool canShowBanner({
-    required bool onFaultResult,
-    required bool scanning,
-    required double? speedKmh,
-  }) {
-    if (isPro) return false;
-    if (onFaultResult || scanning) return false;
-    if ((speedKmh ?? 0) > 5) return false;
-    return _ads == AdState.banner;
-  }
-
-  bool _rewardedOffered = true;
-  bool get rewardedOffered => _rewardedOffered && !isPro;
 
   static const priceWeekly = r'$4.99';
   static const priceMonthly = r'$9.99';
@@ -219,151 +197,13 @@ class EntitlementProvider extends ChangeNotifier {
   /// Opens the store's manage-subscription sheet.
   Future<void> manageSubscription() => _billing.manageSubscription();
 
-  void continueFreeWithAds() {
-    _setTier(Entitlement.free);
-    notifyListeners();
-  }
+  /// How many plans the paywall shows: the store's when configured, the
+  /// spec's three otherwise.
+  int get planCount => _plans.isNotEmpty ? _plans.length : 3;
 
-  void dismissRewardedOffer() {
-    _rewardedOffered = false;
-    notifyListeners();
-  }
-
-  void setAdState(AdState s) {
-    _ads = s;
-    notifyListeners();
-  }
-}
-
-/// Sign-in, verification and sync. The app is fully usable signed out —
-/// reading codes and live data needs no account, no sign-in and no internet.
-class AccountProvider extends ChangeNotifier {
-  AccountProvider(this._store) {
-    _status = _store.enumValue(
-      Keys.accountStatus,
-      AccountStatus.values,
-      AccountStatus.signedOut,
-    );
-    _email = _store.getString(Keys.accountEmail) ?? _email;
-    _displayName = _store.getString(Keys.accountName) ?? _displayName;
-    _verified = _store.getBool(Keys.accountVerified) ?? false;
-  }
-
-  final Persistence _store;
-
-  late AccountStatus _status;
-  AccountStatus get status => _status;
-
-  String _email = 'muzaffar@ktechclans.com';
-  String get email => _email;
-
-  String _displayName = 'Muzaffar Ali';
-  String get displayName => _displayName;
-
-  String get initials => _displayName
-      .split(' ')
-      .where((p) => p.isNotEmpty)
-      .take(2)
-      .map((p) => p[0].toUpperCase())
-      .join();
-
-  late bool _verified;
-  bool get verified => _verified;
-
-  void _persist() {
-    _store.setEnum(Keys.accountStatus, _status);
-    _store.setString(Keys.accountEmail, _email);
-    _store.setString(Keys.accountName, _displayName);
-    _store.setBool(Keys.accountVerified, _verified);
-  }
-
-  SyncStatus _sync = SyncStatus.paused;
-  SyncStatus get sync => _sync;
-
-  int get vehicleCount => 1;
-  int get recordCount => 9;
-  int get scanCount => 14;
-  int get signedInDevices => 2;
-
-  final int _resendSeconds = 42;
-  int get resendSeconds => _resendSeconds;
-
-  /// Password rules, checked live under the field.
-  static List<({String rule, bool Function(String) test})> passwordRules = [
-    (rule: 'At least 10 characters', test: (p) => p.length >= 10),
-    (
-      rule: 'Upper and lower case',
-      test: (p) => p.contains(RegExp('[a-z]')) && p.contains(RegExp('[A-Z]')),
-    ),
-    (rule: 'One symbol', test: (p) => p.contains(RegExp(r'[^A-Za-z0-9]'))),
-  ];
-
-  static int strengthOf(String p) {
-    var score = 0;
-    if (p.length >= 10) score++;
-    if (p.contains(RegExp('[a-z]')) && p.contains(RegExp('[A-Z]'))) score++;
-    if (p.contains(RegExp('[0-9]'))) score++;
-    if (p.contains(RegExp(r'[^A-Za-z0-9]'))) score++;
-    return score;
-  }
-
-  static String strengthLabel(int score) => switch (score) {
-    0 || 1 => 'Weak',
-    2 => 'Fair',
-    3 => 'Strong',
-    _ => 'Very strong',
-  };
-
-  void signIn({String? email}) {
-    if (email != null && email.isNotEmpty) _email = email;
-    _status = AccountStatus.signedIn;
-    _verified = true;
-    _persist();
-    notifyListeners();
-  }
-
-  void createAccount(String email) {
-    _email = email;
-    _status = AccountStatus.pendingVerification;
-    _persist();
-    notifyListeners();
-  }
-
-  void verify() {
-    _verified = true;
-    _status = AccountStatus.signedIn;
-    _persist();
-    notifyListeners();
-  }
-
-  void setDisplayName(String name) {
-    _displayName = name;
-    _persist();
-    notifyListeners();
-  }
-
-  /// Signing out leaves everything on this iPhone. The garage, codes and
-  /// receipts are local first, always.
-  void signOut() {
-    _status = AccountStatus.signedOut;
-    _persist();
-    notifyListeners();
-  }
-
-  /// Removes the email and synced copies from the server within 30 days. The
-  /// local garage is untouched, and Pro belongs to the Apple ID.
-  void deleteAccount() {
-    _status = AccountStatus.signedOut;
-    _sync = SyncStatus.off;
-    _verified = false;
-    _persist();
-    notifyListeners();
-  }
-
-  void setSync(SyncStatus s) {
-    _sync = s;
-    notifyListeners();
-  }
+  String planTitle(int i) => i < _plans.length
+      ? _plans[i].title
+      : const ['Weekly', 'Monthly', 'Lifetime'][i];
 }
 
 /// Units, connection preferences and privacy toggles.

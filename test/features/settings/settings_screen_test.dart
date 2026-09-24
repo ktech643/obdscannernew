@@ -42,7 +42,6 @@ void main() {
             ChangeNotifierProvider(
               create: (_) => EntitlementProvider(store),
             ),
-            ChangeNotifierProvider(create: (_) => AccountProvider(store)),
           ],
           child: MaterialApp(
             theme: torqueTheme(),
@@ -60,7 +59,7 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Distance'), findsOneWidget);
     expect(find.text('Polling rate'), findsOneWidget);
-    for (final section in ['Units', 'Connection', 'Subscription', 'Account', 'Your data']) {
+    for (final section in ['Units', 'Connection', 'Subscription', 'Your data']) {
       await tester.scrollUntilVisible(find.text(section), 100);
       expect(find.text(section), findsOneWidget);
     }
