@@ -605,5 +605,9 @@ class OnboardingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void skip() => finish();
+  /// Skip jumps to the safety acknowledgement; it never finishes
+  /// onboarding. An earlier version called [finish], so Skip on the first
+  /// screen put the user on the Dashboard without ever seeing "Don't use
+  /// this app while driving" — the one step SPEC §8.4 makes non-skippable.
+  void skip() => goTo(totalSteps - 1);
 }

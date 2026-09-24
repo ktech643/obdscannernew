@@ -1,13 +1,19 @@
-import 'package:flutter/material.dart' show Checkbox, Icons, InputDecoration, TextField, TextInputType, Theme;
+import 'dart:async';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:flutter/material.dart' show Checkbox, Icons, InputDecoration, TextField, TextInputAction, TextInputType, Theme;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/platform/platform_info.dart';
+import '../../data/db/app_database.dart' show VehicleRow;
 import '../../data/repositories/vehicle_repository.dart';
 import '../../design_system/design_system.dart';
 import '../../models/enums.dart';
 import '../../providers/app_providers.dart';
+import '../garage/distance.dart';
+import '../garage/vehicle_form_screen.dart' show VehicleFormScreen;
 
 /// SPEC §5.1 — first-run onboarding on the Part B design system.
 ///
@@ -143,7 +149,7 @@ class _SchematicChain extends StatelessWidget {
     final t = context.tokens;
     return Row(
       children: [
-        const Expanded(child: _SchematicCell(label: 'iPhone', icon: Icons.smartphone)),
+        const Expanded(child: _SchematicCell(label: 'Phone', icon: Icons.smartphone)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: Space.x8),
           child: SizedBox(
@@ -443,6 +449,37 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
   final _odometer = TextEditingController();
   DistanceUnit _unit = DistanceUnit.km;
 
+  /// The car already in the garage, when there is one: a relaunch before
+  /// the safety step was agreed lands here again. The form shows it and
+  /// saves over it. An earlier version created a fresh vehicle on every
+  /// pass — a second car past the §7.2 one-vehicle limit, with no paywall,
+  /// and not the primary.
+  VehicleRow? _existing;
+
+  bool _saving = false;
+  bool _submitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_prefill());
+  }
+
+  Future<void> _prefill() async {
+    final existing = await context.read<VehicleRepository>().primary();
+    if (!mounted || existing == null) return;
+    setState(() {
+      _existing = existing;
+      _nickname.text = existing.nickname;
+      _make.text = existing.make;
+      _model.text = existing.model;
+      _year.text = existing.year?.toString() ?? '';
+      if (existing.odometerKm != null) {
+        _odometer.text = Distance.display(existing.odometerKm!, _unit);
+      }
+    });
+  }
+
   @override
   void dispose() {
     _nickname.dispose();
@@ -453,30 +490,101 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
     super.dispose();
   }
 
+  // The same limits as the Garage's own form (§9.8): the row this screen
+  // writes is the row that form edits later.
+
+  bool get _anythingButName =>
+      [_make, _model, _year, _odometer].any((c) => c.text.trim().isNotEmpty);
+
+  String? get _nicknameError {
+    final n = _nickname.text.trim();
+    if (n.length > VehicleFormScreen.nameMax) {
+      return 'Keep it under ${VehicleFormScreen.nameMax} characters.';
+    }
+    if (n.isEmpty && _anythingButName) {
+      return "Give the car a name, or choose \"I'll do this later\".";
+    }
+    return null;
+  }
+
+  String? get _yearError {
+    final raw = _year.text.trim();
+    if (raw.isEmpty) return null;
+    final y = int.tryParse(raw);
+    final max = DateTime.now().year + 1;
+    if (y == null || y < VehicleFormScreen.yearMin || y > max) {
+      return 'A year between ${VehicleFormScreen.yearMin} and $max.';
+    }
+    return null;
+  }
+
+  /// Kilometres for the row. [Distance.parse] reads `142,380`, `142 380`
+  /// and the comma-decimal `142380,5`; an earlier version stripped every
+  /// comma, so that last one saved as 1,423,805.
+  double? get _odometerKm {
+    final raw = _odometer.text.trim();
+    if (raw.isEmpty) return null;
+    final v = Distance.parse(raw);
+    return v == null ? null : Distance.toKm(v, _unit);
+  }
+
+  String? get _odometerError {
+    if (_odometer.text.trim().isEmpty) return null;
+    final km = _odometerKm;
+    if (km == null || km < 0 || km > VehicleFormScreen.odometerMaxKm) {
+      return 'A reading between 0 and '
+          '${Distance.display(VehicleFormScreen.odometerMaxKm, _unit)} '
+          '${_unit.label}.';
+    }
+    return null;
+  }
+
+  bool get _valid =>
+      _nicknameError == null && _yearError == null && _odometerError == null;
+
   Future<void> _save() async {
-    final nickname = _nickname.text.trim();
+    if (_saving) return;
+    setState(() => _submitted = true);
+    if (!_valid) return;
     final vehicles = context.read<VehicleRepository>();
     final onboarding = context.read<OnboardingProvider>();
-    final odo = double.tryParse(_odometer.text.replaceAll(',', ''));
-    final odometerKm = _unit == DistanceUnit.km
-        ? odo
-        : odo != null
-            ? odo / 0.621371
-            : null;
-    if (nickname.isNotEmpty) {
-      await vehicles.create(
-        nickname: nickname,
-        fuel: VehicleFuel.petrol,
-        make: _make.text.trim(),
-        model: _model.text.trim(),
-        year: int.tryParse(_year.text.trim()),
-        odometerKm: odometerKm,
-      );
+    final settings = context.read<SettingsProvider>();
+    final nickname = _nickname.text.trim();
+    setState(() => _saving = true);
+    try {
+      settings.setDistance(_unit);
+      if (nickname.isNotEmpty) {
+        final km = _odometerKm;
+        final year = int.tryParse(_year.text.trim());
+        final existing = _existing ?? await vehicles.primary();
+        if (existing == null) {
+          await vehicles.create(
+            nickname: nickname,
+            fuel: VehicleFuel.petrol,
+            make: _make.text.trim(),
+            model: _model.text.trim(),
+            year: year,
+            odometerKm: km,
+          );
+        } else {
+          await vehicles.updateDetails(
+            existing.id,
+            nickname: Value(nickname),
+            make: Value(_make.text.trim()),
+            model: Value(_model.text.trim()),
+            year: Value(year),
+            odometerKm: km == null ? const Value.absent() : Value(km),
+            odometerUpdatedAt:
+                km == null ? const Value.absent() : Value(DateTime.now()),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-    if (mounted) {
-      AdaptiveHaptics.light();
-      onboarding.next();
-    }
+    if (!mounted) return;
+    AdaptiveHaptics.light();
+    onboarding.next();
   }
 
   @override
@@ -497,7 +605,13 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
           style: TorqueType.body.copyWith(color: context.tokens.inkSecondary),
         ),
         const SizedBox(height: Space.x24),
-        _Field(label: 'Nickname', hint: 'The Golf', controller: _nickname),
+        _Field(
+          label: 'Nickname',
+          hint: 'The Golf',
+          controller: _nickname,
+          maxLength: VehicleFormScreen.nameMax,
+          error: _submitted ? _nicknameError : null,
+        ),
         const SizedBox(height: Space.x16),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -513,6 +627,7 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
                 hint: '2014',
                 controller: _year,
                 keyboardType: TextInputType.number,
+                error: _submitted ? _yearError : null,
               ),
             ),
           ],
@@ -521,31 +636,37 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
         _Field(label: 'Model', hint: 'Golf GTD', controller: _model),
         const SizedBox(height: Space.x16),
         Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: _Field(
                 label: 'Odometer',
                 hint: '142,380',
                 controller: _odometer,
-                keyboardType: TextInputType.number,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                textInputAction: TextInputAction.done,
+                error: _submitted ? _odometerError : null,
               ),
             ),
             const SizedBox(width: Space.x12),
-            _Segmented(
-              options: const ['km', 'mi'],
-              selected: _unit.index,
-              onSelect: (i) {
-                HapticFeedback.selectionClick();
-                setState(() => _unit = DistanceUnit.values[i]);
-              },
+            Padding(
+              // Level with the field, under its label.
+              padding: const EdgeInsets.only(top: 22),
+              child: _Segmented(
+                options: const ['km', 'mi'],
+                selected: _unit.index,
+                onSelect: (i) {
+                  HapticFeedback.selectionClick();
+                  setState(() => _unit = DistanceUnit.values[i]);
+                },
+              ),
             ),
           ],
         ),
         const SizedBox(height: Space.x16),
         Text(
           "We'll read the VIN off the car once you connect and fill in what we "
-          'can. Nothing is sent anywhere — the decode happens on your iPhone.',
+          'can. Nothing is sent anywhere — the decode happens on this phone.',
           style: TorqueType.meta.copyWith(color: context.tokens.inkSecondary),
         ),
         const SizedBox(height: Space.x16),
@@ -555,17 +676,20 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
         children: [
           PrimaryButton(
             label: 'Save and continue',
-            onPressed: _save,
+            loading: _saving,
+            onPressed: _saving ? null : _save,
           ),
           const SizedBox(height: Space.x8),
           GhostButton(
             label: "I'll do this later",
-            onPressed: () {
-              AdaptiveHaptics.light();
-              // Persist the unit choice even if they skip the form.
-              settings.setDistance(_unit);
-              o.next();
-            },
+            onPressed: _saving
+                ? null
+                : () {
+                    AdaptiveHaptics.light();
+                    // Persist the unit choice even if they skip the form.
+                    settings.setDistance(_unit);
+                    o.next();
+                  },
           ),
         ],
       ),
@@ -579,38 +703,65 @@ class _Field extends StatelessWidget {
     this.hint,
     this.controller,
     this.keyboardType,
+    this.textInputAction = TextInputAction.next,
+    this.maxLength,
+    this.error,
   });
 
   final String label;
   final String? hint;
   final TextEditingController? controller;
   final TextInputType? keyboardType;
+  final TextInputAction textInputAction;
+  final int? maxLength;
+
+  /// Shown under the field, in the fault colour, once the user has tried
+  /// to save. The Garage's form shows its errors the same way.
+  final String? error;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Text(
-        label.toUpperCase(),
-        style: TorqueType.gaugeLabel.copyWith(
-          color: context.tokens.inkSecondary,
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: TorqueType.gaugeLabel.copyWith(color: t.inkSecondary),
         ),
-      ),
-      const SizedBox(height: Space.x8),
-      TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        style: TorqueType.body.copyWith(color: context.tokens.inkPrimary),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TorqueType.body.copyWith(
-            color: context.tokens.inkTertiary,
+        const SizedBox(height: Space.x8),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          textInputAction: textInputAction,
+          maxLength: maxLength,
+          style: TorqueType.body.copyWith(color: t.inkPrimary),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TorqueType.body.copyWith(color: t.inkTertiary),
+            counterText: '',
+          ).applyDefaults(Theme.of(context).inputDecorationTheme),
+        ),
+        if (error != null) ...[
+          const SizedBox(height: Space.x4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Tell.red.glyph, size: 14, color: t.tell(Tell.red)),
+              const SizedBox(width: Space.x4),
+              Expanded(
+                child: Text(
+                  error!,
+                  style: TorqueType.meta.copyWith(color: t.tell(Tell.red)),
+                ),
+              ),
+            ],
           ),
-        ).applyDefaults(Theme.of(context).inputDecorationTheme),
-      ),
-    ],
-  );
+        ],
+      ],
+    );
+  }
 }
 
 class _Segmented extends StatelessWidget {
@@ -706,13 +857,18 @@ class _A4Safety extends StatelessWidget {
         ),
         const SizedBox(height: Space.x4),
         const _NoteBlock(
-          'Next, iPhone will ask for Bluetooth. Torque uses it only to reach '
+          'Next, your phone will ask for Bluetooth. Torque uses it only to '
+          'reach '
           'your adapter — there is no other use and no location access.',
         ),
         const SizedBox(height: Space.x16),
+        // The action sits on the Semantics node itself: a GestureDetector
+        // under ExcludeSemantics is invisible to TalkBack and VoiceOver, so
+        // an earlier version's checkbox could be read but never ticked.
         Semantics(
           checked: o.safetyAcknowledged,
           label: "I understand and I won't use this while driving",
+          onTap: () => o.setSafetyAcknowledged(!o.safetyAcknowledged),
           child: ExcludeSemantics(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -868,9 +1024,22 @@ class _Page extends StatelessWidget {
   final Widget footer;
   final bool skippable;
 
+  /// Onboarding has no Scaffold, so nothing resizes for the keyboard: the
+  /// page pads itself by the keyboard's height, which lifts the footer
+  /// above it and lets the scroll view bring a focused field into view.
+  /// A tap anywhere outside a field dismisses the keyboard — the iOS
+  /// number pad has no Done key, so this is the only way off it.
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(Space.gutter, Space.x16, Space.gutter, 0),
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+    child: Padding(
+    padding: EdgeInsets.fromLTRB(
+      Space.gutter,
+      Space.x16,
+      Space.gutter,
+      MediaQuery.viewInsetsOf(context).bottom,
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -892,6 +1061,7 @@ class _Page extends StatelessWidget {
           child: footer,
         ),
       ],
+    ),
     ),
   );
 }

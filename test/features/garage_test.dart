@@ -166,6 +166,20 @@ void main() {
     });
   });
 
+  group('★ Distance — the 2026-09-24 review', () {
+    test('★ display survives a non-finite reading', () {
+      expect(Distance.display(double.infinity, DistanceUnit.km), '\u2014');
+      expect(Distance.display(double.nan, DistanceUnit.mi), '\u2014');
+    });
+
+    test('parse refuses what double.tryParse accepts but no odometer reads', () {
+      expect(Distance.parse('Infinity'), isNull);
+      expect(Distance.parse('NaN'), isNull);
+      expect(Distance.parse('1' * 400), isNull);
+      expect(Distance.parse('142380,5'), 142380.5, reason: 'still a number');
+    });
+  });
+
   group('Distance — kilometres on disk, the user\'s unit on screen', () {
     test('display groups thousands', () {
       expect(Distance.display(142380, DistanceUnit.km), '142,380');

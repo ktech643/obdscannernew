@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/data/repositories/vehicle_repository.dart';
 import 'package:torque_obd2/design_system/design_system.dart';
 import 'package:torque_obd2/features/onboarding/onboarding_flow.dart';
+import 'package:torque_obd2/models/enums.dart';
 import 'package:torque_obd2/providers/app_providers.dart';
 import 'package:torque_obd2/providers/persistence.dart';
 
@@ -69,7 +71,10 @@ void main() {
     expect(find.text('2 OF 4'), findsOneWidget);
   });
 
-  testWidgets('Skip on the first screen finishes onboarding', (tester) async {
+  testWidgets('★ Skip goes to the safety step, never past it', (tester) async {
+    // An earlier version of this test asserted the opposite — that Skip
+    // finished onboarding — and so certified the bug: three screens of
+    // Skip put the user on the Dashboard without the §8.4 warning.
     await pump(tester);
     final onboarding = Provider.of<OnboardingProvider>(
       tester.element(find.byType(OnboardingFlow)),
@@ -78,7 +83,9 @@ void main() {
     await tester.tap(find.text('Skip'));
     await settle(tester);
 
-    expect(onboarding.complete, isTrue);
+    expect(onboarding.complete, isFalse);
+    expect(find.text('Before you start'), findsOneWidget);
+    expect(find.text('Skip'), findsNothing, reason: 'nowhere left to skip to');
   });
 
   testWidgets('adapter screen explains iOS adapter limits', (tester) async {
@@ -148,6 +155,207 @@ void main() {
     await settle(tester);
 
     expect(onboarding.complete, isTrue);
+  });
+
+  group('★ regressions the 2026-09-24 review found', () {
+    Future<OnboardingProvider> atAddCar(WidgetTester tester) async {
+      await pump(tester);
+      final onboarding = Provider.of<OnboardingProvider>(
+        tester.element(find.byType(OnboardingFlow)),
+        listen: false,
+      );
+      onboarding.goTo(2);
+      await settle(tester);
+      expect(find.text('Add your car'), findsOneWidget);
+      return onboarding;
+    }
+
+    VehicleRepository vehiclesOf(WidgetTester tester) =>
+        Provider.of<VehicleRepository>(
+          tester.element(find.byType(OnboardingFlow)),
+          listen: false,
+        );
+
+    Finder field(String label) => find.descendant(
+      of: find.ancestor(
+        of: find.text(label.toUpperCase()),
+        matching: find.byType(Column),
+      ).first,
+      matching: find.byType(TextField),
+    );
+
+    Future<void> save(WidgetTester tester) async {
+      await tester.tap(find.text('Save and continue'));
+      await settle(tester);
+    }
+
+    testWidgets('★ a comma-decimal odometer is not ten times larger', (
+      tester,
+    ) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await tester.enterText(field('Odometer'), '142380,5');
+      await save(tester);
+
+      final primary = await vehiclesOf(tester).primary();
+      expect(primary?.odometerKm, closeTo(142380.5, 0.01));
+    });
+
+    testWidgets('an odometer in miles is stored in kilometres', (
+      tester,
+    ) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await tester.tap(find.text('mi'));
+      await tester.pump();
+      await tester.enterText(field('Odometer'), '100,000');
+      await save(tester);
+
+      final primary = await vehiclesOf(tester).primary();
+      expect(primary?.odometerKm, closeTo(160934.4, 0.1));
+    });
+
+    testWidgets('★ an odometer past 2,000,000 km is refused, not saved', (
+      tester,
+    ) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await tester.enterText(field('Odometer'), '2,000,001');
+      await save(tester);
+
+      expect(find.text('A reading between 0 and 2,000,000 km.'), findsOneWidget);
+      expect(find.text('Add your car'), findsOneWidget, reason: 'still here');
+      expect(await vehiclesOf(tester).count(), 0);
+    });
+
+    testWidgets('★ a 400-digit odometer is refused without crashing', (
+      tester,
+    ) async {
+      // double.tryParse gives Infinity; the old save stored it and the
+      // Garage card's round() then threw.
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await tester.enterText(field('Odometer'), '1' * 400);
+      await save(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('A reading between 0 and 2,000,000 km.'), findsOneWidget);
+      expect(await vehiclesOf(tester).count(), 0);
+    });
+
+    testWidgets('a year outside the form\'s range is refused', (tester) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await tester.enterText(field('Year'), '1979');
+      await save(tester);
+
+      final max = DateTime.now().year + 1;
+      expect(find.text('A year between 1980 and $max.'), findsOneWidget);
+      expect(await vehiclesOf(tester).count(), 0);
+    });
+
+    testWidgets('a nickname is cut at the Garage\'s 40 characters', (
+      tester,
+    ) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'x' * 41);
+      await save(tester);
+
+      final primary = await vehiclesOf(tester).primary();
+      expect(primary?.nickname.length, 40);
+    });
+
+    testWidgets('details without a name ask for one instead of vanishing', (
+      tester,
+    ) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Make'), 'Volkswagen');
+      await save(tester);
+
+      expect(find.textContaining('Give the car a name'), findsOneWidget);
+      expect(find.text('Add your car'), findsOneWidget);
+    });
+
+    testWidgets('★ a car already in the garage is shown and updated, not '
+        'duplicated', (tester) async {
+      final vehicles = VehicleRepository(db);
+      await vehicles.create(nickname: 'Old name', fuel: VehicleFuel.petrol);
+      await atAddCar(tester);
+      await tester.pump();
+      expect(find.text('Old name'), findsOneWidget, reason: 'prefilled');
+
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await save(tester);
+
+      expect(await vehicles.count(), 1);
+      final primary = await vehicles.primary();
+      expect(primary?.nickname, 'The Golf');
+      expect(primary?.isPrimary, isTrue);
+    });
+
+    testWidgets('★ tapping Save twice leaves one vehicle', (tester) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await tester.tap(find.text('Save and continue'));
+      await tester.tap(find.text('Save and continue'));
+      await settle(tester);
+
+      expect(await vehiclesOf(tester).count(), 1);
+    });
+
+    testWidgets('★ the safety checkbox carries a tap action for screen '
+        'readers', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pump(tester);
+      final onboarding = Provider.of<OnboardingProvider>(
+        tester.element(find.byType(OnboardingFlow)),
+        listen: false,
+      );
+      onboarding.goTo(3);
+      await settle(tester);
+
+      const label = "I understand and I won't use this while driving";
+      final node = tester.getSemantics(find.bySemanticsLabel(label));
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+
+      tester.semantics.tap(find.semantics.byLabel(label));
+      await settle(tester);
+      expect(onboarding.safetyAcknowledged, isTrue);
+      handle.dispose();
+    });
+
+    testWidgets('the footer rises above the keyboard, and a tap outside '
+        'dismisses it', (tester) async {
+      await atAddCar(tester);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 336);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getBottomLeft(find.text('Save and continue')).dy,
+        lessThanOrEqualTo(844 - 336),
+        reason: 'the footer is above the keyboard',
+      );
+
+      await tester.tap(field('Nickname'));
+      await tester.pump();
+      EditableTextState first() =>
+          tester.state(find.byType(EditableText).first);
+      expect(first().widget.focusNode.hasFocus, isTrue);
+
+      await tester.tap(find.text('Add your car'));
+      await tester.pump();
+      expect(first().widget.focusNode.hasFocus, isFalse);
+    });
+
+    testWidgets('the add-car and safety copy does not assume an iPhone', (
+      tester,
+    ) async {
+      final onboarding = await atAddCar(tester);
+      expect(find.textContaining('iPhone'), findsNothing);
+      onboarding.goTo(3);
+      await settle(tester);
+      expect(find.textContaining('iPhone'), findsNothing);
+    });
   });
 }
 

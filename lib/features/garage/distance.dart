@@ -15,6 +15,9 @@ class Distance {
 
   /// Whole units with thousands separators: `142,380`.
   static String display(double km, DistanceUnit unit) {
+    // `round()` throws on Infinity and NaN; a row that somehow carries one
+    // shows the unavailable dash rather than taking the Garage down.
+    if (!km.isFinite) return '—';
     final v = fromKm(km, unit).round();
     final s = v.abs().toString();
     final out = StringBuffer();
@@ -27,7 +30,9 @@ class Distance {
 
   /// `142,380`, `142380`, `142 380`, `142380.5` — and the comma-decimal
   /// form `142380,5` when there is exactly one comma followed by one or
-  /// two digits (§9.7). Null when it is not a number.
+  /// two digits (§9.7). Null when it is not a number — and `Infinity`,
+  /// `NaN` and a digit string too long for a double are not numbers here,
+  /// though `double.tryParse` accepts all three.
   static double? parse(String raw) {
     var s = raw.trim().replaceAll(' ', '');
     final commaDecimal = RegExp(r'^\d+,\d{1,2}$');
@@ -36,6 +41,7 @@ class Distance {
     } else {
       s = s.replaceAll(',', '');
     }
-    return double.tryParse(s);
+    final v = double.tryParse(s);
+    return v != null && v.isFinite ? v : null;
   }
 }
