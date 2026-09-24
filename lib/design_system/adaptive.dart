@@ -57,11 +57,24 @@ class Backlit extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = tokens ?? TorqueTokens.dark;
-    return Theme(
-      data: torqueTheme(tokens: t),
-      child: AdaptiveScope(
-        platform: platform ?? AdaptiveScope.of(context),
-        child: ColoredBox(color: t.surfaceDeep, child: child),
+    // The status bar's icons follow the ground they sit on. Nothing else
+    // in the app sets this, and the system default is dark icons — right
+    // for the old light shell, near-invisible on this ground. An
+    // AnnotatedRegion only claims the status bar where its own box sits
+    // under it, so a Backlit tab that starts below the shell's light top
+    // strip leaves that strip's dark icons alone, while a full-bleed
+    // Backlit screen (onboarding) gets light ones.
+    final overlay = relativeLuminance(t.surfaceDeep) < 0.5
+        ? SystemUiOverlayStyle.light
+        : SystemUiOverlayStyle.dark;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlay,
+      child: Theme(
+        data: torqueTheme(tokens: t),
+        child: AdaptiveScope(
+          platform: platform ?? AdaptiveScope.of(context),
+          child: ColoredBox(color: t.surfaceDeep, child: child),
+        ),
       ),
     );
   }
