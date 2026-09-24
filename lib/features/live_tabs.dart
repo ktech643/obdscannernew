@@ -274,6 +274,7 @@ class LiveDiagnosticsTab extends StatelessWidget {
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
         distance: context.watch<SettingsProvider>().distance,
+        temperature: context.watch<SettingsProvider>().temperature,
       ),
     );
   }

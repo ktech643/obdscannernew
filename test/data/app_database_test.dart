@@ -14,8 +14,8 @@ void main() {
   setUp(() => db = memoryDb());
   tearDown(() => db.close());
 
-  test('opens at schema version 1 with every table empty', () async {
-    expect(db.schemaVersion, 1);
+  test('opens at the current schema version with every table empty', () async {
+    expect(db.schemaVersion, 2);
     expect(await db.select(db.vehicles).get(), isEmpty);
     expect(await db.select(db.serviceRecords).get(), isEmpty);
     expect(await db.select(db.reminders).get(), isEmpty);

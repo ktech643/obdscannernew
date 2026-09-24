@@ -103,6 +103,7 @@ class _SnapshotRow extends StatelessWidget {
           : '${codes.length} code${codes.length == 1 ? '' : 's'}',
       if (row.milOn == true) 'light on',
       if (row.milOn == false) 'light off',
+      if (row.freezeFrame != null) 'freeze frame at ${row.freezeFrame!.dtc}',
     ].join(' · ');
 
     return Semantics(

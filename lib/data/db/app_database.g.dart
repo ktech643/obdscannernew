@@ -3267,6 +3267,17 @@ class $DtcSnapshotsTable extends DtcSnapshots
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _freezeFrameJsonMeta = const VerificationMeta(
+    'freezeFrameJson',
+  );
+  @override
+  late final GeneratedColumn<String> freezeFrameJson = GeneratedColumn<String>(
+    'freeze_frame_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3280,6 +3291,7 @@ class $DtcSnapshotsTable extends DtcSnapshots
     protocol,
     clearOutcome,
     relatedSnapshotId,
+    freezeFrameJson,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3358,6 +3370,15 @@ class $DtcSnapshotsTable extends DtcSnapshots
         ),
       );
     }
+    if (data.containsKey('freeze_frame_json')) {
+      context.handle(
+        _freezeFrameJsonMeta,
+        freezeFrameJson.isAcceptableOrUnknown(
+          data['freeze_frame_json']!,
+          _freezeFrameJsonMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3415,6 +3436,10 @@ class $DtcSnapshotsTable extends DtcSnapshots
         DriftSqlType.string,
         data['${effectivePrefix}related_snapshot_id'],
       ),
+      freezeFrameJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}freeze_frame_json'],
+      ),
     );
   }
 
@@ -3454,6 +3479,11 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
   /// `beforeClear` → its `afterClear` re-read; `afterClear` → its
   /// `beforeClear`.
   final String? relatedSnapshotId;
+
+  /// JSON of the Mode 02 freeze frame — the readings the ECU stored with
+  /// its first code (§5.4) — captured on a scan and before a clear erases
+  /// it. Null when the car had none or did not answer. Schema v2.
+  final String? freezeFrameJson;
   const DtcSnapshotRow({
     required this.id,
     required this.vehicleId,
@@ -3466,6 +3496,7 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
     this.protocol,
     this.clearOutcome,
     this.relatedSnapshotId,
+    this.freezeFrameJson,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3499,6 +3530,9 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
     if (!nullToAbsent || relatedSnapshotId != null) {
       map['related_snapshot_id'] = Variable<String>(relatedSnapshotId);
     }
+    if (!nullToAbsent || freezeFrameJson != null) {
+      map['freeze_frame_json'] = Variable<String>(freezeFrameJson);
+    }
     return map;
   }
 
@@ -3527,6 +3561,9 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
       relatedSnapshotId: relatedSnapshotId == null && nullToAbsent
           ? const Value.absent()
           : Value(relatedSnapshotId),
+      freezeFrameJson: freezeFrameJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(freezeFrameJson),
     );
   }
 
@@ -3553,6 +3590,7 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
       relatedSnapshotId: serializer.fromJson<String?>(
         json['relatedSnapshotId'],
       ),
+      freezeFrameJson: serializer.fromJson<String?>(json['freezeFrameJson']),
     );
   }
   @override
@@ -3574,6 +3612,7 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
         $DtcSnapshotsTable.$converterclearOutcomen.toJson(clearOutcome),
       ),
       'relatedSnapshotId': serializer.toJson<String?>(relatedSnapshotId),
+      'freezeFrameJson': serializer.toJson<String?>(freezeFrameJson),
     };
   }
 
@@ -3589,6 +3628,7 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
     Value<int?> protocol = const Value.absent(),
     Value<ClearOutcome?> clearOutcome = const Value.absent(),
     Value<String?> relatedSnapshotId = const Value.absent(),
+    Value<String?> freezeFrameJson = const Value.absent(),
   }) => DtcSnapshotRow(
     id: id ?? this.id,
     vehicleId: vehicleId ?? this.vehicleId,
@@ -3605,6 +3645,9 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
     relatedSnapshotId: relatedSnapshotId.present
         ? relatedSnapshotId.value
         : this.relatedSnapshotId,
+    freezeFrameJson: freezeFrameJson.present
+        ? freezeFrameJson.value
+        : this.freezeFrameJson,
   );
   DtcSnapshotRow copyWithCompanion(DtcSnapshotsCompanion data) {
     return DtcSnapshotRow(
@@ -3625,6 +3668,9 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
       relatedSnapshotId: data.relatedSnapshotId.present
           ? data.relatedSnapshotId.value
           : this.relatedSnapshotId,
+      freezeFrameJson: data.freezeFrameJson.present
+          ? data.freezeFrameJson.value
+          : this.freezeFrameJson,
     );
   }
 
@@ -3641,7 +3687,8 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
           ..write('readinessJson: $readinessJson, ')
           ..write('protocol: $protocol, ')
           ..write('clearOutcome: $clearOutcome, ')
-          ..write('relatedSnapshotId: $relatedSnapshotId')
+          ..write('relatedSnapshotId: $relatedSnapshotId, ')
+          ..write('freezeFrameJson: $freezeFrameJson')
           ..write(')'))
         .toString();
   }
@@ -3659,6 +3706,7 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
     protocol,
     clearOutcome,
     relatedSnapshotId,
+    freezeFrameJson,
   );
   @override
   bool operator ==(Object other) =>
@@ -3674,7 +3722,8 @@ class DtcSnapshotRow extends DataClass implements Insertable<DtcSnapshotRow> {
           other.readinessJson == this.readinessJson &&
           other.protocol == this.protocol &&
           other.clearOutcome == this.clearOutcome &&
-          other.relatedSnapshotId == this.relatedSnapshotId);
+          other.relatedSnapshotId == this.relatedSnapshotId &&
+          other.freezeFrameJson == this.freezeFrameJson);
 }
 
 class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
@@ -3689,6 +3738,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
   final Value<int?> protocol;
   final Value<ClearOutcome?> clearOutcome;
   final Value<String?> relatedSnapshotId;
+  final Value<String?> freezeFrameJson;
   final Value<int> rowid;
   const DtcSnapshotsCompanion({
     this.id = const Value.absent(),
@@ -3702,6 +3752,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
     this.protocol = const Value.absent(),
     this.clearOutcome = const Value.absent(),
     this.relatedSnapshotId = const Value.absent(),
+    this.freezeFrameJson = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DtcSnapshotsCompanion.insert({
@@ -3716,6 +3767,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
     this.protocol = const Value.absent(),
     this.clearOutcome = const Value.absent(),
     this.relatedSnapshotId = const Value.absent(),
+    this.freezeFrameJson = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        vehicleId = Value(vehicleId),
@@ -3734,6 +3786,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
     Expression<int>? protocol,
     Expression<String>? clearOutcome,
     Expression<String>? relatedSnapshotId,
+    Expression<String>? freezeFrameJson,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3748,6 +3801,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
       if (protocol != null) 'protocol': protocol,
       if (clearOutcome != null) 'clear_outcome': clearOutcome,
       if (relatedSnapshotId != null) 'related_snapshot_id': relatedSnapshotId,
+      if (freezeFrameJson != null) 'freeze_frame_json': freezeFrameJson,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3764,6 +3818,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
     Value<int?>? protocol,
     Value<ClearOutcome?>? clearOutcome,
     Value<String?>? relatedSnapshotId,
+    Value<String?>? freezeFrameJson,
     Value<int>? rowid,
   }) {
     return DtcSnapshotsCompanion(
@@ -3778,6 +3833,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
       protocol: protocol ?? this.protocol,
       clearOutcome: clearOutcome ?? this.clearOutcome,
       relatedSnapshotId: relatedSnapshotId ?? this.relatedSnapshotId,
+      freezeFrameJson: freezeFrameJson ?? this.freezeFrameJson,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3822,6 +3878,9 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
     if (relatedSnapshotId.present) {
       map['related_snapshot_id'] = Variable<String>(relatedSnapshotId.value);
     }
+    if (freezeFrameJson.present) {
+      map['freeze_frame_json'] = Variable<String>(freezeFrameJson.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3842,6 +3901,7 @@ class DtcSnapshotsCompanion extends UpdateCompanion<DtcSnapshotRow> {
           ..write('protocol: $protocol, ')
           ..write('clearOutcome: $clearOutcome, ')
           ..write('relatedSnapshotId: $relatedSnapshotId, ')
+          ..write('freezeFrameJson: $freezeFrameJson, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7017,6 +7077,7 @@ typedef $$DtcSnapshotsTableCreateCompanionBuilder =
       Value<int?> protocol,
       Value<ClearOutcome?> clearOutcome,
       Value<String?> relatedSnapshotId,
+      Value<String?> freezeFrameJson,
       Value<int> rowid,
     });
 typedef $$DtcSnapshotsTableUpdateCompanionBuilder =
@@ -7032,6 +7093,7 @@ typedef $$DtcSnapshotsTableUpdateCompanionBuilder =
       Value<int?> protocol,
       Value<ClearOutcome?> clearOutcome,
       Value<String?> relatedSnapshotId,
+      Value<String?> freezeFrameJson,
       Value<int> rowid,
     });
 
@@ -7118,6 +7180,11 @@ class $$DtcSnapshotsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get freezeFrameJson => $composableBuilder(
+    column: $table.freezeFrameJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
   $$VehiclesTableFilterComposer get vehicleId {
     final $$VehiclesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -7201,6 +7268,11 @@ class $$DtcSnapshotsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get freezeFrameJson => $composableBuilder(
+    column: $table.freezeFrameJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$VehiclesTableOrderingComposer get vehicleId {
     final $$VehiclesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -7271,6 +7343,11 @@ class $$DtcSnapshotsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get freezeFrameJson => $composableBuilder(
+    column: $table.freezeFrameJson,
+    builder: (column) => column,
+  );
+
   $$VehiclesTableAnnotationComposer get vehicleId {
     final $$VehiclesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -7334,6 +7411,7 @@ class $$DtcSnapshotsTableTableManager
                 Value<int?> protocol = const Value.absent(),
                 Value<ClearOutcome?> clearOutcome = const Value.absent(),
                 Value<String?> relatedSnapshotId = const Value.absent(),
+                Value<String?> freezeFrameJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DtcSnapshotsCompanion(
                 id: id,
@@ -7347,6 +7425,7 @@ class $$DtcSnapshotsTableTableManager
                 protocol: protocol,
                 clearOutcome: clearOutcome,
                 relatedSnapshotId: relatedSnapshotId,
+                freezeFrameJson: freezeFrameJson,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7362,6 +7441,7 @@ class $$DtcSnapshotsTableTableManager
                 Value<int?> protocol = const Value.absent(),
                 Value<ClearOutcome?> clearOutcome = const Value.absent(),
                 Value<String?> relatedSnapshotId = const Value.absent(),
+                Value<String?> freezeFrameJson = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DtcSnapshotsCompanion.insert(
                 id: id,
@@ -7375,6 +7455,7 @@ class $$DtcSnapshotsTableTableManager
                 protocol: protocol,
                 clearOutcome: clearOutcome,
                 relatedSnapshotId: relatedSnapshotId,
+                freezeFrameJson: freezeFrameJson,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

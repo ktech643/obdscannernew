@@ -6,6 +6,7 @@ import '../data/db/app_database.dart';
 import '../data/repositories/dtc_repository.dart';
 import '../domain/pid_sample.dart';
 import '../protocol/dtc_decoder.dart';
+import '../protocol/freeze_frame.dart';
 import '../protocol/elm_session.dart';
 import '../protocol/isotp_reassembler.dart';
 import '../protocol/pid_registry.dart';
@@ -876,6 +877,10 @@ class ObdSession extends ChangeNotifier {
     if (elm == null) return ClearResult.interrupted;
 
     final before = await readDtcs();
+    // The freeze frame goes into the snapshot too: Mode 04 erases it, and
+    // "what was the engine doing when the code set" is the one thing a
+    // mechanic asks that nothing else can answer afterwards.
+    final frame = before.all.isEmpty ? null : await readFreezeFrame();
     DtcSnapshotRow? snapshot;
     if (dtcs != null && vehicleId != null) {
       snapshot = await dtcs!.beginClear(
@@ -884,6 +889,7 @@ class ObdSession extends ChangeNotifier {
         milOn: before.milOn,
         dtcCount: before.reportedCount,
         protocol: _protocol?.number,
+        freezeFrame: frame,
       );
     }
 
@@ -969,6 +975,48 @@ class ObdSession extends ChangeNotifier {
     final value = PidRegistry.decodeResponse(pid, _payload(r));
     bus.publish(PidSample(pid: pid, value: value, at: DateTime.now()));
     return value;
+  }
+
+  /// SPEC §5.4 — Mode 02, the freeze frame: the readings the ECU stored
+  /// the moment it set its first code. Read on a scan, and **before** a
+  /// clear, because Mode 04 erases it and the snapshot written first is
+  /// then the only copy.
+  ///
+  /// Null when the car keeps no frame, does not answer Mode 02, or the link
+  /// changed underneath. One PID per request — Mode 02 batching is not
+  /// universal — so the read costs at most [maxPids] + 2 round trips, each
+  /// a `NO DATA` at worst. A car that will not give the support mask for
+  /// the frame is asked for the eight most useful PIDs anyway.
+  Future<FreezeFrame?> readFreezeFrame({int frame = 0, int maxPids = 12}) async {
+    final elm = _elm;
+    if (elm == null) return null;
+    final gen = _generation;
+    final f = frame.toRadixString(16).padLeft(2, '0').toUpperCase();
+
+    final dtcReply = await elm.send('0202$f', timeout: ElmSession.slowTimeout);
+    if (gen != _generation || !dtcReply.isOk) return null;
+    final dtc = FreezeFrameDecoder.decodeDtc(_payload(dtcReply), frame: frame);
+    if (dtc == null) return null;
+
+    var supported = const <String>{};
+    final maskReply = await elm.send('0200$f');
+    if (gen != _generation) return null;
+    if (maskReply.isOk) {
+      supported = FreezeFrameDecoder.decodeSupportMask(
+        _payload(maskReply),
+        frame: frame,
+      );
+    }
+
+    final values = <String, double>{};
+    for (final pid in FreezeFrameDecoder.pidsToRead(supported, limit: maxPids)) {
+      final r = await elm.send('02${pid.substring(2)}$f');
+      if (gen != _generation) return null;
+      if (!r.isOk) continue;
+      final v = FreezeFrameDecoder.decodeValue(pid, _payload(r), frame: frame);
+      if (v != null) values[pid] = v;
+    }
+    return FreezeFrame(dtc: dtc, frame: frame, values: values);
   }
 
   /// Mode 09 PID 02. Null when the car doesn't answer — common pre-2008,

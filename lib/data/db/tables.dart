@@ -177,6 +177,11 @@ class DtcSnapshots extends Table {
   /// `beforeClear`.
   TextColumn get relatedSnapshotId => text().nullable()();
 
+  /// JSON of the Mode 02 freeze frame — the readings the ECU stored with
+  /// its first code (§5.4) — captured on a scan and before a clear erases
+  /// it. Null when the car had none or did not answer. Schema v2.
+  TextColumn get freezeFrameJson => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

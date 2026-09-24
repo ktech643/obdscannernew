@@ -14,7 +14,8 @@ import 'package:torque_obd2/features/diagnostics/clear_codes_sheet.dart';
 import 'package:torque_obd2/features/diagnostics/code_detail_screen.dart';
 import 'package:torque_obd2/features/diagnostics/diagnostics_controller.dart';
 import 'package:torque_obd2/features/diagnostics/diagnostics_screen.dart';
-import 'package:torque_obd2/models/enums.dart' show DistanceUnit, VehicleFuel;
+import 'package:torque_obd2/models/enums.dart'
+    show DistanceUnit, TemperatureUnit, VehicleFuel;
 import 'package:torque_obd2/protocol/dtc_decoder.dart';
 import 'package:torque_obd2/protocol/readiness_decoder.dart';
 import 'package:torque_obd2/session/health_score.dart';
@@ -75,8 +76,11 @@ void main() {
     DiagnosticsController controller, {
     VoidCallback? onConnect,
     DistanceUnit distance = DistanceUnit.km,
+    TemperatureUnit temperature = TemperatureUnit.celsius,
   }) async {
-    tester.view.physicalSize = const Size(390, 1400);
+    // Tall enough for the whole result page — codes, freeze frame,
+    // monitors, score — so an unscrolled assertion still sees the bottom.
+    tester.view.physicalSize = const Size(390, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
@@ -92,6 +96,7 @@ void main() {
                 controller: controller,
                 onConnect: onConnect,
                 distance: distance,
+                temperature: temperature,
               ),
             ),
           ),
@@ -155,6 +160,7 @@ void main() {
     DtcRepository? dtcs,
     String? vehicleId,
     DistanceUnit distance = DistanceUnit.km,
+    TemperatureUnit temperature = TemperatureUnit.celsius,
   }) async {
     final session = newSession(dtcs: dtcs);
     final c = newController(
@@ -163,7 +169,7 @@ void main() {
       dtcs: dtcs,
       vehicleId: vehicleId,
     );
-    await pumpScreen(tester, c, distance: distance);
+    await pumpScreen(tester, c, distance: distance, temperature: temperature);
     unawaited(session.connect(transportFor(trace)));
     await pumpUntil(tester, () => session.isLive, reason: 'the link');
     unawaited(c.scan());
@@ -451,6 +457,58 @@ void main() {
   });
 
   // ------------------------------------------------------------ the clear
+
+
+  group('★ §5.4 — the freeze frame', () {
+    Future<void> reveal(WidgetTester tester) async {
+      await tester.scrollUntilVisible(
+        find.text('Freeze frame'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pump();
+    }
+
+    testWidgets('★ a scan shows what the engine was doing when the code set', (
+      tester,
+    ) async {
+      final c = await connectedAndScanned(tester, 'dtc_scan_can');
+      expect(c.freezeFrame?.dtc, 'P0301');
+      await reveal(tester);
+      expect(find.textContaining('when P0301 was stored'), findsOne);
+      expect(find.text('50 °C'), findsOne, reason: 'coolant, warming up');
+      expect(find.text('0 km/h'), findsOne, reason: 'parked');
+      expect(
+        find.descendant(of: find.byType(ValueList), matching: find.text('750 rpm')),
+        findsOne,
+        reason: 'idle',
+      );
+      await quiesce(tester, c.session);
+    });
+
+    testWidgets('the readings follow the unit settings (§5.6)', (tester) async {
+      final c = await connectedAndScanned(
+        tester,
+        'dtc_scan_can',
+        distance: DistanceUnit.mi,
+        temperature: TemperatureUnit.fahrenheit,
+      );
+      await reveal(tester);
+      expect(find.text('122 °F'), findsOne);
+      expect(find.text('0 mph'), findsOne);
+      expect(find.text('50 °C'), findsNothing);
+      await quiesce(tester, c.session);
+    });
+
+    testWidgets('a clean car shows no frame and was not asked for one', (
+      tester,
+    ) async {
+      final c = await connectedAndScanned(tester, 'no_dtcs');
+      expect(c.freezeFrame, isNull);
+      expect(find.text('Freeze frame'), findsNothing);
+      await quiesce(tester, c.session);
+    });
+  });
 
   group('★ §9.5 — clearing, guarded', () {
     /// Scrolls the screen to the clear action and opens the sheet, then

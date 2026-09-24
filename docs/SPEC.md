@@ -1246,6 +1246,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 9 done 2026-09-17 — Onboarding on Part B, see §B.19
          ◐ review of slices 8/9 + slice 6 re-run, 2026-09-24 — five clusters fixed, see §B.20
          ◐ slice 10 done 2026-09-24 — the unit toggles reach the gauges, see §B.21
+         ◐ slice 11 done 2026-09-24 — the freeze frame (Mode 02) on the scan and before the clear, see §B.22
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1633,6 +1634,69 @@ from metric samples; a live toggle), `live_dashboard_tab_test.dart` (the
 Settings → tab wiring, the part that was missing), and an mph case for the
 clear gate. Each ★ test was seen failing with its piece of the wiring
 removed. 624 tests, analyzer clean.
+
+## B.22 The freeze frame — Mode 02 on the scan and before the clear (Phase 6, slice 11 — 2026-09-24)
+
+§5.4 lists Mode 02 as the last step of the scan, and the clear sheet has
+always warned that Mode 04 "erases freeze-frame data"; nothing read it.
+The freeze frame is the readings the ECU stored the moment it set its first
+code — the mechanic's first question, *what was the engine doing when this
+happened?* — and a clear is the one thing that destroys it.
+
+**Protocol.** `lib/protocol/freeze_frame.dart`, pure Dart: `FreezeFrame`
+(the code, the frame number, values keyed by the registry's Mode 01 ids, in
+metric like a live sample) and `FreezeFrameDecoder`. A Mode 02 reply is a
+Mode 01 reply with the frame number wedged in before the data — `42 <pid>
+<frame> <data…>` — and a decoder that forgot that byte would read every
+value one byte off and usually still land inside the PID's physical bounds:
+the wrong number, confidently. `decodeValue` steps over it and hands the
+registry a Mode 01-shaped payload, so the formula and bounds are the tiles'
+own. `decodeDtc` reads `42 02 <frame> A B` (`00 00` is "no frame");
+`decodeSupportMask` reads the Mode 02 mask; `pidsToRead` orders the PIDs a
+mechanic reads (RPM, speed, coolant, load, throttle, MAP, IAT, MAF, the two
+trims, voltage, run time, fuel, timing), filtered by the car's mask — or the
+first eight when the ECU has no Mode 02 mask, each `NO DATA` costing one
+round trip and nothing else.
+
+**Session.** `ObdSession.readFreezeFrame()` — one PID per request (Mode 02
+batching is not universal), bounded to `maxPids` + 2 round trips, null on
+no frame, `NO DATA` or a replaced link. `clearDtcs` reads it after the
+pre-clear Mode 03 and **before Mode 04**, and stores it in the `beforeClear`
+snapshot: hard rule 8's snapshot now holds the one thing the clear
+destroys.
+
+**Data.** Schema v2: `DtcSnapshots.freezeFrameJson`, nullable; the
+migration is one `addColumn`; `drift_schemas/drift_schema_v2.json` is
+dumped and `test/data/schema_migration_test.dart` validates a fresh
+database at v2 and a v1 device migrating to v2. `DtcSnapshotRow.freezeFrame`
+reads it back tolerantly.
+
+**Diagnostics.** The scan gained the §5.4 step "Reading the freeze frame",
+after the readiness read and only when the reading has a code — a clean car
+is not asked a dozen questions it answers `NO DATA` to. The frame is
+recorded in the scan snapshot, shown in a "Freeze frame" section between
+the codes and the monitors in the user's units through
+`GaugeCatalog.specFor(distance:, temperature:)` (the same specs as the
+tiles, so the number here and on a tile agree), and dropped when a reading
+with no codes replaces the one it belonged to — a clear, a reconcile —
+because the car has erased it and the snapshot keeps the copy. The history
+row says "freeze frame at P0301"; the clear sheet's consequence now says
+Torque keeps a copy.
+
+**Traces.** `dtc_scan_can` gained the Mode 02 exchanges for P0301 — an idle
+misfire while warming up: 750 rpm, 0 km/h, 50 °C, lean trims — with the
+car's own mask; `clear_ok` gained the same frame but answers `NO DATA` to
+the Mode 02 mask, so the fallback eight are exercised. Every other trace
+answers `NO DATA` to Mode 02 through the mock, which reads as "no frame".
+
+**Tests.** `test/protocol/freeze_frame_test.dart` (★ the frame byte is
+stepped over — read as data, 750 rpm becomes 2.75), `test/session/
+freeze_frame_session_test.dart` (★ the frame off the recording; ★ it is in
+the `beforeClear` row and every Mode 02 command precedes `04` in what went
+over the wire; the after row has none; a round trip through the row), the
+★ v1 → v2 schema step, and three Diagnostics widget tests (★ the section;
+the units; a clean car). Each ★ test was seen failing with its piece
+removed. 648 tests, analyzer clean.
 
 ## HARD RULES
 

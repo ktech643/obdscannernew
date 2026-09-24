@@ -112,8 +112,9 @@ class _ClearCodesSheetState extends State<ClearCodesSheet> {
       const _Consequence(
         icon: Icons.delete_outline,
         text:
-            'Erases the freeze-frame data — the snapshot of what the car '
-            'was doing when the fault happened. A mechanic uses that.',
+            'Erases the freeze-frame data — what the car was doing when '
+            'the fault happened, which a mechanic uses. Torque keeps a copy '
+            'in the snapshot it writes first; the car itself forgets it.',
       ),
       const _Consequence(
         icon: Icons.warning_amber_outlined,

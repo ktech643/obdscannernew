@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart';
 
 import '../../protocol/dtc_decoder.dart';
+import '../../protocol/freeze_frame.dart';
 import '../clock.dart';
 import '../db/app_database.dart';
 import '../ids.dart';
@@ -51,6 +52,7 @@ class DtcRepository {
     int? dtcCount,
     Map<String, Object?>? readiness,
     int? protocol,
+    FreezeFrame? freezeFrame,
     DateTime? now,
   }) => _insert(
     vehicleId: vehicleId,
@@ -60,6 +62,7 @@ class DtcRepository {
     dtcCount: dtcCount,
     readiness: readiness,
     protocol: protocol,
+    freezeFrame: freezeFrame,
     now: now,
   );
 
@@ -72,6 +75,7 @@ class DtcRepository {
     int? dtcCount,
     Map<String, Object?>? readiness,
     int? protocol,
+    FreezeFrame? freezeFrame,
     DateTime? now,
   }) => _insert(
     vehicleId: vehicleId,
@@ -82,6 +86,7 @@ class DtcRepository {
     readiness: readiness,
     protocol: protocol,
     clearOutcome: ClearOutcome.pending,
+    freezeFrame: freezeFrame,
     now: now,
   );
 
@@ -156,6 +161,7 @@ class DtcRepository {
     int? protocol,
     ClearOutcome? clearOutcome,
     String? relatedSnapshotId,
+    FreezeFrame? freezeFrame,
     DateTime? now,
   }) async {
     final id = newId();
@@ -176,6 +182,9 @@ class DtcRepository {
             protocol: Value(protocol),
             clearOutcome: Value(clearOutcome),
             relatedSnapshotId: Value(relatedSnapshotId),
+            freezeFrameJson: Value(
+              freezeFrame == null ? null : jsonEncode(freezeFrame.toJson()),
+            ),
           ),
         );
     return (await byId(id))!;
@@ -210,6 +219,11 @@ class DtcRepository {
 
 extension DtcSnapshotRowX on DtcSnapshotRow {
   List<RawDtc> get codes => DtcRepository.decodeCodes(codesJson);
+
+  /// The Mode 02 freeze frame captured with this snapshot, or null. A
+  /// malformed document reads as none, never as a failed row.
+  FreezeFrame? get freezeFrame =>
+      freezeFrameJson == null ? null : FreezeFrame.tryParse(freezeFrameJson!);
   bool get isPendingClear =>
       purpose == SnapshotPurpose.beforeClear &&
       clearOutcome == ClearOutcome.pending;

@@ -32,14 +32,22 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
+  /// v1 (2026-09-05): the six tables. v2 (2026-09-24): the freeze frame on
+  /// `DtcSnapshots` — one nullable column, so a plain `addColumn` is the
+  /// whole step and `test/data/schema_migration_test.dart` checks it
+  /// against `drift_schemas/drift_schema_v2.json`. A step that changes a
+  /// table's shape rather than adding to it should move to
+  /// `drift_dev schema steps` + `stepByStep`, which references the old
+  /// schema instead of the current table.
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
-      // v1 is the first schema. When v2 lands: run
-      // `drift_dev schema steps` and call `stepByStep(...)` here.
+      if (from < 2) {
+        await m.addColumn(dtcSnapshots, dtcSnapshots.freezeFrameJson);
+      }
     },
     beforeOpen: (details) async {
       // SQLite leaves foreign keys off by default; every cascade in

@@ -4,6 +4,7 @@ import '../../data/db/app_database.dart';
 import '../../data/dtc_dictionary.dart';
 import '../../data/repositories/dtc_repository.dart';
 import '../../protocol/dtc_decoder.dart';
+import '../../protocol/freeze_frame.dart';
 import '../../protocol/vin_reader.dart';
 import '../../session/health_score.dart';
 import '../../session/obd_session.dart';
@@ -49,6 +50,7 @@ class ScanStep {
     ScanStep('07', 'Reading pending codes'),
     ScanStep('0A', 'Reading permanent codes'),
     ScanStep('0101', 'Reading the warning light and monitors'),
+    ScanStep('02', 'Reading the freeze frame'),
     ScanStep('0902', 'Reading the VIN'),
     ScanStep('live', 'Reading live values'),
   ];
@@ -121,6 +123,12 @@ class DiagnosticsController extends ChangeNotifier {
 
   VinResult? _vin;
   VinResult? get vin => _vin;
+
+  /// §5.4 — what the engine was doing when the ECU stored its first code,
+  /// from the last scan. Null when the car kept none or was not asked;
+  /// cleared when a clear erases it (the snapshot keeps the copy).
+  FreezeFrame? _freezeFrame;
+  FreezeFrame? get freezeFrame => _freezeFrame;
 
   HealthScore? _health;
   HealthScore? get health => _health;
@@ -199,7 +207,15 @@ class DiagnosticsController extends ChangeNotifier {
       // does not leave the previous scan's codes on screen while it times
       // out.
       _result = result;
+      _freezeFrame = null;
       _notify();
+
+      // Mode 02 only when there is a code that could have stored one; a
+      // clean car is not asked a dozen questions it answers NO DATA to.
+      _step('02');
+      if (result.all.isNotEmpty) {
+        _freezeFrame = await session.readFreezeFrame();
+      }
 
       _step('0902');
       _vin = await session.readVin();
@@ -215,6 +231,7 @@ class DiagnosticsController extends ChangeNotifier {
           milOn: result.milOn,
           dtcCount: result.reportedCount,
           protocol: session.protocol?.number,
+          freezeFrame: _freezeFrame,
           now: _scannedAt,
         );
       }
@@ -242,6 +259,10 @@ class DiagnosticsController extends ChangeNotifier {
   /// drift apart.
   Future<void> _install(DtcReadResult result) async {
     _result = result;
+    // A frame belongs to the codes it sits beside. A reading with none —
+    // after a clear, after a reconcile — means the car has erased it, and
+    // showing the old one next to "No problems found" would be a lie.
+    if (result.all.isEmpty) _freezeFrame = null;
     await _loadDefinitions(result.all);
 
     final live = <String, double?>{};
@@ -319,6 +340,10 @@ class DiagnosticsController extends ChangeNotifier {
       _lastClear = outcome;
 
       final reread = after;
+      // Mode 04 was accepted: the ECU's frame is gone. The snapshot the
+      // session wrote first keeps the copy, so the screen stops showing
+      // one it can no longer read.
+      if (reread != null) _freezeFrame = null;
       if (reread != null) await _install(reread);
       await refreshUnreconciled();
       return outcome;

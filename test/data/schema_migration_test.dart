@@ -19,10 +19,18 @@ void main() {
   late SchemaVerifier verifier;
   setUpAll(() => verifier = SchemaVerifier(GeneratedHelper()));
 
-  test('v1: what tables.dart creates is exactly what was dumped', () async {
+  test('v2: what tables.dart creates is exactly what was dumped', () async {
     // A fresh executor is at user_version 0, so opening runs onCreate.
     final db = AppDatabase(NativeDatabase.memory());
-    await verifier.migrateAndValidate(db, 1);
+    await verifier.migrateAndValidate(db, 2);
+    await db.close();
+  });
+
+  test('★ v1 → v2: a device on v1 migrates to exactly the v2 dump', () async {
+    // Opens the schema as it was on users' devices at v1, then lets the
+    // app's own onUpgrade run — the freeze-frame column on DtcSnapshots.
+    final db = AppDatabase(await verifier.startAt(1));
+    await verifier.migrateAndValidate(db, 2);
     await db.close();
   });
 
