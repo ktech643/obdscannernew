@@ -10,6 +10,7 @@ import '../data/repositories/service_repository.dart';
 import '../data/repositories/trip_repository.dart';
 import '../data/repositories/vehicle_repository.dart';
 import '../design_system/design_system.dart';
+import '../platform/screen_wake.dart';
 import '../protocol/protocol_log.dart';
 import '../providers/app_providers.dart';
 import '../session/adapter_discovery.dart';
@@ -38,7 +39,9 @@ class LiveSession extends ChangeNotifier {
     VehicleRepository? vehicles,
     ServiceRepository? services,
     TripRepository? trips,
+    ScreenWake? screenWake,
   }) : log = ProtocolLog(),
+       screenWake = screenWake ?? ScreenWake(),
        _discovery = discovery ?? RealAdapterDiscovery() {
     // Built in the body, not the initializer list, so it can pass this
     // session's own `log` — a field can't see a sibling field yet while
@@ -75,6 +78,19 @@ class LiveSession extends ChangeNotifier {
 
   /// Null only in tests that give no repositories.
   late final GarageController? garage;
+
+  /// SPEC §5.6 "Keep screen on". Told the answer whenever the link or the
+  /// setting changes; it forwards only a change.
+  final ScreenWake screenWake;
+
+  bool _keepScreenOn = true;
+
+  /// The setting as last applied. The screen is held awake only while this
+  /// is on *and* the link is live.
+  bool get keepScreenOn => _keepScreenOn;
+
+  void _syncWake() =>
+      unawaited(screenWake.set(_keepScreenOn && session.isLive));
 
   bool _wasLive = false;
 
@@ -121,20 +137,24 @@ class LiveSession extends ChangeNotifier {
     if (live && !_wasLive && !_demo) unawaited(garage?.onConnected(session));
     if (!live && _wasLive) garage?.onDisconnected();
     _wasLive = live;
+    _syncWake();
   }
 
-  /// SPEC §5.6 — the two connection settings that mean something to a live
-  /// link. Idempotent: [LiveSettingsSync] calls this every rebuild, so an
-  /// unchanged value is just a couple of field writes, not a resubscribe
-  /// or a reconnect.
+  /// SPEC §5.6 — the settings that mean something to a live link.
+  /// Idempotent: [LiveSettingsSync] calls this every rebuild, so an
+  /// unchanged value is just a few field writes, not a resubscribe, a
+  /// reconnect or a platform call.
   void applySettings({
     required bool autoReconnect,
     required bool haptics,
     int? maxPollingHz,
+    bool keepScreenOn = true,
   }) {
     session.autoReconnect = autoReconnect;
     session.scheduler.maxHz = maxPollingHz;
     AdaptiveHaptics.enabled = haptics;
+    _keepScreenOn = keepScreenOn;
+    _syncWake();
   }
 
   AdapterDiscovery _discovery;
@@ -168,6 +188,7 @@ class LiveSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(screenWake.set(false));
     session.removeListener(_onSession);
     garage?.removeListener(_syncVehicle);
     _discovery.dispose();
@@ -311,11 +332,10 @@ class LiveIdentityPrompt extends StatelessWidget {
 }
 
 /// Keeps the live link's behaviour in step with SPEC §5.6 Settings —
-/// auto-reconnect and the polling-rate ceiling — which the user still sets
-/// on the older Industry Settings screen. Wraps the whole tab stack next
-/// to [LiveIdentityPrompt], so a change reaches the session on the next
-/// frame no matter which tab is open, without the session needing to know
-/// `SettingsProvider` exists.
+/// auto-reconnect, the polling-rate ceiling, haptics and keep-screen-on.
+/// Wraps the whole tab stack next to [LiveIdentityPrompt], so a change
+/// reaches the session on the next frame no matter which tab is open,
+/// without the session needing to know `SettingsProvider` exists.
 class LiveSettingsSync extends StatelessWidget {
   const LiveSettingsSync({super.key, required this.child});
   final Widget child;
@@ -328,6 +348,7 @@ class LiveSettingsSync extends StatelessWidget {
       autoReconnect: settings.autoReconnect,
       haptics: settings.haptics,
       maxPollingHz: _hzFor(settings.pollingRate),
+      keepScreenOn: settings.keepScreenOn,
     );
     return child;
   }

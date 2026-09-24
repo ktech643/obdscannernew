@@ -89,4 +89,18 @@ void main() {
     // Reset so later tests are not surprised.
     addTearDown(() => AdaptiveHaptics.enabled = true);
   });
+
+  testWidgets('★ keep-screen-on reaches the session', (tester) async {
+    final live = LiveSession(session: ObdSession(timeScale: 0.05));
+    addTearDown(live.dispose);
+    await pump(tester, live);
+    expect(live.keepScreenOn, isTrue, reason: 'on by default');
+
+    Provider.of<SettingsProvider>(
+      tester.element(find.byType(SizedBox)),
+      listen: false,
+    ).setKeepScreenOn(false);
+    await tester.pump();
+    expect(live.keepScreenOn, isFalse);
+  });
 }

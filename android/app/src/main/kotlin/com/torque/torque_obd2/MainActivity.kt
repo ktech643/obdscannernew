@@ -6,6 +6,7 @@ import io.flutter.embedding.engine.FlutterEngine
 class MainActivity : FlutterActivity() {
     private var spp: SppPlugin? = null
     private var background: BackgroundPlugin? = null
+    private var screenWake: ScreenWakePlugin? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -15,6 +16,8 @@ class MainActivity : FlutterActivity() {
         // This one holds the Activity on purpose — it needs it to raise the
         // POST_NOTIFICATIONS runtime prompt.
         background = BackgroundPlugin(this, flutterEngine.dartExecutor.binaryMessenger)
+        // The keep-screen-on flag belongs to this Activity's window.
+        screenWake = ScreenWakePlugin(this, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -22,6 +25,8 @@ class MainActivity : FlutterActivity() {
         spp = null
         background?.dispose()
         background = null
+        screenWake?.dispose()
+        screenWake = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }
