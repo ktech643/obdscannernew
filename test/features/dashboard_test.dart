@@ -7,6 +7,7 @@ import 'package:torque_obd2/core/platform/platform_info.dart';
 import 'package:torque_obd2/design_system/design_system.dart';
 import 'package:torque_obd2/features/dashboard/dashboard_screen.dart';
 import 'package:torque_obd2/features/session_banner.dart';
+import 'package:torque_obd2/models/enums.dart';
 import 'package:torque_obd2/session/obd_session.dart';
 import 'package:torque_obd2/transport/mock_transport.dart';
 import 'package:torque_obd2/transport/obd_trace.dart';
@@ -59,6 +60,8 @@ void main() {
     List<String>? layout,
     VoidCallback? onConnect,
     Size size = const Size(390, 780),
+    DistanceUnit distance = DistanceUnit.km,
+    TemperatureUnit temperature = TemperatureUnit.celsius,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -75,6 +78,8 @@ void main() {
                 session: session,
                 layout: layout,
                 onConnect: onConnect,
+                distance: distance,
+                temperature: temperature,
               ),
             ),
           ),
@@ -168,6 +173,67 @@ void main() {
           .toSet();
       expect(asked, everyElement('010C'));
       expect(find.byType(GaugeTile), findsOneWidget);
+      await quiesce(tester, session);
+    });
+  });
+
+  group('★ §5.6 — the user\'s units reach the gauges', () {
+    Finder inTile(String pid, String text) => find.descendant(
+      of: find.byKey(ValueKey(pid)),
+      matching: find.text(text),
+    );
+
+    testWidgets('★ °F and mph on the tiles, from the same metric samples', (
+      tester,
+    ) async {
+      final session = newSession();
+      await pumpDashboard(
+        tester,
+        session,
+        distance: DistanceUnit.mi,
+        temperature: TemperatureUnit.fahrenheit,
+      );
+      unawaited(session.connect(transportFor('clean_can')));
+      await pumpUntil(
+        tester,
+        () => session.bus.of('0105').value?.value != null,
+        reason: 'a coolant sample',
+      );
+      await tester.pump();
+
+      expect(session.bus.of('0105').value?.value, 89, reason: 'metric on the bus');
+      expect(inTile('0105', '192'), findsOneWidget, reason: '89 °C shown as °F');
+      expect(inTile('0105', '°F'), findsOneWidget);
+      expect(inTile('0105', '89'), findsNothing);
+      expect(inTile('010D', '42'), findsOneWidget, reason: '68 km/h as mph');
+      expect(inTile('010D', 'mph'), findsOneWidget);
+      expect(inTile('010C', '1726'), findsOneWidget, reason: 'rpm untouched');
+      await quiesce(tester, session);
+    });
+
+    testWidgets('changing the unit while connected changes the tiles', (
+      tester,
+    ) async {
+      final session = newSession();
+      await pumpDashboard(tester, session);
+      unawaited(session.connect(transportFor('clean_can')));
+      await pumpUntil(
+        tester,
+        () => session.bus.of('0105').value?.value != null,
+      );
+      await tester.pump();
+      expect(inTile('0105', '89'), findsOneWidget);
+      expect(inTile('0105', '°C'), findsOneWidget);
+
+      await pumpDashboard(
+        tester,
+        session,
+        temperature: TemperatureUnit.fahrenheit,
+      );
+      await tester.pump();
+      expect(inTile('0105', '192'), findsOneWidget);
+      expect(inTile('0105', '°F'), findsOneWidget);
+      expect(inTile('0105', '89'), findsNothing);
       await quiesce(tester, session);
     });
   });

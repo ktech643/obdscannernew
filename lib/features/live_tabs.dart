@@ -245,11 +245,16 @@ class LiveDashboardTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final live = context.watch<LiveSession>();
+    // SPEC §5.6 — the unit toggles reach the gauges. Watched here, at the
+    // tab, so a change in Settings rebuilds the specs and nothing else.
+    final settings = context.watch<SettingsProvider>();
     return _Backlit(
       child: DashboardScreen(
         session: live.session,
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
+        distance: settings.distance,
+        temperature: settings.temperature,
       ),
     );
   }
@@ -268,6 +273,7 @@ class LiveDiagnosticsTab extends StatelessWidget {
         controller: live.diagnostics,
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
+        distance: context.watch<SettingsProvider>().distance,
       ),
     );
   }

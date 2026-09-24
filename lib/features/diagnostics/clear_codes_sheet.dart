@@ -2,6 +2,8 @@ import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 
 import '../../design_system/design_system.dart';
+import '../../models/enums.dart' show DistanceUnit, DistanceUnitX;
+import '../garage/distance.dart';
 import '../../session/obd_session.dart';
 import 'diagnostics_controller.dart';
 
@@ -16,7 +18,14 @@ import 'diagnostics_controller.dart';
 /// (hard rule 4): a stale zero from a stop sign ten seconds ago is exactly
 /// the reading that must not open it.
 class ClearCodesSheet extends StatefulWidget {
-  const ClearCodesSheet({super.key, required this.controller});
+  const ClearCodesSheet({
+    super.key,
+    required this.controller,
+    this.distance = DistanceUnit.km,
+  });
+
+  /// SPEC §5.6 — the gate quotes the car's speed in the user's unit.
+  final DistanceUnit distance;
 
   final DiagnosticsController controller;
 
@@ -177,7 +186,7 @@ class _ClearCodesSheetState extends State<ClearCodesSheet> {
 
       case _Stage.gated:
         return [
-          _Gate(speed: _speed),
+          _Gate(speed: _speed, distance: widget.distance),
           const SizedBox(height: Space.x16),
           PrimaryButton(label: 'Check again', onPressed: _checkSpeed),
         ];
@@ -319,7 +328,8 @@ class _Consequence extends StatelessWidget {
 /// live fault mid-drive, so the button is not reachable until the car says
 /// it is stopped.
 class _Gate extends StatelessWidget {
-  const _Gate({required this.speed});
+  const _Gate({required this.speed, required this.distance});
+  final DistanceUnit distance;
 
   /// Null when the car could not be asked — which is not permission.
   final double? speed;
@@ -340,8 +350,10 @@ class _Gate extends StatelessWidget {
                   ? 'The car did not report its speed, so there is no way '
                         'to tell it is stopped. Codes cannot be cleared '
                         'until it does.'
-                  : 'The car is moving at ${speed!.round()} km/h. Stop and '
-                        'put it in park before clearing codes.',
+                  : 'The car is moving at '
+                        '${Distance.fromKm(speed!, distance).round()} '
+                        '${distance.speedLabel}. Stop and put it in park '
+                        'before clearing codes.',
               style: TorqueType.body.copyWith(color: t.inkPrimary),
             ),
           ),

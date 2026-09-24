@@ -1,4 +1,5 @@
 import '../domain/pid_sample.dart';
+import '../models/enums.dart' show DistanceUnit, TemperatureUnit;
 import '../protocol/pid_registry.dart';
 
 /// Turns the protocol layer's [PidDef] into the design system's [GaugeSpec].
@@ -90,15 +91,23 @@ class GaugeCatalog {
   /// [supported] comes from the vehicle's support bitmask; an unsupported
   /// PID still gets a spec so the tile can say "Not available on this
   /// vehicle" rather than disappearing.
+  ///
+  /// SPEC §5.6 — units are the user's. The registry's units are metric and
+  /// the samples on the bus stay that way; this is the one place °F and
+  /// miles happen, once per spec, so neither the tile nor the scheduler
+  /// ever knows. Only the units the user can choose are converted:
+  /// temperature and distance (which covers speed).
   static GaugeSpec? specFor(
     String pid, {
     bool supported = true,
     Duration? expectedInterval,
+    DistanceUnit distance = DistanceUnit.km,
+    TemperatureUnit temperature = TemperatureUnit.celsius,
   }) {
     final def = PidRegistry.lookup(pid);
     if (def == null) return null;
     final band = _bands[def.pid];
-    return GaugeSpec(
+    final spec = GaugeSpec(
       pid: def.pid,
       label: _labels[def.pid] ?? def.name,
       unit: def.unit,
@@ -110,6 +119,21 @@ class GaugeCatalog {
       expectedInterval: expectedInterval ?? _intervalFor(def.priority),
       supported: supported,
     );
+    return switch (def.unit) {
+      '°C' when temperature == TemperatureUnit.fahrenheit => spec.displayedAs(
+        '°F',
+        UnitScale.celsiusToFahrenheit,
+      ),
+      'km/h' when distance == DistanceUnit.mi => spec.displayedAs(
+        'mph',
+        UnitScale.kmToMiles,
+      ),
+      'km' when distance == DistanceUnit.mi => spec.displayedAs(
+        'mi',
+        UnitScale.kmToMiles,
+      ),
+      _ => spec,
+    };
   }
 
   /// What the scheduler will actually manage for this priority at 10 Hz —

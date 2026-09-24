@@ -14,7 +14,7 @@ import 'package:torque_obd2/features/diagnostics/clear_codes_sheet.dart';
 import 'package:torque_obd2/features/diagnostics/code_detail_screen.dart';
 import 'package:torque_obd2/features/diagnostics/diagnostics_controller.dart';
 import 'package:torque_obd2/features/diagnostics/diagnostics_screen.dart';
-import 'package:torque_obd2/models/enums.dart' show VehicleFuel;
+import 'package:torque_obd2/models/enums.dart' show DistanceUnit, VehicleFuel;
 import 'package:torque_obd2/protocol/dtc_decoder.dart';
 import 'package:torque_obd2/protocol/readiness_decoder.dart';
 import 'package:torque_obd2/session/health_score.dart';
@@ -74,6 +74,7 @@ void main() {
     WidgetTester tester,
     DiagnosticsController controller, {
     VoidCallback? onConnect,
+    DistanceUnit distance = DistanceUnit.km,
   }) async {
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1;
@@ -90,6 +91,7 @@ void main() {
               child: DiagnosticsScreen(
                 controller: controller,
                 onConnect: onConnect,
+                distance: distance,
               ),
             ),
           ),
@@ -152,6 +154,7 @@ void main() {
     DtcDictionary dictionary = const EmptyDtcDictionary(),
     DtcRepository? dtcs,
     String? vehicleId,
+    DistanceUnit distance = DistanceUnit.km,
   }) async {
     final session = newSession(dtcs: dtcs);
     final c = newController(
@@ -160,7 +163,7 @@ void main() {
       dtcs: dtcs,
       vehicleId: vehicleId,
     );
-    await pumpScreen(tester, c);
+    await pumpScreen(tester, c, distance: distance);
     unawaited(session.connect(transportFor(trace)));
     await pumpUntil(tester, () => session.isLive, reason: 'the link');
     unawaited(c.scan());
@@ -500,6 +503,22 @@ void main() {
 
       expect(find.textContaining('moving at 68 km/h'), findsOne);
       expect(find.byType(DestructiveButton), findsNothing);
+      await quiesce(tester, c.session);
+    });
+
+    testWidgets('★ the gate quotes the speed in the user\'s unit (§5.6)', (
+      tester,
+    ) async {
+      final c = await connectedAndScanned(
+        tester,
+        'headers_can',
+        distance: DistanceUnit.mi,
+      );
+      await openSheet(tester);
+      await tester.pump(const Duration(milliseconds: 400));
+
+      expect(find.textContaining('moving at 42 mph'), findsOne);
+      expect(find.textContaining('km/h'), findsNothing);
       await quiesce(tester, c.session);
     });
 

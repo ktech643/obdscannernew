@@ -691,7 +691,8 @@ class _SparkPainter extends CustomPainter {
     final path = Path();
     for (var i = 0; i < points.length; i++) {
       final x = size.width * i / (points.length - 1);
-      final y = _y(points[i], size);
+      // History holds raw samples; the axis is in the displayed unit.
+      final y = _y(spec.display.apply(points[i]), size);
       if (i == 0) {
         path.moveTo(x, y);
       } else {

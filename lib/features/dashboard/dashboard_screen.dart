@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../design_system/design_system.dart';
+import '../../models/enums.dart' show DistanceUnit, TemperatureUnit;
 import '../../session/gauge_catalog.dart';
 import '../../session/obd_session.dart';
 import '../session_banner.dart';
@@ -22,9 +23,16 @@ class DashboardScreen extends StatefulWidget {
     this.layout,
     this.onConnect,
     this.adapterName,
+    this.distance = DistanceUnit.km,
+    this.temperature = TemperatureUnit.celsius,
   });
 
   final ObdSession session;
+
+  /// SPEC §5.6 — the user's units. Applied to each tile's spec, never to
+  /// the samples on the bus.
+  final DistanceUnit distance;
+  final TemperatureUnit temperature;
 
   /// The PIDs to show, in order. Defaults to [GaugeCatalog.defaultLayout];
   /// Phase 6's later slices persist this per vehicle.
@@ -121,6 +129,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             supported:
                 session.supportedPids.isEmpty ||
                 session.supportedPids.contains(pid),
+            distance: widget.distance,
+            temperature: widget.temperature,
           ),
         )
         .whereType<GaugeSpec>()

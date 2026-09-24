@@ -1245,6 +1245,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 8 done 2026-09-17 — Settings + diagnostics log on Part B, see §B.18
          ◐ slice 9 done 2026-09-17 — Onboarding on Part B, see §B.19
          ◐ review of slices 8/9 + slice 6 re-run, 2026-09-24 — five clusters fixed, see §B.20
+         ◐ slice 10 done 2026-09-24 — the unit toggles reach the gauges, see §B.21
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1580,8 +1581,8 @@ replied in 10 ms — faster than any ELM327 — so replay collapsed its RTTs to
 zero and the recovery path never ran (`5a54995`); and light status-bar icons
 on the Part B ground via `AnnotatedRegion` in `Backlit` (`d61ecbd`).
 
-**Refuted or deferred, named.** Distance and temperature units still do not
-reach the Dashboard gauges — the §B.17 deferral, unchanged. The LV RESET
+**Refuted or deferred, named.** Distance and temperature units still did not
+reach the Dashboard gauges — the §B.17 deferral — until §B.21, the same day. The LV RESET
 re-prompt is spec-consistent. "Help me pick one" still opens the coming-soon
 alert (§B.19). The Industry paywall and account screens under `lib/screens/`
 remain reachable from Settings and still read the old providers.
@@ -1594,6 +1595,44 @@ that cannot happen in the field certifies the bug it hides: at replay speed
 100 any recorded latency under ~100 ms becomes a 0 ms RTT.
 
 609 tests, analyzer clean.
+
+## B.21 The unit toggles reach the gauges (Phase 6, slice 10 — 2026-09-24)
+
+The §5.6 unit toggles had been stored since the app was built and read by
+the Garage alone: the Dashboard showed °C and km/h whatever the user chose —
+the deferral §B.17 named and every review since re-flagged.
+
+**Where the conversion lives.** `GaugeSpec` (`lib/domain/pid_sample.dart`)
+gained `UnitScale`, an affine map (°C → °F is ×1.8 + 32, km → mi is
+×0.621371), and a `display` field. A spec's `unit`, `min`, `max` and normal
+band are in the unit *shown*; `format`, `position` and `inRange` take the
+raw sample and apply `display` first. `GaugeCatalog.specFor(distance:,
+temperature:)` is the one place a spec is converted (`displayedAs`), and
+only for the registry units `°C`, `km/h` and `km`. The samples on the
+`PidBus` stay metric; the scheduler, the bus and the tile never learn the
+unit changed — hard rule 3 is untouched. Because the map is affine, a
+reading sits at the same place on the bar, the arc and the caution band in
+either unit, which is the property the tests pin. The sparkline converts
+its raw history points against the converted axis.
+
+**Wiring.** `LiveDashboardTab` watches `SettingsProvider` and hands both
+units to `DashboardScreen`, which passes them to the catalogue per build; a
+toggle in Settings rebuilds the six specs and nothing else. The clear-codes
+gate's "moving at N km/h" quotes the speed in the user's unit too
+(`LiveDiagnosticsTab` → `DiagnosticsScreen(distance:)` → `ClearCodesSheet`).
+
+**Not converted, on purpose:** pressure (kPa), flow (g/s, L/h), voltage and
+percentages — §5.6 offers only distance and temperature. The Garage's
+`Distance` helper is unchanged; it and `UnitScale.kmToMiles` share one
+factor.
+
+**Tests.** `test/domain/gauge_spec_units_test.dart` (the scale, the
+position/band/caution invariance, the catalogue's three conversions and its
+refusals), two ★ tests in `dashboard_test.dart` (°F and mph on the tiles
+from metric samples; a live toggle), `live_dashboard_tab_test.dart` (the
+Settings → tab wiring, the part that was missing), and an mph case for the
+clear gate. Each ★ test was seen failing with its piece of the wiring
+removed. 624 tests, analyzer clean.
 
 ## HARD RULES
 

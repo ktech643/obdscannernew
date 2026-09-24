@@ -8,6 +8,7 @@ import '../../protocol/readiness_decoder.dart';
 import '../../session/health_score.dart';
 import '../../session/obd_session.dart';
 import '../session_banner.dart';
+import '../../models/enums.dart' show DistanceUnit;
 import 'clear_codes_sheet.dart';
 import 'code_detail_screen.dart';
 import 'diagnostics_controller.dart';
@@ -115,6 +116,7 @@ class DiagnosticsScreen extends StatefulWidget {
     required this.controller,
     this.onConnect,
     this.adapterName,
+    this.distance = DistanceUnit.km,
   });
 
   final DiagnosticsController controller;
@@ -122,6 +124,9 @@ class DiagnosticsScreen extends StatefulWidget {
   /// Opens the Connect screen from the banner and the offline state.
   final VoidCallback? onConnect;
   final String? adapterName;
+
+  /// SPEC §5.6 — for the one speed this screen shows, in the clear gate.
+  final DistanceUnit distance;
 
   @override
   State<DiagnosticsScreen> createState() => _DiagnosticsScreenState();
@@ -168,7 +173,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   Future<void> _openClearSheet() async {
     final outcome = await showAdaptiveSheet<ClearResult>(
       context,
-      builder: (_) => ClearCodesSheet(controller: _c),
+      builder: (_) => ClearCodesSheet(controller: _c, distance: widget.distance),
     );
     if (outcome != null) AdaptiveHaptics.light();
   }
