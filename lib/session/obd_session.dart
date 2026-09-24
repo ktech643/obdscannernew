@@ -412,6 +412,10 @@ class ObdSession extends ChangeNotifier {
     if (!r.isOk) return r.status.name;
     final cmd = r.command.toUpperCase();
     if (cmd == '0902') {
+      // Noted before any validation: a corrupt read is still most of a
+      // real VIN, and the log masks only what it has been told about.
+      final raw = VinReader.rawCandidate(r.frames, headerChars: _headerChars);
+      if (raw != null) log?.noteVin(raw);
       return VinReader.parse(r.frames, headerChars: _headerChars)?.vin;
     }
     if (cmd.length == 4 && cmd.startsWith('01')) {

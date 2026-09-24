@@ -213,14 +213,11 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _openDiagnosticsLog(BuildContext context, LiveSession live) {
-    final vehicle = live.garage?.primary;
+    // No VIN handed in: the log masks every VIN it carried itself. Handing
+    // in the primary's, captured here, missed every other car's.
     Navigator.of(context).push(
       PageRouteBuilder<void>(
-        pageBuilder:
-            (_, _, _) => DiagnosticsLogScreen(
-              log: live.log,
-              vin: vehicle?.vin,
-            ),
+        pageBuilder: (_, _, _) => DiagnosticsLogScreen(log: live.log),
       ),
     );
   }

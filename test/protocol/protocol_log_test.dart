@@ -60,7 +60,10 @@ void main() {
 
   group('★ §10.4 — the VIN is masked, in the hex too', () {
     test('the plain VIN is masked to prefix and suffix', () {
-      expect(ProtocolLog.maskVinIn('VIN $vin here', vin), 'VIN 1HG••••••••••9186 here');
+      expect(
+        ProtocolLog.maskVinIn('VIN $vin here', vin),
+        'VIN 1HG••••••••••9186 here',
+      );
     });
 
     test('★ the raw Mode 09 reply no longer contains the VIN in hex', () {
@@ -72,7 +75,11 @@ void main() {
       expect(text, isNot(contains(vin)), reason: 'the parsed column');
       // The middle ten characters, "BH41JXMN10", as they sit in the frames.
       expect(text, isNot(contains('42 48 34 31 4A 58 4D')), reason: 'frame 21');
-      expect(text, isNot(contains('4E 31 30')), reason: 'frame 22, first three');
+      expect(
+        text,
+        isNot(contains('4E 31 30')),
+        reason: 'frame 22, first three',
+      );
       // The kept prefix and suffix survive in both forms.
       expect(text, contains('31 48 47'), reason: '"1HG" stays');
       expect(text, contains('39 31 38 36'), reason: '"9186" stays');
@@ -103,6 +110,31 @@ void main() {
       final log = ProtocolLog();
       log.reply(mode09);
       expect(log.render(), contains('42 48 34 31 4A 58 4D'));
+    });
+
+    test('★ two VINs are resolved together, not one after the other', () {
+      // A = 1HGBH41JXMN109186: "HGB" at 1-3 sits against its disclosed
+      // prefix, so A alone would reveal "48 47" and mask the "42".
+      // B = WVWZZZHGBZW000001: "HGB" at 6-8 is deep in B's masked interior.
+      // Masking A first would stamp A's partial answer onto B's fragment,
+      // and B's pass would then find nothing left to mask.
+      const a = '1HGBH41JXMN109186';
+      const b = 'WVWZZZHGBZW000001';
+      expect(a.substring(1, 4), 'HGB');
+      expect(b.substring(6, 9), 'HGB');
+      final text = ProtocolLog.maskVinsIn('7E8 21 48 47 42 5A 57 F1', [a, b]);
+      expect(text, isNot(contains('48 47 42')));
+      expect(text, isNot(contains('48 47 ••')), reason: 'no partial reveal');
+    });
+
+    test('the log masks what it has noted, and forgets it on clear', () {
+      final log = ProtocolLog()
+        ..reply('49 02 01 $vin', parsed: vin)
+        ..noteVin(vin);
+      expect(log.render(), isNot(contains(vin)));
+      expect(log.mask('x $vin y'), 'x 1HG••••••••••9186 y');
+      log.clear();
+      expect(log.knownVins, isEmpty);
     });
 
     test(

@@ -85,6 +85,22 @@ class VinReader {
   }
 
   static VinResult? parseBytes(List<int> payload) {
+    final candidate = _candidate(payload);
+    if (candidate == null || candidate.length < _length) return null;
+    return validate(candidate);
+  }
+
+  /// What the car sent as its VIN, *before* any validation — including a
+  /// corrupt read that [parse] rejects or flags. Null when the reply has no
+  /// `49 02`. Shorter than 17 when the car sent fewer characters.
+  ///
+  /// For privacy, not for identity: a corrupt read one character off is
+  /// still sixteen characters of a real VIN, and whatever masks VINs in the
+  /// diagnostics log has to know it was there.
+  static String? rawCandidate(List<String> frames, {int headerChars = 0}) =>
+      _candidate(IsoTpReassembler.reassemble(frames, headerChars: headerChars));
+
+  static String? _candidate(List<int> payload) {
     final start = _indexOfSequence(payload, [0x49, 0x02]);
     if (start < 0) return null;
 
@@ -97,15 +113,11 @@ class VinReader {
         .map(String.fromCharCode)
         .join();
 
-    if (ascii.length < _length) return null;
-
     // The count byte can land in range as '1'. Prefer the trailing 17 that
     // form a structurally valid VIN.
-    final candidate = ascii.length == _length
+    return ascii.length <= _length
         ? ascii
         : ascii.substring(ascii.length - _length);
-
-    return validate(candidate);
   }
 
   /// Validates a VIN string on its own, for manual entry as well as reads.
