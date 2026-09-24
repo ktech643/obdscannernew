@@ -194,9 +194,18 @@ void main() {
 }
 
 /// The `buffer_full_poll` fixture's own preamble and first overflow,
-/// followed by several fast, clean 010C replies — a link that overflows
-/// once and then fully recovers, unlike the checked-in fixture (which
-/// holds the overflow forever, by design, to prove the rate stays down).
+/// followed by several clean 010C replies — a link that overflows once and
+/// then fully recovers, unlike the checked-in fixture (which holds the
+/// overflow forever, by design, to prove the rate stays down).
+///
+/// **The recovery replies take 240–245 ms, like this adapter's own replies
+/// before the overflow.** The first version gave them 10 ms, which no
+/// ELM327 can do. At replay speed 100 that is a 0.1 ms round trip, which
+/// rounds to a p95 of 0 — and `recordP95Rtt` treats 0 as "no measurement"
+/// and returns without recomputing `maxPidsPerCycle`. The test then passed
+/// or failed on scheduler jitter (about 3 runs in 5 failed). A fixture that
+/// encodes what real hardware cannot do produces results about the fixture,
+/// not about the code.
 const _bufferFullThenRecoversTrace = '''
 # torque.obdtrace v1
 # vehicle: 2011 Suzuki Swift 1.3
@@ -235,11 +244,11 @@ T+4245  < 41 0C 0F A4\\r\\r>
 T+4275  > 010C
 T+5175  < BUFFER FULL\\r\\r>
 T+5200  > 010C
-T+5210  < 41 0C 0F A6\\r\\r>
-T+5230  > 010C
-T+5240  < 41 0C 0F A8\\r\\r>
-T+5260  > 010C
-T+5270  < 41 0C 0F AA\\r\\r>
+T+5440  < 41 0C 0F A6\\r\\r>
+T+5470  > 010C
+T+5715  < 41 0C 0F A8\\r\\r>
+T+5745  > 010C
+T+5985  < 41 0C 0F AA\\r\\r>
 ''';
 
 /// Wraps a real [MockTransport] for the handshake, then refuses to
