@@ -1,8 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import 'core/platform/platform_info.dart';
 import 'data/db/app_database.dart';
 import 'data/repositories/dtc_repository.dart';
 import 'data/repositories/service_repository.dart';
@@ -17,11 +19,10 @@ import 'providers/diagnostics_provider.dart';
 import 'providers/garage_provider.dart';
 import 'features/live_tabs.dart';
 import 'features/onboarding/onboarding_flow.dart';
+import 'design_system/design_system.dart';
 import 'features/settings/erase_everything.dart';
 import 'theme/tokens.dart';
 import 'theme/typography.dart';
-import 'widgets/chrome.dart';
-import 'dev_panel.dart';
 
 /// Root. Every provider is registered once, here; nothing constructs its own.
 class TorqueApp extends StatefulWidget {
@@ -148,10 +149,48 @@ class _Root extends StatelessWidget {
   }
 }
 
+/// The five tabs, for anything that needs to name them.
+class AppShellTabs {
+  AppShellTabs._();
+  static List<String> get labels => [for (final t in AppShell.tabs) t.label];
+}
+
 /// The tab shell. Each tab keeps its own navigator so a push inside Garage
 /// doesn't unwind when the user checks the Dashboard and comes back.
+///
+/// The chrome is Part B's: `AdaptiveTabBar` on the design system's ground,
+/// which also runs under the status bar and the home indicator so the
+/// screens sit on one dark surface instead of on a light strip. `Backlit`
+/// wraps only the chrome — a route pushed inside a tab keeps the app's
+/// root theme, which the remaining Industry sub-screens are drawn against.
+/// The earlier debug panel is gone: every control on it drove the old
+/// Provider stack, which none of these tabs read.
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
+
+  static const tabs = [
+    AdaptiveTab(
+      label: 'Connect',
+      icon: Icons.power_outlined,
+      selectedIcon: Icons.power,
+    ),
+    AdaptiveTab(
+      label: 'Dashboard',
+      icon: Icons.speed_outlined,
+      selectedIcon: Icons.speed,
+    ),
+    AdaptiveTab(
+      label: 'Diagnostics',
+      icon: Icons.monitor_heart_outlined,
+      selectedIcon: Icons.monitor_heart,
+    ),
+    AdaptiveTab(
+      label: 'Garage',
+      icon: Icons.directions_car_outlined,
+      selectedIcon: Icons.directions_car,
+    ),
+    AdaptiveTab(label: 'Settings', icon: Icons.tune),
+  ];
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -179,46 +218,65 @@ class _AppShellState extends State<AppShell> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-    canPop: false,
-    onPopInvokedWithResult: (didPop, _) {
-      if (didPop) return;
-      final nav = _navKeys[_tab].currentState;
-      if (nav != null && nav.canPop()) nav.pop();
-    },
-    child: SafeArea(
-      bottom: false,
-      child: Column(
-        children: [
-          Expanded(
-            child: LiveSettingsSync(
-              child: LiveIdentityPrompt(
-                child: IndexedStack(
-                  index: _tab,
-                  children: [
-                    for (var i = 0; i < _tabs.length; i++)
-                      Navigator(
-                        key: _navKeys[i],
-                        onGenerateRoute: (settings) => PageRouteBuilder(
-                          settings: settings,
-                          pageBuilder: (_, _, _) => _tabs[i],
-                          transitionsBuilder: _slide,
-                        ),
+  Widget build(BuildContext context) {
+    final tokens = MediaQuery.highContrastOf(context)
+        ? TorqueTokens.highContrast
+        : TorqueTokens.dark;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final nav = _navKeys[_tab].currentState;
+        if (nav != null && nav.canPop()) nav.pop();
+      },
+      // The ground runs under the status bar too, so its icons are claimed
+      // here, where the box that sits under them is.
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: ColoredBox(
+          color: tokens.surfaceDeep,
+          child: SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                Expanded(
+                  child: LiveSettingsSync(
+                    child: LiveIdentityPrompt(
+                      child: IndexedStack(
+                        index: _tab,
+                        children: [
+                          for (var i = 0; i < _tabs.length; i++)
+                            Navigator(
+                              key: _navKeys[i],
+                              onGenerateRoute: (settings) => PageRouteBuilder(
+                                settings: settings,
+                                pageBuilder: (_, _, _) => _tabs[i],
+                                transitionsBuilder: _slide,
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
                 ),
-              ),
+                // Tab change is 0 ms — no transition. In a diagnostic tool a
+                // transition is latency the user has to wait through. The
+                // bar pads itself for the home indicator.
+                Backlit(
+                  platform: PlatformInfo.current,
+                  child: AdaptiveTabBar(
+                    tabs: AppShell.tabs,
+                    index: _tab,
+                    onSelected: _select,
+                  ),
+                ),
+              ],
             ),
           ),
-          // Tab change is 0 ms — no transition. In a diagnostic tool a
-          // transition is latency the user has to wait through.
-          AppTabBar(active: _tab, onSelect: _select),
-          const DevPanel(),
-          SizedBox(height: MediaQuery.paddingOf(context).bottom),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   static Widget _slide(
     BuildContext context,

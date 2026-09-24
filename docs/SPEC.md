@@ -1247,6 +1247,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ review of slices 8/9 + slice 6 re-run, 2026-09-24 — five clusters fixed, see §B.20
          ◐ slice 10 done 2026-09-24 — the unit toggles reach the gauges, see §B.21
          ◐ slice 11 done 2026-09-24 — the freeze frame (Mode 02) on the scan and before the clear, see §B.22
+         ◐ slice 12 done 2026-09-24 — the tab shell on Part B, see §B.23
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1697,6 +1698,34 @@ over the wire; the after row has none; a round trip through the row), the
 ★ v1 → v2 schema step, and three Diagnostics widget tests (★ the section;
 the units; a clean car). Each ★ test was seen failing with its piece
 removed. 648 tests, analyzer clean.
+
+## B.23 The tab shell on Part B (Phase 6, slice 12 — 2026-09-24)
+
+The last piece of Industry chrome sat under every rebuilt screen: the light
+`AppTabBar`, a light strip under the status bar and the home indicator, and
+the debug `DevPanel` strip, all drawn on the root `Material(color: T.bg)`.
+
+`AppShell` (`lib/app.dart`) now uses the design system's `AdaptiveTabBar`
+— `CupertinoTabBar` on iOS, `NavigationBar` on Android, tab change
+`Duration.zero` on both — on the Part B ground, which runs under the
+status bar and the home indicator so the screens sit on one dark surface.
+The status-bar icons are claimed light at the shell, where the box under
+them is (the lesson of `d61ecbd`: `AnnotatedRegion` covers only its own
+box). `Backlit` wraps only the chrome: a route pushed inside a tab keeps
+the root theme, which the remaining Industry sub-screens (paywall,
+account) are drawn against, so nothing they render changed. The five
+tabs are named once, in `AppShell.tabs`.
+
+The `DevPanel` is deleted, not hidden: every control on it drove the old
+`ConnectionProvider`/`DashboardProvider` stack, which none of the Part B
+tabs read — a debug strip whose buttons did nothing visible was worse
+than none. Demo Mode is what reaches every state without hardware now
+(§11.1, §B.14).
+
+**Tests.** `test/app_shell_test.dart`: the shell opens on the Dashboard
+with the Part B bar and no Industry chrome, claims the status bar light,
+and switches tabs without an animation while keeping the others alive
+(offstage in the `IndexedStack`). 651 tests, analyzer clean.
 
 ## HARD RULES
 
