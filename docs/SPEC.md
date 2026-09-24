@@ -1244,6 +1244,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 7 done 2026-09-13 — connection settings wired, see §B.17
          ◐ slice 8 done 2026-09-17 — Settings + diagnostics log on Part B, see §B.18
          ◐ slice 9 done 2026-09-17 — Onboarding on Part B, see §B.19
+         ◐ review of slices 8/9 + slice 6 re-run, 2026-09-24 — five clusters fixed, see §B.20
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1496,12 +1497,103 @@ are rebuilt on the Part B design system and wrapped in `Backlit`.
 and the tab shell itself.
 
 **What the tests cover.** `test/features/onboarding/onboarding_test.dart`
-proves the four screens advance correctly, Skip finishes, the iOS adapter
+proves the four screens advance correctly, Skip finishes (★ that was the bug —
+Skip must stop at the safety step; corrected 2026-09-24, see §B.20), the iOS adapter
 limits are shown, the add-car form creates a primary vehicle, and the safety
 acknowledgement gate works. `test/widget_test.dart` was updated to
 `pumpAndSettle` through the new screen transition.
 
 566 tests, analyzer clean.
+
+## B.20 Adversarial review of slices 8/9, with slice 6 re-run (2026-09-24)
+
+A review of the Settings, diagnostics-log and Onboarding slices, plus a re-run
+of the Garage review now that the §9.6 identity logic is live — lenses find,
+three refuters each, only a unanimous survivor counts — confirmed 23 findings,
+which reduced to five clusters. All five are fixed; every fix's ★ regression
+test was seen failing with its bug put back before it was trusted.
+
+- **Garage identity (`af1e851`).** Demo Mode's connect ran the §9.6 identity
+  judgement against the real garage: the recording's VIN was attached to the
+  user's VIN-less car, the recording's protocol cached on it, and a demo scan
+  or clear filed under their vehicle (blocker). Demo never asks now and never
+  records (`NotRecording.demo`). `attached` was judged before `other`, so a
+  VIN-less primary took a VIN another garage row already owned; the verdict
+  outlived the link, a primary change and a late VIN read; the edit form saved
+  a stale whole row over the controller's fresher one. Fixed by the
+  `resolveIdentity` order, a per-connection epoch, `onDisconnected`,
+  `_reconsider` on primary change, and `VehicleRepository.updateDetails` — a
+  partial update that never touches `isPrimary`, `createdAt` or the connection
+  cache.
+- **Diagnostics log (`b39f7aa`).** The log masked only the garage primary's
+  VIN, captured when the screen opened: an empty garage, a friend's car, the
+  previous car still in the ring and a clone's corrupt first read (sixteen
+  real characters) all showed in full, the decoded column was never masked,
+  and there was no opt-in and no Share `.txt` (blocker). `ObdSession` now
+  notes every VIN it decodes — pre-validation candidates included — into
+  `ProtocolLog.knownVins`; both columns are masked from that set;
+  `maskVinsIn` resolves every VIN's hex runs in one settled map; the screen
+  carries the §10.4 "Include the VIN" opt-in and shares a `.txt` through
+  `share_plus`.
+- **Data & privacy (`2ef989f`).** "Delete all data" cleared SharedPreferences
+  and nothing else — every row, every trip CSV and every provider's in-memory
+  state survived behind a sheet that said all of it was erased (blocker).
+  `EraseEverything` closes the link, wipes every table, deletes every trip
+  file, clears the preferences except the Pro cache (a purchase belongs to
+  the store account), empties the log, and then `TorqueApp` rebuilds the
+  whole provider tree from the emptied storage by keying `MultiProvider` on a
+  generation counter; a failing step stops there and the sheet says so.
+  Export shared a hard-coded sample car; it now shares `BackupCodec`'s export
+  of the database as a `.json` file, VINs whole, in the format import reads.
+  The copy disclosed ad requests, iCloud sync and a personalised-ads switch —
+  none of which exist — and said nothing about the store and RevenueCat, the
+  one thing that does leave the phone (§8.3, AC-14); rewritten to what the
+  code does. `EntitlementProvider` unregisters its RevenueCat listener on
+  dispose, so the rebuilt tree leaves none behind.
+- **Onboarding (`e002cc3`).** Skip called `finish()`, so three taps reached
+  the Dashboard without the §8.4 warning — and a test asserted exactly that
+  (blocker). Skip stops at the safety step; only "Agree and continue"
+  finishes. The odometer was parsed with every comma stripped (`142380,5` →
+  1,423,805), had no bound, and a long entry stored Infinity that the Garage
+  card's `round()` threw on; it now uses `Distance.parse` (which refuses
+  Infinity and NaN) with the Garage form's own limits, shows errors under the
+  fields, and `Distance.display` shows the dash for a non-finite reading.
+  Every save created a vehicle — a relaunch before the safety step, or a
+  double tap, made a second, non-primary car past the §7.2 limit with no
+  paywall; the form now prefills from and updates the existing primary, one
+  save at a time. The safety checkbox's tap action sits on its Semantics node
+  (a `GestureDetector` under `ExcludeSemantics` is invisible to VoiceOver and
+  TalkBack); the page pads itself by the keyboard's height and a tap outside a
+  field dismisses it; the copy no longer assumes an iPhone.
+- **Keep screen on (`5171234`).** The preference was read by nothing.
+  `ScreenWake` (`lib/platform/`, channel `ktc.torque/screen`, one method
+  `setKeepAwake(bool)`): iOS sets the idle timer from the app delegate,
+  Android sets `FLAG_KEEP_SCREEN_ON` on the activity window. `LiveSession`
+  holds the screen only while the setting is on *and* the link is live, and
+  lets go on disconnect, on the setting turning off, and on dispose; the
+  platform hears only a change of answer. The Android side is written to
+  `BackgroundPlugin`'s shape but was not built here (disk); the iOS build
+  compiles and the app launches on the simulator.
+
+Also fixed on the way: a flaky BUFFER FULL recovery test whose fixture
+replied in 10 ms — faster than any ELM327 — so replay collapsed its RTTs to
+zero and the recovery path never ran (`5a54995`); and light status-bar icons
+on the Part B ground via `AnnotatedRegion` in `Backlit` (`d61ecbd`).
+
+**Refuted or deferred, named.** Distance and temperature units still do not
+reach the Dashboard gauges — the §B.17 deferral, unchanged. The LV RESET
+re-prompt is spec-consistent. "Help me pick one" still opens the coming-soon
+alert (§B.19). The Industry paywall and account screens under `lib/screens/`
+remain reachable from Settings and still read the old providers.
+
+**Lessons recorded** (also in the project memory). A bare `tester.pump()`
+flushes microtasks only; the `Timer.run` drift schedules when a stream is
+cancelled needs a pump *with a duration*, and `db.close()` in a tearDown
+waits on that timer forever after a failed test — cap the close. A fixture
+that cannot happen in the field certifies the bug it hides: at replay speed
+100 any recorded latency under ~100 ms becomes a 0 ms RTT.
+
+609 tests, analyzer clean.
 
 ## HARD RULES
 
