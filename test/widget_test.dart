@@ -475,13 +475,6 @@ void main() {
       expect(() => GarageProvider(store), returnsNormally);
       expect(GarageProvider(store).records, isEmpty);
     });
-
-    test('deleting all data returns the app to first run', () async {
-      final o = OnboardingProvider(store)..finish();
-      await SettingsProvider(store).deleteAllData();
-      o.reset();
-      expect(OnboardingProvider(store).complete, isFalse);
-    });
   });
 
   group('editing the dashboard', () {

@@ -17,13 +17,14 @@ import 'providers/diagnostics_provider.dart';
 import 'providers/garage_provider.dart';
 import 'features/live_tabs.dart';
 import 'features/onboarding/onboarding_flow.dart';
+import 'features/settings/erase_everything.dart';
 import 'theme/tokens.dart';
 import 'theme/typography.dart';
 import 'widgets/chrome.dart';
 import 'dev_panel.dart';
 
 /// Root. Every provider is registered once, here; nothing constructs its own.
-class TorqueApp extends StatelessWidget {
+class TorqueApp extends StatefulWidget {
   const TorqueApp({
     super.key,
     required this.store,
@@ -48,7 +49,27 @@ class TorqueApp extends StatelessWidget {
   final Directory docsDir;
 
   @override
+  State<TorqueApp> createState() => _TorqueAppState();
+}
+
+class _TorqueAppState extends State<TorqueApp> {
+  /// Bumped by "Delete all data". The whole provider tree below is keyed on
+  /// it, so every provider — and the live session, and every navigator — is
+  /// disposed and built again from the emptied storage, exactly as on a
+  /// first launch. Resetting providers one field at a time is how the old
+  /// settings survived the last delete.
+  int _generation = 0;
+
+  void _restart() => setState(() => _generation++);
+
+  Persistence get store => widget.store;
+  RevenueCatService get billing => widget.billing;
+  AppDatabase get db => widget.db;
+  Directory get docsDir => widget.docsDir;
+
+  @override
   Widget build(BuildContext context) => MultiProvider(
+    key: ValueKey(_generation),
     providers: [
       ChangeNotifierProvider(create: (_) => OnboardingProvider(store)),
       ChangeNotifierProvider(create: (_) => ConnectionProvider()),
@@ -76,6 +97,15 @@ class TorqueApp extends StatelessWidget {
           vehicles: c.read<VehicleRepository>(),
           services: c.read<ServiceRepository>(),
           trips: c.read<TripRepository>(),
+        ),
+      ),
+      Provider<EraseEverything>(
+        create: (c) => EraseEverything(
+          db: db,
+          trips: c.read<TripRepository>(),
+          store: store,
+          live: c.read<LiveSession>(),
+          onErased: _restart,
         ),
       ),
     ],

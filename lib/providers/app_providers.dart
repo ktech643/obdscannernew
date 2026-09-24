@@ -60,8 +60,10 @@ class EntitlementProvider extends ChangeNotifier {
   Future<void> _init() async {
     await _billing.configure();
     _plans = await _billing.plans();
-    _billing.addEntitlementListener(_onEntitlementChanged);
+    if (_disposed) return;
+    _unlisten = _billing.addEntitlementListener(_onEntitlementChanged);
     final pro = await _billing.isPro();
+    if (_disposed) return;
     if (pro == true) {
       _grantPro(ProSource.direct);
     } else if (pro == false) {
@@ -72,6 +74,25 @@ class EntitlementProvider extends ChangeNotifier {
     }
     // pro == null (unreachable): keep the cached state — that IS the grace.
     notifyListeners();
+  }
+
+  /// Removes [_onEntitlementChanged] from the shared RevenueCat instance.
+  /// "Delete all data" rebuilds every provider while the SDK lives on; a
+  /// listener left behind would write the old tier into the emptied store
+  /// and notify a disposed provider on the next customer-info change.
+  void Function()? _unlisten;
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_disposed) super.notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _unlisten?.call();
+    super.dispose();
   }
 
   /// Fired on every customer-info change: purchase, refund, revocation,
@@ -462,13 +483,6 @@ class SettingsProvider extends ChangeNotifier {
   void setHaptics(bool v) {
     _haptics = v;
     _store.setBool(Keys.haptics, v);
-    notifyListeners();
-  }
-
-  /// Backs "Delete all data". Wipes every stored preference and record — the
-  /// screen says the garage is local, so deleting it has to be local too.
-  Future<void> deleteAllData() async {
-    await _store.clear();
     notifyListeners();
   }
 

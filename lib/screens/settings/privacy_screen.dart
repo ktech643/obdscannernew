@@ -2,9 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
-import '../../providers/app_providers.dart';
-import '../../providers/garage_provider.dart';
+import '../../data/backup/backup_codec.dart';
+import '../../data/db/app_database.dart';
+import '../../features/settings/erase_everything.dart';
+import '../../models/enums.dart';
 import '../../theme/tokens.dart';
 import '../../theme/typography.dart';
 import '../../widgets/buttons.dart';
@@ -12,71 +15,80 @@ import '../../widgets/chrome.dart';
 import '../../widgets/icons.dart';
 import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
-import '../pro/paywall_screen.dart';
 
-/// F4 — data & privacy, including the ad disclosure.
+/// Hands the export to the platform share sheet as a `.json` file.
+typedef ShareBackup = Future<void> Function(String json, String fileName);
+
+Future<void> _shareWithSystem(String json, String fileName) async {
+  await Share.shareXFiles(
+    [XFile.fromData(utf8.encode(json), mimeType: 'application/json')],
+    fileNameOverrides: [fileName],
+    subject: 'Torque backup',
+  );
+}
+
+/// F4 — data & privacy.
 ///
-/// Adding ads forced the privacy label to change. That trade is documented
-/// here in the user's words rather than only in App Store metadata.
+/// Every sentence on this screen is a claim about what the app does, so
+/// each one is checked against the code rather than the design. An earlier
+/// version disclosed ad requests (there are no ads), offered iCloud sync
+/// (there is none — Part 6 says no cloud sync at v1), a "Personalised ads"
+/// switch that asked iOS for nothing, and said nothing at all about the one
+/// thing that *does* leave the phone: the store and RevenueCat checking a
+/// purchase (SPEC §8.3, AC-14). Its Export copied a hard-coded sample car
+/// rather than the database, and its Delete cleared the preferences and
+/// left every row and recording where it was.
 class PrivacyScreen extends StatelessWidget {
-  const PrivacyScreen({super.key});
+  const PrivacyScreen({super.key, this.shareBackup = _shareWithSystem});
+
+  /// Where Export sends the file. The system share sheet in the app; a
+  /// capture in tests, so they can check exactly what would leave.
+  final ShareBackup shareBackup;
 
   @override
   Widget build(BuildContext context) {
-    final s = context.watch<SettingsProvider>();
-    final e = context.watch<EntitlementProvider>();
-
     return Screen(
       title: 'Data & privacy',
       backLabel: 'Settings',
       onBack: () => Navigator.of(context).pop(),
       children: [
-        Text("Your car's data stays on your iPhone.", style: Type.cardTitleLg),
+        Text("Your car's data stays on this phone.", style: Type.cardTitleLg),
         const SizedBox(height: 10),
         Text(
-          'Codes, live readings, VIN, service history and receipts stay on the '
-          'device — and in your own iCloud if you turn it on.',
+          'Codes, live readings, VINs, service history and trips are stored '
+          'on this device and nowhere else. There is no cloud sync and no '
+          'account.',
           style: Type.body16Muted,
         ),
         const SectionHeading('What leaves the device'),
-        AppListRow(
-          title: 'Ad requests',
+        const AppListRow(
+          title: 'The adapter in your car',
           subtitle:
-              'Device identifier, region and app usage. Never your codes, '
-              'VIN or vehicle data.',
+              'Commands go to it and readings come back, over Bluetooth or '
+              "the adapter's own Wi-Fi. Nothing goes further.",
         ),
-        AppListRow(
+        const AppListRow(
+          title: 'Purchases',
+          subtitle:
+              'The App Store or Google Play, and RevenueCat — which checks '
+              'whether you have Pro — see an anonymous ID and your purchases. '
+              'Never your codes, VIN or vehicle data.',
+        ),
+        const AppListRow(
           title: 'Everything else',
-          subtitle: 'Nothing. No analytics, no crash reporting, no account.',
-        ),
-        AppListRow(
-          title: 'Personalised ads',
-          subtitle: 'Turning this on asks iOS for tracking permission first.',
-          trailing: AppSwitch(
-            value: s.personalisedAds,
-            onChanged: s.setPersonalisedAds,
-          ),
-        ),
-        AppListRow(
-          title: 'iCloud sync',
-          subtitle: "Your private database. We can't read it.",
-          trailing: e.isPro ? null : const Badge('PRO'),
+          subtitle:
+              'Nothing. No ads, no analytics, no crash reporting, no '
+              'tracking.',
         ),
         const SectionHeading('Your controls'),
-        if (!e.isPro)
-          AppListRow(
-            title: 'Remove ads — go Pro',
-            chevron: true,
-            onTap: () => openPaywall(context),
-          ),
         AppListRow(
           title: 'Export everything as JSON',
+          subtitle:
+              'Every vehicle, scan, service record and trip summary, with '
+              'full VINs, as a file you choose where to keep. Trip '
+              'recordings are not in it.',
           chevron: true,
-          onTap: () => copyToClipboard(
-            context,
-            _exportJson(context),
-            'Copied your data as JSON. Paste it anywhere to keep a copy.',
-          ),
+          onTap: () => _export(context),
         ),
         AppListRow(
           title: 'Delete all data',
@@ -87,53 +99,98 @@ class PrivacyScreen extends StatelessWidget {
       ],
     );
   }
+
+  /// SPEC Part 6 — "Full JSON export/import instead [of sync]": every row
+  /// of every table, from the database, in the format `BackupCodec.import`
+  /// reads back. Nothing is uploaded; the share sheet is the user's choice
+  /// of where it goes.
+  ///
+  /// VINs are whole. A backup is for restoring, and a masked VIN would
+  /// restore as a car the garage can never recognise again.
+  Future<void> _export(BuildContext context) async {
+    final db = context.read<AppDatabase>();
+    try {
+      final doc = await BackupCodec(db).export();
+      final json = const JsonEncoder.withIndent('  ').convert(doc);
+      await shareBackup(json, _fileName(DateTime.now()));
+    } on Object {
+      if (!context.mounted) return;
+      Toast.show(
+        context,
+        "Couldn't read your data to export it. Nothing was shared.",
+        tone: Tone.fault,
+      );
+    }
+  }
+
+  static String _fileName(DateTime d) =>
+      'torque-backup-${d.year}-${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}.json';
 }
 
-/// The whole local database, as JSON. Generated on the device and put on the
-/// clipboard — nothing is uploaded, which is the point of the screen it sits
-/// on.
-String _exportJson(BuildContext context) {
-  final g = context.read<GarageProvider>();
-  final s = context.read<SettingsProvider>();
-  final v = g.active;
-  return const JsonEncoder.withIndent('  ').convert({
-    'exportedAt': DateTime.now().toIso8601String(),
-    'generatedOn': 'this iPhone',
-    'units': {'distance': s.distance.name, 'temperature': s.temperature.name},
-    'vehicles': [
-      {
-        'nickname': v.nickname,
-        'year': v.year,
-        'make': v.make,
-        'model': v.model,
-        'fuel': v.fuel.name,
-        'odometerKm': v.odometerKm,
-        // The VIN follows the same masking rule as every other screen.
-        'vin': s.maskVin ? v.maskedVin : v.vin,
-      },
-    ],
-    'serviceRecords': [for (final r in g.records) r.toJson()],
-  });
-}
-
-/// Deleting the local database is irreversible and takes the garage with it,
-/// so it is confirmed the same way the account deletion is — by naming the
+/// Deleting everything is irreversible, so it is confirmed by naming the
 /// consequences before offering the action.
-void _confirmDeleteAll(BuildContext context) => showAppSheet<void>(context, (
-  sheetContext,
-) {
-  return SheetBody(
+void _confirmDeleteAll(BuildContext context) => showAppSheet<void>(
+  context,
+  (sheetContext) => _DeleteAllSheet(screenContext: context),
+);
+
+class _DeleteAllSheet extends StatefulWidget {
+  const _DeleteAllSheet({required this.screenContext});
+
+  /// The privacy screen's context — the sheet's own is gone the moment it
+  /// pops, and a failure is reported on the screen underneath.
+  final BuildContext screenContext;
+
+  @override
+  State<_DeleteAllSheet> createState() => _DeleteAllSheetState();
+}
+
+class _DeleteAllSheetState extends State<_DeleteAllSheet> {
+  /// One erase at a time: a second tap while the first is still running
+  /// would race it through the wipe and the restart.
+  bool _busy = false;
+
+  static const _consequences = [
+    'Every vehicle, scan, service record and trip recording on this phone '
+        'is erased',
+    'Your settings go back to their defaults, and the diagnostics log is '
+        'emptied',
+    'Torque starts again from its first screen',
+    'A Pro purchase is kept — it belongs to your App Store or Google Play '
+        'account',
+    'Nothing is deleted anywhere else, because nothing about your car was '
+        'ever sent anywhere else',
+  ];
+
+  Future<void> _erase() async {
+    setState(() => _busy = true);
+    final erase = context.read<EraseEverything>();
+    final navigator = Navigator.of(context);
+    try {
+      // On success the whole app is rebuilt from first run, this sheet
+      // included, so there is nothing to pop.
+      await erase();
+    } on Object {
+      if (!mounted) return;
+      navigator.pop();
+      final screen = widget.screenContext;
+      if (!screen.mounted) return;
+      Toast.show(
+        screen,
+        "Torque couldn't finish deleting your data. Try again — it picks up "
+        'where it stopped.',
+        tone: Tone.fault,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SheetBody(
     eyebrow: 'Data & privacy',
     title: 'Delete all data?',
     children: [
-      for (final line in const [
-        'Every vehicle, service record, receipt and saved snapshot on this '
-            'iPhone is erased',
-        'Your units, layout and tile themes reset to defaults',
-        'Torque returns to first run the next time you open it',
-        'Nothing is deleted anywhere else, because nothing was ever sent '
-            'anywhere else',
-      ])
+      for (final line in _consequences)
         Padding(
           padding: const EdgeInsets.only(bottom: 13),
           child: Row(
@@ -150,22 +207,16 @@ void _confirmDeleteAll(BuildContext context) => showAppSheet<void>(context, (
         ),
       const SizedBox(height: 4),
       DestructiveButton(
-        'Delete all data',
-        onPressed: () async {
-          final navigator = Navigator.of(sheetContext);
-          final settings = context.read<SettingsProvider>();
-          final onboarding = context.read<OnboardingProvider>();
-          await settings.deleteAllData();
-          onboarding.reset();
-          navigator.pop();
-        },
+        _busy ? 'Deleting…' : 'Delete all data',
+        enabled: !_busy,
+        onPressed: _erase,
       ),
       const SizedBox(height: 4),
       GhostButton(
         'Cancel',
         color: T.neutral700,
-        onPressed: () => Navigator.of(sheetContext).pop(),
+        onPressed: _busy ? null : () => Navigator.of(context).pop(),
       ),
     ],
   );
-});
+}
