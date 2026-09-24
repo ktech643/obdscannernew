@@ -1249,6 +1249,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 11 done 2026-09-24 — the freeze frame (Mode 02) on the scan and before the clear, see §B.22
          ◐ slice 12 done 2026-09-24 — the tab shell on Part B, see §B.23
          ◐ slice 13 done 2026-09-24 — the paywall on Part B; the account flow and the ad code deleted, see §B.24
+         ◐ slice 14 done 2026-09-24 — Data & privacy on Part B; no Industry sub-screen remains, see §B.25
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1816,6 +1817,37 @@ behind it; already Pro; text scale 2.0 at 320 pt); two ★ door tests in
 `garage_test.dart` (the alert and the identity answer call `onUpgrade`);
 the settings test's sections without Account; the ad-placement tests are
 gone with the code. Each ★ test seen failing with its piece removed. 667
+tests, analyzer clean.
+
+## B.25 Data & privacy on Part B — no Industry sub-screen remains (Phase 6, slice 14 — 2026-09-24)
+
+The last screen a Part B tab pushed from the Industry stack.
+`lib/features/settings/privacy_screen.dart` replaces
+`lib/screens/settings/privacy_screen.dart`, word for word in its claims
+(§B.20 fixed the words; this slice only moves them onto the design system):
+`Backlit`, `AdaptiveTopBar`, and the rows Settings itself is made of, lifted
+into `settings_rows.dart` as `SettingsSection` and `SettingsLinkRow` (which
+gained a subtitle line and a destructive tone) so the two screens cannot
+drift apart.
+
+"Delete all data" is now a design-system sheet: the consequences named in
+the amber tell, then a **two-step `DestructiveButton`** (B.5: arm, then
+"Tap again to delete everything"), a Cancel, and no backdrop dismissal —
+the sheet is `dismissible: false`, and `PopScope` refuses Android back
+while the erase runs, for the reason §B.20 gave. Failures are alerts on the
+screen underneath, not toasts: Part B has no toast, and the Industry one is
+gone with its screen.
+
+What is left under `lib/screens/` is unreachable reference code for the
+Garage sub-screens and the old dashboard's grid editing (§B.14's "still to
+do"); nothing in `lib/features/` or `lib/app.dart` imports it.
+
+**Tests.** The privacy tests in `erase_everything_test.dart` run unchanged
+in what they assert — export contents, the claims on screen, the sheet that
+cannot be dismissed while erasing — with the two-tap confirmation. That
+sheet has two independent guards, the route's `dismissible: false` and the
+`PopScope` while busy, and either alone satisfies the test: removing one
+still passes, removing both fails, which is what was run to prove it. 667
 tests, analyzer clean.
 
 ## HARD RULES

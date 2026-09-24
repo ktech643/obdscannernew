@@ -5,17 +5,18 @@ import 'package:provider/provider.dart';
 import '../../design_system/design_system.dart';
 import '../../models/enums.dart';
 import '../../providers/app_providers.dart';
-import '../../screens/settings/privacy_screen.dart';
 import '../live_tabs.dart';
 import '../pro/paywall_screen.dart';
 import 'diagnostics_log_screen.dart';
+import 'privacy_screen.dart';
+import 'settings_rows.dart';
 
 /// SPEC §5.6 — Settings on the Part B design system.
 ///
-/// Data & privacy still pushes the older Industry screen; it is the next
-/// slice. There is no Account section: the app has no account (§8.3), and
-/// the row that used to be here signed anyone in as a hard-coded stranger.
-/// Nothing here mentions ads — there are none.
+/// Every sub-screen it pushes is Part B too. There is no Account section:
+/// the app has no account (§8.3), and the row that used to be here signed
+/// anyone in as a hard-coded stranger. Nothing here mentions ads — there
+/// are none.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -42,19 +43,19 @@ class SettingsScreen extends StatelessWidget {
             style: TorqueType.titleLg.copyWith(color: t.inkPrimary),
           ),
         ),
-        const _Section(title: 'Units'),
-        _LinkRow(
+        const SettingsSection(title: 'Units'),
+        SettingsLinkRow(
           title: 'Distance',
           value: settings.distance.label,
           onTap: () => _pickDistance(context, settings),
         ),
-        _LinkRow(
+        SettingsLinkRow(
           title: 'Temperature',
           value: settings.temperature.label,
           onTap: () => _pickTemperature(context, settings),
         ),
-        const _Section(title: 'Connection'),
-        _LinkRow(
+        const SettingsSection(title: 'Connection'),
+        SettingsLinkRow(
           title: 'Polling rate',
           value: settings.pollingRate,
           onTap: () => _pickPollingRate(context, settings),
@@ -74,8 +75,8 @@ class SettingsScreen extends StatelessWidget {
           value: settings.haptics,
           onChanged: settings.setHaptics,
         ),
-        const _Section(title: 'Subscription'),
-        _LinkRow(
+        const SettingsSection(title: 'Subscription'),
+        SettingsLinkRow(
           title: ent.isPro ? 'Torque Pro' : 'Torque Free',
           value:
               ent.isPro
@@ -83,25 +84,25 @@ class SettingsScreen extends StatelessWidget {
                   : '6 gauges · 1 vehicle · 2-minute recordings',
         ),
         if (!ent.isPro)
-          _LinkRow(
+          SettingsLinkRow(
             title: 'Go Pro',
             onTap: () => openProPaywall(context),
           ),
-        _LinkRow(
+        SettingsLinkRow(
           title: 'Restore purchases',
           onTap: () => _restorePurchases(context, ent),
         ),
         if (ent.isPro)
-          _LinkRow(
+          SettingsLinkRow(
             title: 'Manage subscription',
             onTap: ent.manageSubscription,
           ),
-        const _Section(title: 'Your data'),
-        _LinkRow(
+        const SettingsSection(title: 'Your data'),
+        SettingsLinkRow(
           title: 'Data & privacy',
           onTap: () => _openPrivacy(context),
         ),
-        _LinkRow(
+        SettingsLinkRow(
           title: 'Diagnostics log',
           value: '${live.log.length} events',
           onTap: () => _openDiagnosticsLog(context, live),
@@ -240,105 +241,6 @@ class _Choice<T> {
   final String label;
   final T value;
   final String? subtitle;
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title});
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Space.gutter,
-        Space.x24,
-        Space.gutter,
-        Space.x8,
-      ),
-      child: Text(
-        title,
-        style: TorqueType.titleMd.copyWith(color: t.inkPrimary),
-      ),
-    );
-  }
-}
-
-class _LinkRow extends StatelessWidget {
-  const _LinkRow({
-    required this.title,
-    this.value,
-    this.onTap,
-  });
-
-  final String title;
-  final String? value;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    final enabled = onTap != null;
-    return Semantics(
-      button: enabled,
-      enabled: enabled,
-      onTap: onTap,
-      label: value == null ? title : '$title, $value',
-      child: ExcludeSemantics(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          excludeFromSemantics: true,
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: Targets.min),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: t.hairline)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Space.gutter,
-                  vertical: Space.x12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TorqueType.body.copyWith(
-                          color: enabled ? t.inkPrimary : t.inkTertiary,
-                        ),
-                      ),
-                    ),
-                    if (value != null) ...[
-                      const SizedBox(width: Space.x12),
-                      Flexible(
-                        child: Text(
-                          value!,
-                          textAlign: TextAlign.end,
-                          style: TorqueType.body.copyWith(
-                            color: t.inkSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (enabled) ...[
-                      const SizedBox(width: Space.x8),
-                      Icon(
-                        Icons.chevron_right,
-                        size: 20,
-                        color: t.inkTertiary,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _SwitchRow extends StatelessWidget {

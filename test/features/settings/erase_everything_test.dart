@@ -9,13 +9,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:torque_obd2/app.dart';
+import 'package:torque_obd2/core/platform/platform_info.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/data/repositories/dtc_repository.dart';
 import 'package:torque_obd2/data/repositories/service_repository.dart';
 import 'package:torque_obd2/data/repositories/trip_repository.dart';
 import 'package:torque_obd2/data/repositories/vehicle_repository.dart';
 import 'package:torque_obd2/design_system/design_system.dart'
-    show AdaptiveHaptics;
+    show AdaptiveHaptics, AdaptiveScope;
 import 'package:torque_obd2/features/live_tabs.dart';
 import 'package:torque_obd2/features/onboarding/onboarding_flow.dart';
 import 'package:torque_obd2/features/settings/erase_everything.dart';
@@ -24,7 +25,7 @@ import 'package:torque_obd2/monetization/revenuecat_service.dart';
 import 'package:torque_obd2/protocol/dtc_decoder.dart';
 import 'package:torque_obd2/providers/app_providers.dart';
 import 'package:torque_obd2/providers/persistence.dart';
-import 'package:torque_obd2/screens/settings/privacy_screen.dart';
+import 'package:torque_obd2/features/settings/privacy_screen.dart';
 import 'package:torque_obd2/session/obd_session.dart';
 import 'package:torque_obd2/transport/mock_transport.dart';
 import 'package:torque_obd2/transport/obd_trace.dart';
@@ -268,15 +269,18 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
-        MultiProvider(
-          providers: [
-            Provider<AppDatabase>.value(value: db),
-            ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
-            ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
-          ],
-          child: MaterialApp(
-            home: PrivacyScreen(
-              shareBackup: (json, name, _) async => shared.add((json, name)),
+        AdaptiveScope(
+          platform: const FakePlatform(isAndroid: false),
+          child: MultiProvider(
+            providers: [
+              Provider<AppDatabase>.value(value: db),
+              ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
+              ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
+            ],
+            child: MaterialApp(
+              home: PrivacyScreen(
+                shareBackup: (json, name, _) async => shared.add((json, name)),
+              ),
             ),
           ),
         ),
@@ -332,20 +336,26 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
-        MultiProvider(
-          providers: [
-            Provider<AppDatabase>.value(value: db),
-            Provider<EraseEverything>.value(value: erase),
-            ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
-            ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
-          ],
-          child: const MaterialApp(home: PrivacyScreen()),
+        AdaptiveScope(
+          platform: const FakePlatform(isAndroid: false),
+          child: MultiProvider(
+            providers: [
+              Provider<AppDatabase>.value(value: db),
+              Provider<EraseEverything>.value(value: erase),
+              ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
+              ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
+            ],
+            child: const MaterialApp(home: PrivacyScreen()),
+          ),
         ),
       );
       await tester.pump();
       await tester.tap(find.text('Delete all data'));
       await tester.pumpAndSettle();
+      // B.5: the destructive action is two taps.
       await tester.tap(find.text('Delete all data').last);
+      await tester.pump();
+      await tester.tap(find.text('Tap again to delete everything'));
       await tester.pump();
       expect(find.text('Deleting…'), findsOneWidget);
 
@@ -358,6 +368,8 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('Deleting…'), findsOneWidget, reason: 'back');
+      // The armed button's disarm timer, if any, runs out inside the test.
+      await tester.pump(const Duration(seconds: 5));
     });
 
     testWidgets('names what does leave the phone, and nothing that does not', (
