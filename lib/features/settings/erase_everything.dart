@@ -1,5 +1,9 @@
+import 'dart:io';
+
+import '../../core/share_file.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/trip_repository.dart';
+import '../../design_system/design_system.dart' show AdaptiveHaptics;
 import '../../providers/persistence.dart';
 import '../live_tabs.dart';
 
@@ -21,6 +25,13 @@ import '../live_tabs.dart';
 ///    dropping the cache would downgrade a paying user who deletes their
 ///    data while offline until the store is reachable again.
 /// 5. The diagnostics log, which carries the VINs of every car it heard.
+/// 6. The temporary directory: every export and log ever handed to the
+///    share sheet was written there first, and the sheet does not take it
+///    back. A full-VIN export surviving "erased" was the verification
+///    review's one blocker.
+/// 7. Process-wide state the providers do not own — the haptics switch —
+///    back to its default, or the rebuilt onboarding would buzz (or not)
+///    by the deleted user's setting.
 ///
 /// A step that throws stops the rest and the error reaches the caller, so
 /// the screen never says "erased" over a database that is still there.
@@ -34,6 +45,7 @@ class EraseEverything {
     required this.trips,
     required this.store,
     required this.live,
+    required this.tempDir,
     required this.onErased,
   });
 
@@ -41,6 +53,9 @@ class EraseEverything {
   final TripRepository trips;
   final Persistence store;
   final LiveSession live;
+
+  /// The app's temporary directory — where shares are staged.
+  final Directory tempDir;
   final void Function() onErased;
 
   /// The preferences that outlive a delete. Only the purchase cache.
@@ -62,6 +77,8 @@ class EraseEverything {
     }
 
     live.log.clear();
+    await ShareFile.deleteAll(temp: tempDir);
+    AdaptiveHaptics.enabled = true;
     onErased();
   }
 }

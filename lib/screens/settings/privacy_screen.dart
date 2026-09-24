@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 
+import '../../core/share_file.dart';
 import '../../data/backup/backup_codec.dart';
 import '../../data/db/app_database.dart';
 import '../../features/settings/erase_everything.dart';
@@ -17,15 +17,18 @@ import '../../widgets/feedback.dart';
 import '../../widgets/scaffold.dart';
 
 /// Hands the export to the platform share sheet as a `.json` file.
-typedef ShareBackup = Future<void> Function(String json, String fileName);
+/// [origin] anchors the iPad popover; see [ShareFile].
+typedef ShareBackup =
+    Future<void> Function(String json, String fileName, Rect? origin);
 
-Future<void> _shareWithSystem(String json, String fileName) async {
-  await Share.shareXFiles(
-    [XFile.fromData(utf8.encode(json), mimeType: 'application/json')],
-    fileNameOverrides: [fileName],
-    subject: 'Torque backup',
-  );
-}
+Future<void> _shareWithSystem(String json, String fileName, Rect? origin) =>
+    ShareFile.text(
+      json,
+      fileName: fileName,
+      mimeType: 'application/json',
+      subject: 'Torque backup',
+      origin: origin,
+    );
 
 /// F4 — data & privacy.
 ///
@@ -81,14 +84,18 @@ class PrivacyScreen extends StatelessWidget {
               'tracking.',
         ),
         const SectionHeading('Your controls'),
-        AppListRow(
-          title: 'Export everything as JSON',
-          subtitle:
-              'Every vehicle, scan, service record and trip summary, with '
-              'full VINs, as a file you choose where to keep. Trip '
-              'recordings are not in it.',
-          chevron: true,
-          onTap: () => _export(context),
+        // Its own context: on iPad the share sheet is a popover anchored
+        // to the row that opened it.
+        Builder(
+          builder: (row) => AppListRow(
+            title: 'Export everything as JSON',
+            subtitle:
+                'Every vehicle, scan, service record, reminder, fuel entry '
+                'and trip summary, with full VINs, as a file you choose '
+                'where to keep. Trip recordings are not in it.',
+            chevron: true,
+            onTap: () => _export(context, ShareFile.originOf(row)),
+          ),
         ),
         AppListRow(
           title: 'Delete all data',
@@ -107,17 +114,32 @@ class PrivacyScreen extends StatelessWidget {
   ///
   /// VINs are whole. A backup is for restoring, and a masked VIN would
   /// restore as a car the garage can never recognise again.
-  Future<void> _export(BuildContext context) async {
+  Future<void> _export(BuildContext context, Rect? origin) async {
     final db = context.read<AppDatabase>();
+    final String json;
     try {
-      final doc = await BackupCodec(db).export();
-      final json = const JsonEncoder.withIndent('  ').convert(doc);
-      await shareBackup(json, _fileName(DateTime.now()));
+      json = const JsonEncoder.withIndent(
+        '  ',
+      ).convert(await BackupCodec(db).export());
     } on Object {
       if (!context.mounted) return;
       Toast.show(
         context,
         "Couldn't read your data to export it. Nothing was shared.",
+        tone: Tone.fault,
+      );
+      return;
+    }
+    // Two failures, two messages: the read and the sheet are different
+    // things, and blaming the data for a sheet that would not open sent
+    // an iPad user looking in the wrong place.
+    try {
+      await shareBackup(json, _fileName(DateTime.now()), origin);
+    } on Object {
+      if (!context.mounted) return;
+      Toast.show(
+        context,
+        "Couldn't open the share sheet. Nothing was shared.",
         tone: Tone.fault,
       );
     }
@@ -185,11 +207,16 @@ class _DeleteAllSheetState extends State<_DeleteAllSheet> {
     }
   }
 
+  /// While the erase runs the sheet cannot be dismissed — not by the
+  /// backdrop, not by Android back. A sheet popped mid-erase had nowhere
+  /// to report a failure and let a second erase start under the first.
   @override
-  Widget build(BuildContext context) => SheetBody(
-    eyebrow: 'Data & privacy',
-    title: 'Delete all data?',
-    children: [
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_busy,
+    child: SheetBody(
+      eyebrow: 'Data & privacy',
+      title: 'Delete all data?',
+      children: [
       for (final line in _consequences)
         Padding(
           padding: const EdgeInsets.only(bottom: 13),
@@ -218,5 +245,6 @@ class _DeleteAllSheetState extends State<_DeleteAllSheet> {
         onPressed: _busy ? null : () => Navigator.of(context).pop(),
       ),
     ],
+    ),
   );
 }

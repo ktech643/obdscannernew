@@ -25,10 +25,21 @@ Future<void> main() async {
   // Trip files and, later, attachments go on disk under the app's own
   // documents directory — never as blobs in the database (Part 6).
   final docsDir = await getApplicationDocumentsDirectory();
+  // Shares are staged under the temporary directory and swept from it by
+  // "Delete all data"; opened here so the erase never needs a plugin call.
+  final tempDir = await getTemporaryDirectory();
   // RevenueCat configures before runApp so a purchase that completed while
   // the app was dead reconciles on the first frame (SPEC §7.5). No-op when
   // the SDK keys are absent.
   final billing = RevenueCatService();
   await billing.configure();
-  runApp(TorqueApp(store: store, billing: billing, db: db, docsDir: docsDir));
+  runApp(
+    TorqueApp(
+      store: store,
+      billing: billing,
+      db: db,
+      docsDir: docsDir,
+      tempDir: tempDir,
+    ),
+  );
 }

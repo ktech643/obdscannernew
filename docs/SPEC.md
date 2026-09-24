@@ -1589,6 +1589,44 @@ re-prompt is spec-consistent. "Help me pick one" still opens the coming-soon
 alert (§B.19). The Industry paywall and account screens under `lib/screens/`
 remain reachable from Settings and still read the old providers.
 
+**Verification review of the fixes (same day, workflow wf_800096c7).**
+Five lenses, three refuters each, over `2ef989f`, `e002cc3` and `5171234`:
+23 findings, 12 survived all three refuters — six distinct defects, fixed in
+the commit that follows this note, every ★ test revert-proven.
+
+- *Blocker.* `share_plus` stages a data-backed `XFile` under the temporary
+  directory and never deletes it: after Export and then "Delete all data" a
+  full-VIN copy of the database was still in the sandbox, and the
+  diagnostics-log share left the same. `ShareFile` (`lib/core/`) now writes
+  under one app-owned directory, shares by path, deletes the file when the
+  sheet returns, and `EraseEverything` sweeps the temporary directory.
+- *Major.* On iPad the sheet is a popover that needs an anchor; without one
+  share_plus throws, and the toast blamed the data. The row's box is the
+  anchor, and a sheet failure now says it was the sheet.
+- *Major.* The onboarding form hard-coded its unit to km: a relaunch showed
+  a miles user their kilometres under "km", overwrote their preference on
+  the way out, and tapping "mi" relabelled the figure (×1.609 stored). The
+  unit is seeded from Settings; a toggle converts the figure; only an
+  *edited* odometer is written (the Garage form's rule), so an untouched
+  prefill keeps its exact value and date; the prefill fills only empty
+  fields.
+- *Minor.* `AdaptiveHaptics.enabled` survived the restart (the erase resets
+  it); the delete sheet could be dismissed mid-erase (`PopScope` while
+  busy); two tests certified less than they claimed (the prefill fixture
+  had no make, model or odometer; the export test seeded the non-default
+  VIN mask).
+- *Refuted, and why.* "Free with ads" / "Remove ads" in Settings and the
+  Account "Sign in" row contradict the privacy screen's "No ads … no
+  account" — real, but they are the Industry paywall and account
+  sub-screens §B.19 defers, and they are the next slice rather than left as
+  they are. `wipe()` leaves freed SQLite pages readable with a hex editor on
+  an unlocked device — real, judged outside the app's threat model; `PRAGMA
+  secure_delete` is the one-line follow-up if that changes. `ScreenWake`
+  assumes the platform starts released — wrong only across a Dart-only hot
+  restart. The safety primer's "no location access" is false on Android
+  8–11, where BLE scanning needs the location permission — copy to fix with
+  the Android permission matrix.
+
 **Lessons recorded** (also in the project memory). A bare `tester.pump()`
 flushes microtasks only; the `Timer.run` drift schedules when a stream is
 cancelled needs a pump *with a duration*, and `db.close()` in a tearDown

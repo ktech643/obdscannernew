@@ -277,20 +277,75 @@ void main() {
     });
 
     testWidgets('★ a car already in the garage is shown and updated, not '
-        'duplicated', (tester) async {
+        'duplicated — and what was not edited is kept exactly', (tester) async {
       final vehicles = VehicleRepository(db);
-      await vehicles.create(nickname: 'Old name', fuel: VehicleFuel.petrol);
+      final old = await vehicles.create(
+        nickname: 'Old name',
+        fuel: VehicleFuel.petrol,
+        // Not the fields' own hint texts, which are also "Volkswagen" and
+        // "Golf GTD" — a finder would match the hint as well as the value.
+        make: 'Mazda',
+        model: 'MX-5',
+        year: 2014,
+        odometerKm: 142380.5,
+      );
       await atAddCar(tester);
       await tester.pump();
       expect(find.text('Old name'), findsOneWidget, reason: 'prefilled');
+      expect(find.text('Mazda'), findsOneWidget);
+      expect(find.text('142,381'), findsOneWidget, reason: 'shown rounded');
 
       await tester.enterText(field('Nickname'), 'The Golf');
       await save(tester);
 
       expect(await vehicles.count(), 1);
-      final primary = await vehicles.primary();
-      expect(primary?.nickname, 'The Golf');
-      expect(primary?.isPrimary, isTrue);
+      final primary = (await vehicles.primary())!;
+      expect(primary.nickname, 'The Golf');
+      expect(primary.isPrimary, isTrue);
+      expect(primary.make, 'Mazda');
+      expect(primary.model, 'MX-5');
+      expect(primary.year, 2014);
+      // The odometer was never edited: not re-saved rounded, not re-dated.
+      expect(primary.odometerKm, 142380.5);
+      expect(primary.odometerUpdatedAt, old.odometerUpdatedAt);
+    });
+
+    testWidgets('★ the unit comes from Settings, and leaving keeps it', (
+      tester,
+    ) async {
+      store.setEnum(Keys.distanceUnit, DistanceUnit.mi);
+      final vehicles = VehicleRepository(db);
+      await vehicles.create(
+        nickname: 'Old name',
+        fuel: VehicleFuel.petrol,
+        odometerKm: 160934.4,
+      );
+      await atAddCar(tester);
+      await tester.pump();
+      expect(find.text('100,000'), findsOneWidget, reason: 'miles, as chosen');
+
+      await tester.tap(find.text("I'll do this later"));
+      await settle(tester);
+      expect(
+        SettingsProvider(store).distance,
+        DistanceUnit.mi,
+        reason: 'not reset to km by passing through',
+      );
+    });
+
+    testWidgets('★ toggling the unit converts the figure, never relabels it', (
+      tester,
+    ) async {
+      await atAddCar(tester);
+      await tester.enterText(field('Nickname'), 'The Golf');
+      await tester.enterText(field('Odometer'), '160,934');
+      await tester.tap(find.text('mi'));
+      await tester.pump();
+      expect(find.text('100,000'), findsOneWidget, reason: 'converted');
+
+      await save(tester);
+      final primary = await vehiclesOf(tester).primary();
+      expect(primary?.odometerKm, closeTo(160934, 1), reason: 'not ×1.609');
     });
 
     testWidgets('★ tapping Save twice leaves one vehicle', (tester) async {

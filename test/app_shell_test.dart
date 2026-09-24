@@ -19,6 +19,7 @@ void main() {
   late Persistence store;
   late AppDatabase db;
   late Directory docs;
+  late Directory temp;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({
@@ -35,6 +36,8 @@ void main() {
     );
     docs = Directory.systemTemp.createTempSync('torque_shell_');
     addTearDown(() => docs.deleteSync(recursive: true));
+    temp = Directory.systemTemp.createTempSync('torque_shell_tmp_');
+    addTearDown(() => temp.deleteSync(recursive: true));
   });
 
   Future<void> pumpApp(WidgetTester tester) async {
@@ -47,6 +50,7 @@ void main() {
         billing: RevenueCatService(),
         db: db,
         docsDir: docs,
+        tempDir: temp,
       ),
     );
     await tester.pump();

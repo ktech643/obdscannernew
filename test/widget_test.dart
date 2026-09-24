@@ -21,6 +21,7 @@ void main() {
   late Persistence store;
   late AppDatabase db;
   late Directory docs;
+  late Directory temp;
 
   setUp(() async {
     // A clean store per test, so one test's saved layout can't leak into the
@@ -33,6 +34,8 @@ void main() {
     addTearDown(db.close);
     docs = Directory.systemTemp.createTempSync('torque_widget_');
     addTearDown(() => docs.deleteSync(recursive: true));
+    temp = Directory.systemTemp.createTempSync('torque_widget_tmp_');
+    addTearDown(() => temp.deleteSync(recursive: true));
   });
 
   testWidgets('opens on the first-run flow', (tester) async {
@@ -42,6 +45,7 @@ void main() {
         billing: RevenueCatService(),
         db: db,
         docsDir: docs,
+        tempDir: temp,
       ),
     );
     await tester.pump();
@@ -61,6 +65,7 @@ void main() {
         billing: RevenueCatService(),
         db: db,
         docsDir: docs,
+        tempDir: temp,
       ),
     );
     await tester.pump();

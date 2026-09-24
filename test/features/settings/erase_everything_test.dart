@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -13,6 +14,8 @@ import 'package:torque_obd2/data/repositories/dtc_repository.dart';
 import 'package:torque_obd2/data/repositories/service_repository.dart';
 import 'package:torque_obd2/data/repositories/trip_repository.dart';
 import 'package:torque_obd2/data/repositories/vehicle_repository.dart';
+import 'package:torque_obd2/design_system/design_system.dart'
+    show AdaptiveHaptics;
 import 'package:torque_obd2/features/live_tabs.dart';
 import 'package:torque_obd2/features/onboarding/onboarding_flow.dart';
 import 'package:torque_obd2/features/settings/erase_everything.dart';
@@ -39,6 +42,7 @@ void main() {
 
   late AppDatabase db;
   late Directory docs;
+  late Directory temp;
   late TripRepository trips;
   late Persistence store;
 
@@ -48,6 +52,8 @@ void main() {
     db = AppDatabase(NativeDatabase.memory());
     docs = Directory.systemTemp.createTempSync('torque_erase_');
     addTearDown(() => docs.deleteSync(recursive: true));
+    temp = Directory.systemTemp.createTempSync('torque_erase_tmp_');
+    addTearDown(() => temp.deleteSync(recursive: true));
     trips = TripRepository(db, TripFiles(docs));
   });
 
@@ -70,7 +76,8 @@ void main() {
     store
       ..setBool(Keys.onboardingComplete, true)
       ..setEnum(Keys.distanceUnit, DistanceUnit.mi)
-      ..setBool(Keys.maskVin, false)
+      ..setBool(Keys.maskVin, true) // the default: the review found a
+      // seed of false let a masked export pass the "VINs whole" test
       ..setEnum(Keys.entitlementTier, Entitlement.pro)
       ..setInt(Keys.entitlementVerifiedAt, 1758700000000);
     return astra;
@@ -91,6 +98,15 @@ void main() {
     test('★ erases every row, every recording and every preference', () async {
       await seed();
       expect(await trips.files.listAll(), hasLength(1), reason: 'seeded');
+      // What an export or a log share leaves in the temporary directory —
+      // ours, and the copy share_plus keeps on Android.
+      File('${temp.path}/torque-share/torque-backup-2026-09-24.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{"vehicles":[{"vin":"$vin"}]}');
+      File('${temp.path}/share_plus/torque-backup-2026-09-24.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{"vehicles":[{"vin":"$vin"}]}');
+      AdaptiveHaptics.enabled = false;
       final live = LiveSession(session: ObdSession(timeScale: 0.05));
       addTearDown(live.dispose);
       live.log
@@ -103,6 +119,7 @@ void main() {
         trips: trips,
         store: store,
         live: live,
+        tempDir: temp,
         onErased: () => restarts++,
       )();
 
@@ -113,6 +130,12 @@ void main() {
       expect(store.getBool(Keys.maskVin), isNull);
       expect(live.log.isEmpty, isTrue);
       expect(live.log.knownVins, isEmpty, reason: 'the log carried the VIN');
+      expect(
+        temp.listSync(),
+        isEmpty,
+        reason: 'no staged export or share copy survives',
+      );
+      expect(AdaptiveHaptics.enabled, isTrue, reason: 'back to the default');
       expect(restarts, 1, reason: 'the app is rebuilt from first run');
     });
 
@@ -126,6 +149,7 @@ void main() {
         trips: trips,
         store: store,
         live: live,
+        tempDir: temp,
         onErased: () {},
       )();
 
@@ -152,6 +176,7 @@ void main() {
         trips: trips,
         store: store,
         live: live,
+        tempDir: temp,
         onErased: () {},
       )();
 
@@ -172,6 +197,7 @@ void main() {
           trips: trips,
           store: store,
           live: live,
+          tempDir: temp,
           onErased: () => restarts++,
         )(),
         throwsA(anything),
@@ -200,6 +226,7 @@ void main() {
           billing: RevenueCatService(),
           db: db,
           docsDir: docs,
+          tempDir: temp,
         ),
       );
       await tester.pump();
@@ -249,7 +276,7 @@ void main() {
           ],
           child: MaterialApp(
             home: PrivacyScreen(
-              shareBackup: (json, name) async => shared.add((json, name)),
+              shareBackup: (json, name, _) async => shared.add((json, name)),
             ),
           ),
         ),
@@ -288,6 +315,51 @@ void main() {
       expect(doc['tripSessions'], hasLength(1));
     });
 
+    testWidgets('★ the delete sheet cannot be dismissed while it is erasing', (
+      tester,
+    ) async {
+      addTearDown(() => tester.runAsync(db.close));
+      final live = LiveSession(session: ObdSession(timeScale: 0.05));
+      addTearDown(live.dispose);
+      final erase = _NeverFinishes(
+        db: db,
+        trips: trips,
+        store: store,
+        live: live,
+        tempDir: temp,
+      );
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<AppDatabase>.value(value: db),
+            Provider<EraseEverything>.value(value: erase),
+            ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
+            ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
+          ],
+          child: const MaterialApp(home: PrivacyScreen()),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Delete all data'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete all data').last);
+      await tester.pump();
+      expect(find.text('Deleting…'), findsOneWidget);
+
+      // The backdrop, and Android back — each given time to play a pop's
+      // exit transition, so a sheet that did pop is really gone from the
+      // tree by the time it is looked for.
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Deleting…'), findsOneWidget, reason: 'backdrop');
+      await tester.binding.handlePopRoute();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Deleting…'), findsOneWidget, reason: 'back');
+    });
+
     testWidgets('names what does leave the phone, and nothing that does not', (
       tester,
     ) async {
@@ -301,6 +373,20 @@ void main() {
       expect(find.textContaining('iPhone'), findsNothing, reason: 'Android');
     });
   });
+}
+
+/// An erase that never returns — the sheet must stay up over it.
+class _NeverFinishes extends EraseEverything {
+  _NeverFinishes({
+    required super.db,
+    required super.trips,
+    required super.store,
+    required super.live,
+    required super.tempDir,
+  }) : super(onErased: () {});
+
+  @override
+  Future<void> call() => Completer<void>().future;
 }
 
 /// A database whose wipe fails the way a full disk makes SQLite fail.

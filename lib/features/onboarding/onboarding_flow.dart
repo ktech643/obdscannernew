@@ -447,7 +447,17 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
   final _model = TextEditingController();
   final _year = TextEditingController();
   final _odometer = TextEditingController();
-  DistanceUnit _unit = DistanceUnit.km;
+  /// Seeded from Settings, not hard-coded: a user who chose miles on an
+  /// earlier pass and relaunched before agreeing to the safety step must
+  /// not land on a form that shows their kilometres under "km" and then
+  /// writes km back over their preference.
+  late DistanceUnit _unit;
+
+  /// What the odometer field showed after prefill, or after a unit
+  /// toggle re-rendered it. A field the user never edited is not a new
+  /// reading: saving it must not round the stored figure or move its
+  /// "last read" date to now.
+  String? _odometerShown;
 
   /// The car already in the garage, when there is one: a relaunch before
   /// the safety step was agreed lands here again. The form shows it and
@@ -462,21 +472,39 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
   @override
   void initState() {
     super.initState();
+    _unit = context.read<SettingsProvider>().distance;
     unawaited(_prefill());
   }
 
+  /// Fills only the fields still empty: the query resolves after the
+  /// first frame, and anything the user has typed by then is theirs.
   Future<void> _prefill() async {
     final existing = await context.read<VehicleRepository>().primary();
     if (!mounted || existing == null) return;
     setState(() {
       _existing = existing;
-      _nickname.text = existing.nickname;
-      _make.text = existing.make;
-      _model.text = existing.model;
-      _year.text = existing.year?.toString() ?? '';
-      if (existing.odometerKm != null) {
+      if (_nickname.text.isEmpty) _nickname.text = existing.nickname;
+      if (_make.text.isEmpty) _make.text = existing.make;
+      if (_model.text.isEmpty) _model.text = existing.model;
+      if (_year.text.isEmpty) _year.text = existing.year?.toString() ?? '';
+      if (_odometer.text.isEmpty && existing.odometerKm != null) {
         _odometer.text = Distance.display(existing.odometerKm!, _unit);
+        _odometerShown = _odometer.text;
       }
+    });
+  }
+
+  /// A unit toggle converts the figure in the field; it never relabels
+  /// it. 160,934 under km is 100,000 under mi, not 160,934 mi.
+  void _setUnit(DistanceUnit next) {
+    if (next == _unit) return;
+    final v = Distance.parse(_odometer.text.trim());
+    setState(() {
+      if (v != null) {
+        _odometer.text = Distance.display(Distance.toKm(v, _unit), next);
+        if (_odometerShown != null) _odometerShown = _odometer.text;
+      }
+      _unit = next;
     });
   }
 
@@ -567,15 +595,21 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
             odometerKm: km,
           );
         } else {
+          // Only an edited reading is a new reading (the Garage form's
+          // rule): an untouched prefilled figure keeps its exact value
+          // and its real date.
+          final odometerEdited =
+              km != null && _odometer.text.trim() != _odometerShown;
           await vehicles.updateDetails(
             existing.id,
             nickname: Value(nickname),
             make: Value(_make.text.trim()),
             model: Value(_model.text.trim()),
             year: Value(year),
-            odometerKm: km == null ? const Value.absent() : Value(km),
-            odometerUpdatedAt:
-                km == null ? const Value.absent() : Value(DateTime.now()),
+            odometerKm: odometerEdited ? Value(km) : const Value.absent(),
+            odometerUpdatedAt: odometerEdited
+                ? Value(DateTime.now())
+                : const Value.absent(),
           );
         }
       }
@@ -657,7 +691,7 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
                 selected: _unit.index,
                 onSelect: (i) {
                   HapticFeedback.selectionClick();
-                  setState(() => _unit = DistanceUnit.values[i]);
+                  _setUnit(DistanceUnit.values[i]);
                 },
               ),
             ),

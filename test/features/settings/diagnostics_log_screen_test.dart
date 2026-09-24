@@ -88,7 +88,7 @@ void main() {
             debugShowCheckedModeBanner: false,
             home: DiagnosticsLogScreen(
               log: log,
-              share: (text) async => shared.add(text),
+              share: (text, _) async => shared.add(text),
             ),
           ),
         ),

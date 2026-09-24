@@ -32,6 +32,7 @@ class TorqueApp extends StatefulWidget {
     required this.billing,
     required this.db,
     required this.docsDir,
+    required this.tempDir,
   });
 
   /// Opened before the first frame so every provider can restore its state in
@@ -48,6 +49,9 @@ class TorqueApp extends StatefulWidget {
   /// Where trip files (and later attachments) live — never in the
   /// database (Part 6).
   final Directory docsDir;
+
+  /// Where shares are staged; swept by "Delete all data".
+  final Directory tempDir;
 
   @override
   State<TorqueApp> createState() => _TorqueAppState();
@@ -106,6 +110,7 @@ class _TorqueAppState extends State<TorqueApp> {
           trips: c.read<TripRepository>(),
           store: store,
           live: c.read<LiveSession>(),
+          tempDir: widget.tempDir,
           onErased: _restart,
         ),
       ),

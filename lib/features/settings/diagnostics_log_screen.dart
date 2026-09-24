@@ -1,25 +1,25 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart' show IconButton, Icons, Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
 
+import '../../core/share_file.dart';
 import '../../design_system/design_system.dart';
 import '../../providers/app_providers.dart';
 import '../../protocol/protocol_log.dart';
 
 /// Hands the rendered log to the platform share sheet as a `.txt` file.
-typedef ShareLogText = Future<void> Function(String text);
+/// [origin] anchors the iPad popover; see [ShareFile], which also makes
+/// sure the file does not outlive the sheet.
+typedef ShareLogText = Future<void> Function(String text, Rect? origin);
 
-Future<void> _shareWithSystem(String text) async {
-  await Share.shareXFiles(
-    [XFile.fromData(utf8.encode(text), mimeType: 'text/plain')],
-    fileNameOverrides: const ['torque-diagnostics-log.txt'],
-    subject: 'Torque diagnostics log',
-  );
-}
+Future<void> _shareWithSystem(String text, Rect? origin) => ShareFile.text(
+  text,
+  fileName: 'torque-diagnostics-log.txt',
+  mimeType: 'text/plain',
+  subject: 'Torque diagnostics log',
+  origin: origin,
+);
 
 /// SPEC §10.4 — the in-app diagnostics log: "Last 500 protocol events …
 /// Copy · Share `.txt` · Clear. VIN masked … unless the user opts in."
@@ -53,10 +53,13 @@ class DiagnosticsLogScreen extends StatelessWidget {
         appBar: AdaptiveTopBar(
           title: 'Diagnostics log',
           actions: [
-            IconButton(
-              tooltip: 'Share as a text file',
-              icon: Icon(Icons.ios_share, color: t.inkPrimary),
-              onPressed: () => share(_text(settings)),
+            Builder(
+              builder: (button) => IconButton(
+                tooltip: 'Share as a text file',
+                icon: Icon(Icons.ios_share, color: t.inkPrimary),
+                onPressed: () =>
+                    share(_text(settings), ShareFile.originOf(button)),
+              ),
             ),
             IconButton(
               tooltip: 'Copy the log',
