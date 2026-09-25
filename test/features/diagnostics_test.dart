@@ -1021,6 +1021,28 @@ void main() {
       expect(lostFor(null), 25, reason: 'unknown is not treated as mild');
     });
 
+    test('★ the coolant line is said in the user\'s unit (§5.6)', () {
+      final s = HealthScore.compute(
+        stored: const [],
+        pending: const [],
+        permanent: const [],
+        coolantC: 112,
+      );
+      final d = s.deductions.single;
+      expect(d.reasonIn(), 'Coolant at 112 °C, above the normal band');
+      expect(
+        d.reasonIn(fahrenheit: true),
+        'Coolant at 234 °F, above the normal band',
+      );
+      // Only the coolant line carries a temperature.
+      final other = HealthScore.compute(
+        stored: const [RawDtc('P0301', DtcMode.stored)],
+        pending: const [],
+        permanent: const [],
+      ).deductions.first;
+      expect(other.reasonIn(fahrenheit: true), other.reason);
+    });
+
     test('★ a cold engine is not a fault, an overheating one is', () {
       int lostFor(double c) => HealthScore.compute(
         stored: const [],

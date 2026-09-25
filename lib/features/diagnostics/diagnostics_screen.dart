@@ -353,7 +353,11 @@ class _Result extends StatelessWidget {
             ),
           ),
         if (result.readiness != null) _Readiness(report: result.readiness!),
-        if (controller.health != null) _Health(score: controller.health!),
+        if (controller.health != null)
+          _Health(
+            score: controller.health!,
+            fahrenheit: temperature == TemperatureUnit.fahrenheit,
+          ),
         Padding(
           padding: const EdgeInsets.all(Space.gutter),
           child: Column(
@@ -661,8 +665,11 @@ class _Readiness extends StatelessWidget {
 /// §5.4 — the score, **always with its full breakdown**. The number on its
 /// own would be indistinguishable from one that was made up.
 class _Health extends StatelessWidget {
-  const _Health({required this.score});
+  const _Health({required this.score, this.fahrenheit = false});
   final HealthScore score;
+
+  /// §5.6 — the coolant line in the unit the gauges use.
+  final bool fahrenheit;
 
   @override
   Widget build(BuildContext context) {
@@ -714,7 +721,7 @@ class _Health extends StatelessWidget {
             ValueList(
               rows: [
                 for (final d in score.deductions)
-                  ValueRow(d.reason, '−${d.points}'),
+                  ValueRow(d.reasonIn(fahrenheit: fahrenheit), '−${d.points}'),
               ],
             ),
           if (score.notMeasured.isNotEmpty) ...[

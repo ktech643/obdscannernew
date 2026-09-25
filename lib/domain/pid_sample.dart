@@ -131,8 +131,14 @@ class GaugeSpec {
   }
 
   /// Numerals only, in the displayed unit. `—` for absence.
-  String format(double? value) =>
-      value == null ? '—' : display.apply(value).toStringAsFixed(decimals);
+  ///
+  /// Never "-0": −18 °C is −0.4 °F, which rounds to a signed zero, and a
+  /// whole-degree reading in °C could never have printed that.
+  String format(double? value) {
+    if (value == null) return '—';
+    final s = display.apply(value).toStringAsFixed(decimals);
+    return RegExp(r'^-0(\.0+)?$').hasMatch(s) ? s.substring(1) : s;
+  }
 
   /// This spec shown in another unit: label, range and band converted once
   /// here, every raw sample converted on its way through. Only from a spec

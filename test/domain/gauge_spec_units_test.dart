@@ -38,6 +38,22 @@ void main() {
       expect(f.unit, '°F');
     });
 
+    test('★ never a signed zero: −18 °C is 0 °F, not "-0"', () {
+      // −18 °C is −0.4 °F, which toStringAsFixed(0) prints as "-0" — a
+      // winter cold start, on a default-layout tile.
+      expect(f.format(-18), '0');
+      expect(f.format(-40), '-40', reason: 'a real negative keeps its sign');
+      const volts = GaugeSpec(
+        pid: '0142',
+        label: 'Battery',
+        unit: 'V',
+        min: 0,
+        max: 20,
+        decimals: 1,
+      );
+      expect(volts.format(-0.04), '0.0');
+    });
+
     test('the range and the band are converted once', () {
       expect(f.min, closeTo(-40, 1e-9));
       expect(f.max, closeTo(419, 1e-9));

@@ -7,9 +7,21 @@ import '../protocol/readiness_decoder.dart';
 /// [points] is what was *lost*, always positive. A score with no
 /// deductions has an empty list, not a list of zeros.
 class HealthDeduction {
-  const HealthDeduction(this.reason, this.points);
+  const HealthDeduction(this.reason, this.points, {this.coolantC});
   final String reason;
   final int points;
+
+  /// Set on the coolant line only, so it can be said in the user's unit:
+  /// the score is computed in °C, but a user who chose °F read "234 °F" on
+  /// the gauge and then "112 °C" in the breakdown under it.
+  final double? coolantC;
+
+  /// [reason], with the coolant reading in °F when [fahrenheit].
+  String reasonIn({bool fahrenheit = false}) {
+    final c = coolantC;
+    if (c == null || !fahrenheit) return reason;
+    return 'Coolant at ${(c * 1.8 + 32).round()} °F, above the normal band';
+  }
 
   @override
   String toString() => '$reason (−$points)';
@@ -136,6 +148,7 @@ class HealthScore {
         HealthDeduction(
           'Coolant at ${coolantC.round()} °C, above the normal band',
           8,
+          coolantC: coolantC,
         ),
       );
     }
