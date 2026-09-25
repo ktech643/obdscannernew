@@ -1,6 +1,10 @@
+import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:intl/intl.dart';
 
+import '../../core/typed_number.dart';
+import '../../data/clock.dart';
 import '../../data/db/app_database.dart' show ReminderRow;
+import '../../design_system/adaptive.dart' show showAdaptiveDatePicker;
 
 /// SPEC §5.5 — the default service intervals, word for word, and the one
 /// sentence every one of them carries.
@@ -60,6 +64,11 @@ enum ReminderStatus { overdue, dueSoon, upcoming, paused, done }
 /// card's count and the health score's −5 each (§5.4): past its date, or at
 /// or past its odometer. Paused and completed reminders are never overdue.
 /// "Due soon" is inside a month or 1,000 km.
+///
+/// Dates are calendar days ([dayOf]): a reminder due on the 27th is due
+/// soon on the 26th, due *today* on the 27th, and overdue from the 28th.
+/// Compared as instants it was overdue from 00:00 on its own due date,
+/// and "today" the day before.
 ReminderStatus reminderStatus(
   ReminderRow r, {
   double? odometerKm,
@@ -67,21 +76,62 @@ ReminderStatus reminderStatus(
 }) {
   if (r.completedAt != null) return ReminderStatus.done;
   if (r.paused) return ReminderStatus.paused;
-  final due = r.dueDate;
-  final dueKm = r.dueOdometerKm;
-  final byDate = due != null && due.isBefore(now);
-  final byKm = dueKm != null && odometerKm != null && odometerKm >= dueKm;
-  if (byDate || byKm) return ReminderStatus.overdue;
-  final soonByDate =
-      due != null && due.isBefore(now.add(const Duration(days: 30)));
-  final soonByKm =
-      dueKm != null && odometerKm != null && dueKm - odometerKm <= 1000;
-  if (soonByDate || soonByKm) return ReminderStatus.dueSoon;
+  final days = reminderDaysLeft(r, now: now);
+  final km = reminderKmLeft(r, odometerKm: odometerKm);
+  if ((days != null && days < 0) || (km != null && km <= 0)) {
+    return ReminderStatus.overdue;
+  }
+  if ((days != null && days < dueSoonDays) || (km != null && km <= dueSoonKm)) {
+    return ReminderStatus.dueSoon;
+  }
   return ReminderStatus.upcoming;
 }
 
-/// `24 Sep 2026`, in local time.
-String formatDay(DateTime at) => DateFormat('d MMM y').format(at.toLocal());
+/// "Due soon": inside a month, or 1,000 km.
+const dueSoonDays = 30;
+const dueSoonKm = 1000.0;
+
+/// Calendar days to the due date — 0 on the day, negative after. Null
+/// when it is not due by date.
+int? reminderDaysLeft(ReminderRow r, {required DateTime now}) =>
+    r.dueDate == null ? null : daysBetween(today(now: now), r.dueDate!);
+
+/// Kilometres to the due reading — 0 or less once reached. Null when it
+/// is not due by distance or the car has no reading.
+double? reminderKmLeft(ReminderRow r, {double? odometerKm}) =>
+    r.dueOdometerKm == null || odometerKm == null
+    ? null
+    : r.dueOdometerKm! - odometerKm;
+
+/// `24 Sep 2026`: the calendar day a stored date names ([dayOf]), the
+/// same wherever the phone is now.
+String formatDay(DateTime at) => DateFormat('d MMM y').format(dayOf(at));
+
+/// The platform's date picker on calendar days: shown in the local
+/// calendar, returned as a [calendarDay]. A date outside [first]..[last]
+/// widens the range rather than failing the picker's assertion — a
+/// reminder saved every 240 months lands past a 20-year [last].
+Future<DateTime?> pickDay(
+  BuildContext context, {
+  required DateTime initial,
+  required DateTime first,
+  required DateTime last,
+}) async {
+  DateTime local(DateTime d) {
+    final c = dayOf(d);
+    return DateTime(c.year, c.month, c.day);
+  }
+
+  final picked = await showAdaptiveDatePicker(
+    context,
+    initial: local(initial),
+    first: local(first),
+    last: local(last),
+  );
+  return picked == null
+      ? null
+      : calendarDay(picked.year, picked.month, picked.day);
+}
 
 /// Amounts of money, typed and shown.
 ///
@@ -103,21 +153,13 @@ class Money {
   static String format(double amount, String code) =>
       NumberFormat.simpleCurrency(name: code).format(amount);
 
-  /// `42.50`, `42,50`, `1,042.50`, `1 042,50`. Null when it is not an
-  /// amount; the caller bounds it.
-  static double? parse(String raw) {
-    var s = raw.trim().replaceAll(RegExp(r'[\s£$€¥]'), '');
-    if (s.isEmpty) return null;
-    // A comma followed by exactly one or two digits at the end is the
-    // decimal separator; every other comma groups thousands.
-    final commaDecimal = RegExp(r',\d{1,2}$');
-    if (commaDecimal.hasMatch(s) && !s.contains('.')) {
-      final i = s.lastIndexOf(',');
-      s = '${s.substring(0, i).replaceAll(',', '')}.${s.substring(i + 1)}';
-    } else {
-      s = s.replaceAll(',', '');
-    }
-    final v = double.tryParse(s);
-    return v != null && v.isFinite ? v : null;
-  }
+  /// `42.50`, `42,50`, `1,042.50`, `1.042,50`, `1 042,50`, `£42.50`,
+  /// `Rs 1,500` — either convention, by [parseTypedNumber]'s rules. No
+  /// currency here has three decimals, so `1.500` is fifteen hundred. Null
+  /// when it is not an amount; the caller bounds it.
+  static double? parse(String raw) => parseTypedNumber(
+    // A symbol or code before or after the number: `£`, `Rs`, `PKR`, `€`.
+    raw.trim().replaceAll(RegExp(r'^[^0-9\-.,]+|[^0-9.,]+$'), ''),
+    threeDecimalsPlausible: false,
+  );
 }

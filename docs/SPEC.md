@@ -2006,6 +2006,93 @@ the Oil reminder done — §5.5 does not link the two, and matching them by titl
 would be a guess. Golden-diff images (`**/failures/*.png`, four committed in
 slice 3) are ignored now. 734 tests, analyzer clean.
 
+## B.28 Adversarial review of slice 15 (2026-09-25)
+
+Seven lenses (maintenance, reminders, fuel, design system, wiring, data, test
+quality), three refuters each, over `eb55bdf`…`defe0cb`: 38 findings, 25
+survived all three — fifteen distinct defects after duplicates. The run was cut
+short by a session limit once and resumed from its journal. Two more came from
+the first, interrupted run and were proven by a failing test instead of the
+refuters: a preset's interval edited on the form left the first due point at
+the default, and a 240-month interval saved a date past the picker's range.
+Every ★ test was seen failing with its fix removed (33 reverts; the four about
+dates under `TZ=America/New_York` or `Europe/London`, where they show), and the
+suite passes in four zones (Karachi, New York, London, Auckland).
+
+- **Open screens held stale values.** *Blocker:* `_links` read the plan once;
+  a user who bought Pro through the maintenance log's own §7.3 door met the
+  cap again on the same screen. The unit and currency were read once too, and
+  each log re-read `garage.primary` whenever it rebuilt, so it could become
+  another car's while a form already open still wrote to the first. The links
+  now take the vehicle their row was tapped for (`VehicleScreenBuilder`) and
+  read the providers in the route's own context. A form keeps the unit it
+  opened with — what is typed in it is in that unit.
+- **Dates are calendar days.** A date with no time was stored as an instant
+  (local midnight), so a reminder was overdue from 00:00 on its own due date
+  (and cost the health score its −5 that day), "today" was said the day
+  before, every countdown was a day short, a preset added across a DST change
+  was due a day early, and every date read back a day early once the phone
+  moved west. New dates are UTC midnight of the day (`calendarDay`); `dayOf`
+  reads either kind — a row written before as local midnight still reads as
+  the day picked — and `addDays`/`daysBetween` count on the calendar.
+  `reminderStatus` compares days: due today is due soon ("Due today"), overdue
+  from the day after. A completed reminder rolls forward by calendar days.
+  `pickDay` wraps the adaptive picker, which now widens its range to include
+  the date it opens on.
+- **Reminders.** A km-only interval on a car with no reading was saved with
+  nothing to be due by and could never be due — nine presets, the critical
+  timing belt among them; it is refused with the reason, and "Next due at"
+  says it is needed. A reminder due by both distance and date always gave the
+  distance ("Due soon in 8,000 km" when the date was ten days off); due soon
+  now names the trigger that is close, coming up names both. Editing a done
+  reminder's due point or interval sets it again — kept as done, the edit was
+  saved and could never show. A new reminder's first due point follows its
+  interval until the user sets it. The Garage card's overdue count was keyed on
+  nothing that changes with the day; it is keyed on the day too, and re-read
+  on resume and on return from a log.
+- **Fuel.** A part fill and the full tank after it, at one reading on one day,
+  sorted by insertion — newest first — and the full tank's span got the wrong
+  litres (1.0 L/100 km for 7.0); a part fill now sorts first. A second full
+  tank at the same reading is a top-up whose litres go forward, not away. Each
+  entry has a `FuelSpanRole`, so a part fill before the first full tank says it
+  is not counted instead of claiming it is.
+- **Numbers as typed.** `Money.parse` read `1.234,56` as 1.23456 and saved it
+  without an error; `Distance.parse` read `142.380,5` as 142.38. Both go
+  through `parseTypedNumber`: with both marks the last is the decimal point;
+  one mark more than once groups (lakh grouping `1,23,456` included); one mark
+  before exactly three digits groups for money and readings and is a decimal
+  point for litres, which a pump shows to three places. An edit that leaves a
+  field untouched saves the stored value, not its rounding: 150,000 km shown as
+  93,206 mi came back as 150,000.5 km, moved the car and stamped it as read
+  today.
+- **Currency.** Every install started in pounds and no screen offered another.
+  Settings has a Currency row (ten currencies: the stores' three and those of
+  §10.2's markets); the default is the phone's region, from our own table —
+  `intl` gives `en_PK` dollars and `ar_AE` Egyptian pounds.
+- **Accessibility.** Two `LabelledField`s side by side merged their labels into
+  one static node and left each field named by its hint; each field is one
+  merged node now. A toned `ListRow` value draws its glyph (hard rule 11). A
+  date field said its label twice. A field near its `maxLength` shows its count
+  (§9.8 "with a counter") rather than cutting a pasted note without a word.
+
+**Refuted, and done anyway.** A reading far above the car's (a typo of
+1,501,000) moves the car's odometer for good — §B.27 allows it, and the vehicle
+form can set it back — so it is now a caution past 50,000 km. The empty date
+field's "No date" was tertiary on the panel (2.93:1); it is the hint ink the
+text fields use. A higher reading from an old receipt is stamped with the
+receipt's day, not now (`GarageController.noteReading`, shared by both forms).
+
+**Refuted, not changed.** The owner's-manual line is on the preset picker and
+the form a preset opens, not on a later edit of it (§5.5 is about the default
+interval shown). The test-quality findings (single-span economy tests, a
+currency test that checked a field, the preset test's "and nothing it does
+not") described tests that could miss a future bug in code that is right.
+
+**For a decision, not a defect.** §7.2's ten free records are counted per
+vehicle; the free plan has one vehicle, so the two readings differ only for a
+garage that was Pro and lapsed (two refuters of three called it policy). A
+logged service still does not mark its reminder done (§B.27).
+
 ## HARD RULES
 
 1. `lib/protocol/` imports nothing from `package:flutter`. Ever.

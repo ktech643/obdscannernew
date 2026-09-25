@@ -181,7 +181,9 @@ class ServiceRepository {
     // along, it would keep the reminder due the moment it was completed.
     DateTime? nextDue;
     double? nextKm;
-    if (days != null) nextDue = at.add(Duration(days: days));
+    // A calendar day, like every due date: today on the phone's calendar
+    // plus the interval, not this instant plus 24 h × days.
+    if (days != null) nextDue = addDays(today(now: at), days);
     if (km != null) {
       final base =
           odometerKm ??
@@ -256,28 +258,41 @@ class ServiceRepository {
   Future<void> deleteFuel(String id) =>
       (_db.delete(_db.fuelEntries)..where((f) => f.id.equals(id))).go();
 
-  /// Litres per 100 km for each **full** fill, computed from the previous
-  /// full fill: distance between them, litres of everything added in
-  /// between (partials included — they went in the tank). The first full
-  /// fill, and any partial, gets null. This is the only honest number a
-  /// fuel log can give; per-fill economy on partials is the classic lie.
-  ///
-  /// Walked in odometer order, not date order: fills logged from a date
-  /// picker share a midnight timestamp, and the odometer is the physical
-  /// sequence anyway.
   /// Edit a fill-up in place; the date normalised to UTC like every write.
-  Future<void> updateFuel(FuelEntryRow row) => _db
-      .update(_db.fuelEntries)
-      .replace(row.copyWith(date: utc(row.date)));
+  Future<void> updateFuel(FuelEntryRow row) =>
+      _db.update(_db.fuelEntries).replace(row.copyWith(date: utc(row.date)));
 
+  /// Each fill-up with its economy, oldest first — [FuelSummary]'s rule.
   Future<List<FuelEconomy>> economy(String vehicleId) async =>
       FuelSummary.of(await fuel(vehicleId)).economy;
 }
 
+/// What a fill-up is to the economy figures — the reason a row has a
+/// figure or has none, so the list can say which and be right.
+enum FuelSpanRole {
+  /// The first full tank: nothing is known about the tank before it.
+  starts,
+
+  /// A full tank that ends a span; it has the figure.
+  measured,
+
+  /// A part fill after a full tank: its litres go into the span the next
+  /// full tank ends.
+  partCounted,
+
+  /// A part fill before any full tank: there is no span to put it in.
+  partBefore,
+
+  /// A full fill at the same reading as the last full one — a top-up. No
+  /// distance, so no figure; its litres go into the next span.
+  toppedUp,
+}
+
 class FuelEconomy {
-  const FuelEconomy(this.entry, this.litresPer100Km);
+  const FuelEconomy(this.entry, this.litresPer100Km, this.role);
   final FuelEntryRow entry;
   final double? litresPer100Km;
+  final FuelSpanRole role;
 }
 
 /// SPEC §5.5 — "economy **between full fill-ups only**".
@@ -287,8 +302,14 @@ class FuelEconomy {
 /// two. A part fill has no economy of its own — the tank was not full, so
 /// the litres it took say nothing about the distance before it — and the
 /// first full tank has none either, because nothing is known about what
-/// was in the tank before it. Entries are taken in odometer order, so a
-/// fill-up added later for an earlier date lands where it belongs.
+/// was in the tank before it.
+///
+/// Entries are taken in odometer order, so a fill-up added later for an
+/// earlier date lands where it belongs. At one reading on one day, a part
+/// fill comes before a full one: a tank can be topped up to full after a
+/// part fill, never the other way round — insertion order put the full
+/// tank first and gave its span the wrong litres. A second full tank at
+/// the same reading is a top-up: its litres go forward, not away.
 class FuelSummary {
   const FuelSummary._(this.economy, this.spanKm, this.spanLitres);
 
@@ -307,7 +328,12 @@ class FuelSummary {
     final sorted = [...entries]
       ..sort((a, b) {
         final byKm = a.odometerKm.compareTo(b.odometerKm);
-        return byKm != 0 ? byKm : a.date.compareTo(b.date);
+        if (byKm != 0) return byKm;
+        final byDay = dayOf(a.date).compareTo(dayOf(b.date));
+        if (byDay != 0) return byDay;
+        // Part before full; then a fixed order for two of a kind.
+        if (a.partFill != b.partFill) return a.partFill ? -1 : 1;
+        return a.id.compareTo(b.id);
       });
     final out = <FuelEconomy>[];
     FuelEntryRow? lastFull;
@@ -315,23 +341,34 @@ class FuelSummary {
     var spanKm = 0.0;
     var spanLitres = 0.0;
     for (final e in sorted) {
-      double? lPer100;
       if (e.partFill) {
-        litresSince += e.litres;
-      } else {
-        if (lastFull != null) {
-          final km = e.odometerKm - lastFull.odometerKm;
-          if (km > 0) {
-            final litres = litresSince + e.litres;
-            lPer100 = litres / km * 100;
-            spanKm += km;
-            spanLitres += litres;
-          }
+        if (lastFull == null) {
+          out.add(FuelEconomy(e, null, FuelSpanRole.partBefore));
+        } else {
+          litresSince += e.litres;
+          out.add(FuelEconomy(e, null, FuelSpanRole.partCounted));
         }
+        continue;
+      }
+      if (lastFull == null) {
+        // Part fills before the first full tank were never in a span.
         lastFull = e;
         litresSince = 0;
+        out.add(FuelEconomy(e, null, FuelSpanRole.starts));
+        continue;
       }
-      out.add(FuelEconomy(e, lPer100));
+      final km = e.odometerKm - lastFull.odometerKm;
+      if (km <= 0) {
+        litresSince += e.litres;
+        out.add(FuelEconomy(e, null, FuelSpanRole.toppedUp));
+        continue;
+      }
+      final litres = litresSince + e.litres;
+      spanKm += km;
+      spanLitres += litres;
+      out.add(FuelEconomy(e, litres / km * 100, FuelSpanRole.measured));
+      lastFull = e;
+      litresSince = 0;
     }
     return FuelSummary._(out, spanKm, spanLitres);
   }

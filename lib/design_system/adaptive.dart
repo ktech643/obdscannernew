@@ -390,8 +390,13 @@ Future<DateTime?> showAdaptiveDatePicker(
   DateTime? first,
   DateTime? last,
 }) async {
-  final lo = first ?? DateTime(1990);
-  final hi = last ?? DateTime.now().add(const Duration(days: 365 * 5));
+  // The pickers assert first <= initial <= last. A date saved from
+  // elsewhere can sit outside the range a form offers; widen it rather
+  // than crash on the way into an edit.
+  var lo = first ?? DateTime(1990);
+  var hi = last ?? DateTime.now().add(const Duration(days: 365 * 5));
+  if (initial.isBefore(lo)) lo = initial;
+  if (initial.isAfter(hi)) hi = initial;
   if (_ios(context)) {
     var picked = initial;
     final ok = await showAdaptiveSheet<bool>(

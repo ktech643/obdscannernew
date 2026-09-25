@@ -213,9 +213,8 @@ class _Backlit extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Backlit(
-    child: SafeArea(bottom: false, child: child),
-  );
+  Widget build(BuildContext context) =>
+      Backlit(child: SafeArea(bottom: false, child: child));
 }
 
 /// The Connect tab, on the live session.
@@ -306,41 +305,45 @@ class LiveGarageTab extends StatelessWidget {
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
         onUpgrade: () => openProPaywall(context),
-        links: _links(context, garage),
+        links: _links(garage),
       ),
     );
   }
 
-  /// SPEC §5.5 — the Garage's logs, each opened for the primary vehicle as
-  /// it is when the row is tapped. The unit, the currency and the plan are
-  /// read here, where the providers are, so the screens stay free of them.
-  GarageLinks _links(BuildContext context, GarageController garage) {
-    final settings = context.watch<SettingsProvider>();
-    final isPro = context.watch<EntitlementProvider>().isPro;
-    final unit = settings.distance;
-    final currency = Money.codeOf(settings.currency);
-    return GarageLinks(
-      maintenance: (ctx) => MaintenanceScreen(
+  /// SPEC §5.5 — the Garage's logs, each for the vehicle its row was
+  /// tapped for. The unit, the currency and the plan are read in the
+  /// route's own context, where the providers are, so an open log follows
+  /// them: bought Pro through the log's own door, the cap lifts on that
+  /// same screen — read once here, it did not until the log was reopened.
+  /// A form opened from a log keeps the unit it opened with; what is typed
+  /// in it is in that unit.
+  GarageLinks _links(GarageController garage) => GarageLinks(
+    maintenance: (ctx, vehicle) {
+      final settings = ctx.watch<SettingsProvider>();
+      return MaintenanceScreen(
         garage: garage,
-        vehicle: garage.primary!,
-        unit: unit,
-        currencyCode: currency,
-        isPro: isPro,
+        vehicle: vehicle,
+        unit: settings.distance,
+        currencyCode: Money.codeOf(settings.currency),
+        isPro: ctx.watch<EntitlementProvider>().isPro,
         onUpgrade: () => openProPaywall(ctx),
-      ),
-      reminders: (_) => RemindersScreen(
+      );
+    },
+    reminders: (ctx, vehicle) => RemindersScreen(
+      garage: garage,
+      vehicle: vehicle,
+      unit: ctx.watch<SettingsProvider>().distance,
+    ),
+    fuel: (ctx, vehicle) {
+      final settings = ctx.watch<SettingsProvider>();
+      return FuelLogScreen(
         garage: garage,
-        vehicle: garage.primary!,
-        unit: unit,
-      ),
-      fuel: (_) => FuelLogScreen(
-        garage: garage,
-        vehicle: garage.primary!,
-        unit: unit,
-        currencyCode: currency,
-      ),
-    );
-  }
+        vehicle: vehicle,
+        unit: settings.distance,
+        currencyCode: Money.codeOf(settings.currency),
+      );
+    },
+  );
 }
 
 /// The Settings tab, on the live session.

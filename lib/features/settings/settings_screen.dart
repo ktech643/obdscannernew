@@ -53,6 +53,12 @@ class SettingsScreen extends StatelessWidget {
           value: settings.temperature.label,
           onTap: () => _pickTemperature(context, settings),
         ),
+        ListRow(
+          title: 'Currency',
+          subtitle: 'For new costs. A record keeps the one it was written in.',
+          value: settings.currency,
+          onTap: () => _pickCurrency(context, settings),
+        ),
         const ListSection(title: 'Connection'),
         ListRow(
           title: 'Polling rate',
@@ -77,30 +83,20 @@ class SettingsScreen extends StatelessWidget {
         const ListSection(title: 'Subscription'),
         ListRow(
           title: ent.isPro ? 'Torque Pro' : 'Torque Free',
-          value:
-              ent.isPro
-                  ? 'Unlimited gauges, vehicles and recording'
-                  : '6 gauges · 1 vehicle · 2-minute recordings',
+          value: ent.isPro
+              ? 'Unlimited gauges, vehicles and recording'
+              : '6 gauges · 1 vehicle · 2-minute recordings',
         ),
         if (!ent.isPro)
-          ListRow(
-            title: 'Go Pro',
-            onTap: () => openProPaywall(context),
-          ),
+          ListRow(title: 'Go Pro', onTap: () => openProPaywall(context)),
         ListRow(
           title: 'Restore purchases',
           onTap: () => _restorePurchases(context, ent),
         ),
         if (ent.isPro)
-          ListRow(
-            title: 'Manage subscription',
-            onTap: ent.manageSubscription,
-          ),
+          ListRow(title: 'Manage subscription', onTap: ent.manageSubscription),
         const ListSection(title: 'Your data'),
-        ListRow(
-          title: 'Data & privacy',
-          onTap: () => _openPrivacy(context),
-        ),
+        ListRow(title: 'Data & privacy', onTap: () => _openPrivacy(context)),
         ListRow(
           title: 'Diagnostics log',
           value: '${live.log.length} events',
@@ -115,10 +111,23 @@ class SettingsScreen extends StatelessWidget {
         context,
         title: 'Distance',
         options: [
-          for (final u in DistanceUnit.values) _Choice(label: u.label, value: u),
+          for (final u in DistanceUnit.values)
+            _Choice(label: u.label, value: u),
         ],
         selected: settings.distance,
         onSelect: settings.setDistance,
+      );
+
+  void _pickCurrency(BuildContext context, SettingsProvider settings) =>
+      _showChoiceSheet(
+        context,
+        title: 'Currency',
+        options: [
+          for (final c in {...SettingsProvider.currencies, settings.currency})
+            _Choice(label: c, value: c),
+        ],
+        selected: settings.currency,
+        onSelect: settings.setCurrency,
       );
 
   void _pickTemperature(BuildContext context, SettingsProvider settings) =>
@@ -142,10 +151,9 @@ class SettingsScreen extends StatelessWidget {
             _Choice(
               label: r,
               value: r,
-              subtitle:
-                  r == 'Auto'
-                      ? 'Drops the rate when the adapter falls behind'
-                      : null,
+              subtitle: r == 'Auto'
+                  ? 'Drops the rate when the adapter falls behind'
+                  : null,
             ),
         ],
         selected: settings.pollingRate,
@@ -161,24 +169,19 @@ class SettingsScreen extends StatelessWidget {
     await showAdaptiveAlert(
       context,
       title: ok ? 'Purchases restored' : 'Nothing to restore',
-      message:
-          ok
-              ? 'Your previous purchases are active again.'
-              : "We couldn't find any purchases to restore for this store account.",
+      message: ok
+          ? 'Your previous purchases are active again.'
+          : "We couldn't find any purchases to restore for this store account.",
       actions: [
-        AdaptiveAlertAction(
-          label: 'OK',
-          onPressed: () {},
-          isDefault: true,
-        ),
+        AdaptiveAlertAction(label: 'OK', onPressed: () {}, isDefault: true),
       ],
     );
   }
 
   void _openPrivacy(BuildContext context) {
-    Navigator.of(
-      context,
-    ).push(PageRouteBuilder<void>(pageBuilder: (_, _, _) => const PrivacyScreen()));
+    Navigator.of(context).push(
+      PageRouteBuilder<void>(pageBuilder: (_, _, _) => const PrivacyScreen()),
+    );
   }
 
   void _openDiagnosticsLog(BuildContext context, LiveSession live) {
@@ -200,39 +203,38 @@ void _showChoiceSheet<T>(
   required ValueChanged<T> onSelect,
 }) => showAdaptiveSheet<void>(
   context,
-  builder:
-      (sheetContext) => Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Space.gutter,
-          Space.x16,
-          Space.gutter,
-          Space.x24,
+  builder: (sheetContext) => Padding(
+    padding: const EdgeInsets.fromLTRB(
+      Space.gutter,
+      Space.x16,
+      Space.gutter,
+      Space.x24,
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TorqueType.titleMd.copyWith(
+            color: sheetContext.tokens.inkPrimary,
+          ),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TorqueType.titleMd.copyWith(
-                color: sheetContext.tokens.inkPrimary,
-              ),
-            ),
-            const SizedBox(height: Space.x16),
-            for (final option in options)
-              _SheetRadioRow<T>(
-                value: option.value,
-                label: option.label,
-                subtitle: option.subtitle,
-                selected: selected,
-                onSelect: (v) {
-                  onSelect(v);
-                  Navigator.of(sheetContext).pop();
-                },
-              ),
-          ],
-        ),
-      ),
+        const SizedBox(height: Space.x16),
+        for (final option in options)
+          _SheetRadioRow<T>(
+            value: option.value,
+            label: option.label,
+            subtitle: option.subtitle,
+            selected: selected,
+            onSelect: (v) {
+              onSelect(v);
+              Navigator.of(sheetContext).pop();
+            },
+          ),
+      ],
+    ),
+  ),
 );
 
 class _Choice<T> {
@@ -285,10 +287,7 @@ class _SwitchRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: Space.x12),
-                    AdaptiveSwitch(
-                      value: value,
-                      onChanged: onChanged,
-                    ),
+                    AdaptiveSwitch(value: value, onChanged: onChanged),
                   ],
                 ),
               ),
@@ -339,7 +338,9 @@ class _SheetRadioRow<T> extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Icon(
-                      active ? Icons.radio_button_checked : Icons.radio_button_off,
+                      active
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_off,
                       size: 20,
                       color: active ? t.tellAmber : t.inkTertiary,
                     ),
@@ -354,8 +355,9 @@ class _SheetRadioRow<T> extends StatelessWidget {
                           label,
                           style: TorqueType.body.copyWith(
                             color: t.inkPrimary,
-                            fontWeight:
-                                active ? FontWeight.w500 : FontWeight.w400,
+                            fontWeight: active
+                                ? FontWeight.w500
+                                : FontWeight.w400,
                           ),
                         ),
                         if (subtitle != null) ...[

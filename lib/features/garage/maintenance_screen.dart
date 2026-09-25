@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show Icons, Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../data/clock.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/service_repository.dart';
 import '../../design_system/design_system.dart';
@@ -215,25 +216,24 @@ class _ServiceRecordFormScreenState extends State<ServiceRecordFormScreen> {
 
   late ServiceType _type = _e?.type ?? ServiceType.maintenance;
   late final _title = TextEditingController(text: _e?.title ?? '');
-  late DateTime _date = (_e?.date ?? _today).toLocal();
-  late final _odometer = TextEditingController(
-    text: _e?.odometerKm == null
-        ? ''
-        : Distance.display(_e!.odometerKm!, widget.unit),
-  );
-  late final _cost = TextEditingController(
-    text: _e?.cost == null ? '' : _e!.cost!.toStringAsFixed(2),
-  );
+  late DateTime _date = _e == null ? _today : dayOf(_e!.date);
+
+  // What an edit shows, kept so an untouched field saves the stored value
+  // and not its rounding: 150,000 km shown as 93,206 mi came back as
+  // 150,000.5 km, moved the car and stamped it as read today.
+  late final _odometerShown = _e?.odometerKm == null
+      ? ''
+      : Distance.display(_e!.odometerKm!, widget.unit);
+  late final _costShown = _e?.cost == null ? '' : _e!.cost!.toStringAsFixed(2);
+  late final _odometer = TextEditingController(text: _odometerShown);
+  late final _cost = TextEditingController(text: _costShown);
   late final _vendor = TextEditingController(text: _e?.vendor ?? '');
   late final _notes = TextEditingController(text: _e?.notes ?? '');
 
   bool _submitted = false;
   bool _saving = false;
 
-  DateTime get _today {
-    final n = widget.today ?? DateTime.now();
-    return DateTime(n.year, n.month, n.day);
-  }
+  DateTime get _today => today(now: widget.today);
 
   String get _currency => _e?.currencyCode ?? widget.currencyCode;
 
@@ -257,6 +257,7 @@ class _ServiceRecordFormScreenState extends State<ServiceRecordFormScreen> {
   double? get _odometerKm {
     final raw = _odometer.text.trim();
     if (raw.isEmpty) return null;
+    if (_e != null && raw == _odometerShown) return _e!.odometerKm;
     final v = Distance.parse(raw);
     return v == null ? null : Distance.toKm(v, widget.unit);
   }
@@ -274,8 +275,12 @@ class _ServiceRecordFormScreenState extends State<ServiceRecordFormScreen> {
 
   double? get _costValue {
     final raw = _cost.text.trim();
+    if (_e != null && raw == _costShown) return _e!.cost;
     return raw.isEmpty ? null : Money.parse(raw);
   }
+
+  String? get _odometerCaution =>
+      Distance.jumpCaution(_odometerKm, _vehicleNow()?.odometerKm, widget.unit);
 
   String? get _costError {
     if (_cost.text.trim().isEmpty) return null;
@@ -298,10 +303,10 @@ class _ServiceRecordFormScreenState extends State<ServiceRecordFormScreen> {
       _notesError == null;
 
   Future<void> _pickDate() async {
-    final picked = await showAdaptiveDatePicker(
+    final picked = await pickDay(
       context,
       initial: _date,
-      first: DateTime(1980),
+      first: calendarDay(1980, 1, 1),
       last: _today,
     );
     if (picked != null && mounted) setState(() => _date = picked);
@@ -345,12 +350,13 @@ class _ServiceRecordFormScreenState extends State<ServiceRecordFormScreen> {
           ),
         );
       }
-      // A higher reading than the car's is the newest reading there is —
-      // and reminders due by distance are judged against it.
-      final current = _vehicleNow();
-      if (km != null &&
-          (current?.odometerKm == null || km > current!.odometerKm!)) {
-        await widget.garage.updateOdometer(widget.vehicle.id, km);
+      if (km != null) {
+        await widget.garage.noteReading(
+          widget.vehicle.id,
+          km,
+          day: _date,
+          now: widget.today,
+        );
       }
       if (mounted) Navigator.of(context).pop();
     } finally {
@@ -425,6 +431,7 @@ class _ServiceRecordFormScreenState extends State<ServiceRecordFormScreen> {
                         decimal: true,
                       ),
                       error: _submitted ? _odometerError : null,
+                      caution: _odometerCaution,
                       onChanged: (_) => setState(() {}),
                     ),
                   ),

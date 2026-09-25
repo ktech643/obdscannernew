@@ -21,10 +21,7 @@ void main() {
     store = await Persistence.open();
   });
 
-  Future<void> pump(
-    WidgetTester tester, {
-    LiveSession? live,
-  }) async {
+  Future<void> pump(WidgetTester tester, {LiveSession? live}) async {
     tester.view.physicalSize = const Size(390, 780);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -39,9 +36,7 @@ void main() {
           providers: [
             ChangeNotifierProvider<LiveSession>.value(value: session),
             ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
-            ChangeNotifierProvider(
-              create: (_) => EntitlementProvider(store),
-            ),
+            ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
           ],
           child: MaterialApp(
             theme: torqueTheme(),
@@ -59,7 +54,12 @@ void main() {
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Distance'), findsOneWidget);
     expect(find.text('Polling rate'), findsOneWidget);
-    for (final section in ['Units', 'Connection', 'Subscription', 'Your data']) {
+    for (final section in [
+      'Units',
+      'Connection',
+      'Subscription',
+      'Your data',
+    ]) {
       await tester.scrollUntilVisible(find.text(section), 100);
       expect(find.text(section), findsOneWidget);
     }
@@ -97,6 +97,44 @@ void main() {
     );
   });
 
+  group('★ the currency a cost is written in', () {
+    test('★ a region\'s own currency, not intl\'s guess', () {
+      // intl answers dollars for en_PK and Egyptian pounds for ar_AE.
+      expect(SettingsProvider.currencyForRegion('PK'), 'PKR Rs');
+      expect(SettingsProvider.currencyForRegion('AE'), 'AED');
+      expect(SettingsProvider.currencyForRegion('IN'), 'INR ₹');
+      expect(SettingsProvider.currencyForRegion('DE'), 'EUR €');
+      expect(SettingsProvider.currencyForRegion('GB'), 'GBP £');
+      expect(SettingsProvider.currencyForRegion('US'), r'USD $');
+      expect(SettingsProvider.currencyForRegion(null), r'USD $');
+      expect(SettingsProvider.currencyForRegion('ZZ'), r'USD $');
+    });
+
+    testWidgets('★ a new install starts in the phone\'s region\'s currency', (
+      tester,
+    ) async {
+      // Every install started in pounds.
+      tester.platformDispatcher.localeTestValue = const Locale('ur', 'PK');
+      addTearDown(tester.platformDispatcher.clearLocaleTestValue);
+      expect(SettingsProvider(store).currency, 'PKR Rs');
+    });
+
+    testWidgets('★ Settings offers it, and the choice is kept', (tester) async {
+      // No screen called setCurrency: whatever the default, it was final.
+      await pump(tester);
+      await tester.tap(find.text('Currency'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('PKR Rs'));
+      await tester.pumpAndSettle();
+      final settings = Provider.of<SettingsProvider>(
+        tester.element(find.byType(SettingsScreen)),
+        listen: false,
+      );
+      expect(settings.currency, 'PKR Rs');
+      expect(SettingsProvider(store).currency, 'PKR Rs', reason: 'stored');
+    });
+  });
+
   testWidgets('haptics switch writes the preference', (tester) async {
     await pump(tester);
     expect(find.text('Haptics'), findsOneWidget);
@@ -117,9 +155,7 @@ void main() {
     expect(settings.haptics, isFalse);
   });
 
-  testWidgets('diagnostics log row opens the real log screen', (
-    tester,
-  ) async {
+  testWidgets('diagnostics log row opens the real log screen', (tester) async {
     final live = LiveSession(session: ObdSession(timeScale: 0.05));
     live.log.command('010C');
     await pump(tester, live: live);

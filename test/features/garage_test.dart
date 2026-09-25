@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:torque_obd2/core/platform/platform_info.dart';
+import 'package:torque_obd2/data/clock.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/data/repositories/dtc_repository.dart';
 import 'package:torque_obd2/data/repositories/service_repository.dart';
@@ -173,12 +174,15 @@ void main() {
       expect(Distance.display(double.nan, DistanceUnit.mi), '\u2014');
     });
 
-    test('parse refuses what double.tryParse accepts but no odometer reads', () {
-      expect(Distance.parse('Infinity'), isNull);
-      expect(Distance.parse('NaN'), isNull);
-      expect(Distance.parse('1' * 400), isNull);
-      expect(Distance.parse('142380,5'), 142380.5, reason: 'still a number');
-    });
+    test(
+      'parse refuses what double.tryParse accepts but no odometer reads',
+      () {
+        expect(Distance.parse('Infinity'), isNull);
+        expect(Distance.parse('NaN'), isNull);
+        expect(Distance.parse('1' * 400), isNull);
+        expect(Distance.parse('142380,5'), 142380.5, reason: 'still a number');
+      },
+    );
   });
 
   group('Distance — kilometres on disk, the user\'s unit on screen', () {
@@ -561,6 +565,69 @@ void main() {
 
   Finder field(int index) => find.byType(TextField).at(index);
   const nameField = 0, yearField = 4, odometerField = 5, vinField = 7;
+
+  testWidgets('★ the card counts a reminder overdue the day after it was '
+      'due, with nothing else changing', (tester) async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(
+      () => db.close().timeout(const Duration(seconds: 5), onTimeout: () {}),
+    );
+    final g = GarageController(
+      vehicles: VehicleRepository(db),
+      services: ServiceRepository(db),
+      dtcs: DtcRepository(db),
+    );
+    addTearDown(g.dispose);
+    final car = await addCar(g, 'The Golf');
+    await ServiceRepository(db).addReminder(
+      vehicleId: car.id,
+      title: 'Inspection',
+      dueDate: calendarDay(2026, 9, 27),
+    );
+    var clock = DateTime(2026, 9, 27, 20);
+    tester.view.physicalSize = const Size(390, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      AdaptiveScope(
+        platform: const FakePlatform(isAndroid: false),
+        child: MaterialApp(
+          theme: torqueTheme(),
+          home: Scaffold(
+            body: GarageScreen(
+              controller: g,
+              session: newSession(),
+              links: GarageLinks(reminders: (_, _) => const SizedBox()),
+              now: () => clock,
+            ),
+          ),
+        ),
+      ),
+    );
+    await pumpUntil(tester, () => g.loaded, reason: 'the first read');
+    await settle(tester);
+    expect(find.text('None overdue'), findsOneWidget, reason: 'due today');
+
+    // The phone sleeps past midnight. Keyed on nothing that changes with
+    // the day, the card kept "None overdue" while the list said Overdue.
+    clock = DateTime(2026, 9, 28, 7);
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await settle(tester);
+    expect(find.text('1 overdue'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 1));
+  });
 
   group('★ the vehicle form — §9.8, everything typed', () {
     testWidgets('an empty garage invites, and the form refuses a blank name', (

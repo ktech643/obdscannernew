@@ -3,6 +3,8 @@ import 'package:flutter/material.dart' show Icons, Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../core/typed_number.dart';
+import '../../data/clock.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/service_repository.dart';
 import '../../design_system/design_system.dart';
@@ -138,7 +140,7 @@ class FuelLogScreen extends StatelessWidget {
           ListRow(
             title: formatDay(e.entry.date),
             subtitle: _subtitle(e.entry),
-            value: _economyWord(byId[e.entry.id]!, e.entry),
+            value: _economyWord(byId[e.entry.id]!),
             onTap: () => _open(context, e.entry),
           ),
         Padding(
@@ -160,12 +162,16 @@ class FuelLogScreen extends StatelessWidget {
     if (e.partFill) 'part fill',
   ].join(' · ');
 
-  /// Always a word: a figure, or why there is none.
-  String _economyWord(FuelEconomy e, FuelEntryRow row) {
-    final v = e.litresPer100Km;
-    if (v != null) return formatEconomy(v, unit);
-    return row.partFill ? 'Counted in the next full tank' : 'Starts the count';
-  }
+  /// Always a word: a figure, or why there is none — and the why is
+  /// [FuelSummary]'s, so a part fill before the first full tank is not
+  /// told it is counted.
+  String _economyWord(FuelEconomy e) => switch (e.role) {
+    FuelSpanRole.measured => formatEconomy(e.litresPer100Km!, unit),
+    FuelSpanRole.starts => 'Starts the count',
+    FuelSpanRole.partCounted => 'Counted in the next full tank',
+    FuelSpanRole.partBefore => 'Before the first full tank — not counted',
+    FuelSpanRole.toppedUp => 'A top-up — counted in the next full tank',
+  };
 
   Future<void> _open(BuildContext context, FuelEntryRow? existing) =>
       Navigator.of(context).push<void>(
@@ -214,16 +220,19 @@ class FuelEntryFormScreen extends StatefulWidget {
 class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
   FuelEntryRow? get _e => widget.existing;
 
-  late DateTime _date = (_e?.date ?? _today).toLocal();
-  late final _odometer = TextEditingController(
-    text: _e == null ? '' : Distance.display(_e!.odometerKm, widget.unit),
-  );
-  late final _litres = TextEditingController(
-    text: _e == null ? '' : _e!.litres.toStringAsFixed(2),
-  );
-  late final _cost = TextEditingController(
-    text: _e?.cost == null ? '' : _e!.cost!.toStringAsFixed(2),
-  );
+  late DateTime _date = _e == null ? _today : dayOf(_e!.date);
+
+  // What an edit shows, kept so an untouched field saves the stored value
+  // and not its rounding: 150,000 km shown as 93,206 mi came back as
+  // 150,000.5 km, moved the car and stamped it as read today.
+  late final _odometerShown = _e == null
+      ? ''
+      : Distance.display(_e!.odometerKm, widget.unit);
+  late final _litresShown = _e == null ? '' : _e!.litres.toStringAsFixed(2);
+  late final _costShown = _e?.cost == null ? '' : _e!.cost!.toStringAsFixed(2);
+  late final _odometer = TextEditingController(text: _odometerShown);
+  late final _litres = TextEditingController(text: _litresShown);
+  late final _cost = TextEditingController(text: _costShown);
   late final _notes = TextEditingController(text: _e?.notes ?? '');
   late bool _partFill = _e?.partFill ?? false;
 
@@ -234,10 +243,7 @@ class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
   /// caution, read once when the form opens.
   double? _highest;
 
-  DateTime get _today {
-    final n = widget.today ?? DateTime.now();
-    return DateTime(n.year, n.month, n.day);
-  }
+  DateTime get _today => today(now: widget.today);
 
   String get _currency => _e?.currencyCode ?? widget.currencyCode;
 
@@ -265,7 +271,9 @@ class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
   }
 
   double? get _odometerKm {
-    final v = Distance.parse(_odometer.text.trim());
+    final raw = _odometer.text.trim();
+    if (_e != null && raw == _odometerShown) return _e!.odometerKm;
+    final v = Distance.parse(raw);
     return v == null ? null : Distance.toKm(v, widget.unit);
   }
 
@@ -283,13 +291,21 @@ class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
   String? get _odometerCaution {
     final km = _odometerKm;
     final top = _highest;
-    if (km == null || top == null || km >= top) return null;
-    return 'Lower than a fill-up already logged at '
-        '${Distance.display(top, widget.unit)} ${widget.unit.label} — fine '
-        'if this is an older receipt.';
+    if (km != null && top != null && km < top) {
+      return 'Lower than a fill-up already logged at '
+          '${Distance.display(top, widget.unit)} ${widget.unit.label} — fine '
+          'if this is an older receipt.';
+    }
+    return Distance.jumpCaution(km, _vehicleNow()?.odometerKm, widget.unit);
   }
 
-  double? get _litresValue => Money.parse(_litres.text);
+  /// Litres, which a pump shows to three places: `45.123` is not
+  /// forty-five thousand.
+  double? get _litresValue {
+    final raw = _litres.text.trim();
+    if (_e != null && raw == _litresShown) return _e!.litres;
+    return parseTypedNumber(raw, threeDecimalsPlausible: true);
+  }
 
   String? get _litresError {
     if (_litres.text.trim().isEmpty) return 'How many litres went in.';
@@ -305,6 +321,7 @@ class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
 
   double? get _costValue {
     final raw = _cost.text.trim();
+    if (_e != null && raw == _costShown) return _e!.cost;
     return raw.isEmpty ? null : Money.parse(raw);
   }
 
@@ -319,10 +336,10 @@ class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
       _odometerError == null && _litresError == null && _costError == null;
 
   Future<void> _pickDate() async {
-    final picked = await showAdaptiveDatePicker(
+    final picked = await pickDay(
       context,
       initial: _date,
-      first: DateTime(1980),
+      first: calendarDay(1980, 1, 1),
       last: _today,
     );
     if (picked != null && mounted) setState(() => _date = picked);
@@ -361,10 +378,12 @@ class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
           ),
         );
       }
-      final current = _vehicleNow();
-      if (current?.odometerKm == null || km > current!.odometerKm!) {
-        await widget.garage.updateOdometer(widget.vehicle.id, km);
-      }
+      await widget.garage.noteReading(
+        widget.vehicle.id,
+        km,
+        day: _date,
+        now: widget.today,
+      );
       if (mounted) Navigator.of(context).pop();
     } finally {
       if (mounted) setState(() => _saving = false);

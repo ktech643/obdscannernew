@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:torque_obd2/data/clock.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/data/repositories/service_repository.dart';
 import 'package:torque_obd2/data/repositories/vehicle_repository.dart';
@@ -109,7 +110,9 @@ void main() {
         final rows = {for (final r in await repo.reminders(vid)) r.id: r};
         expect(rows[once.id]!.completedAt, late);
         expect(rows[byDays.id]!.completedAt, isNull);
-        expect(rows[byDays.id]!.dueDate, late.add(const Duration(days: 180)));
+        // A calendar day: today on the phone's calendar plus 180 — not
+        // this instant plus 180 × 24 h, which a DST change moves a day.
+        expect(rows[byDays.id]!.dueDate, addDays(today(now: late), 180));
         expect(rows[byKm.id]!.dueOdometerKm, 146400);
       },
     );
@@ -142,7 +145,7 @@ void main() {
         );
         await repo.complete(r.id, now: at(10));
         final row = (await repo.reminders(vid)).single;
-        expect(row.dueDate, at(10).add(const Duration(days: 365)));
+        expect(row.dueDate, addDays(today(now: at(10)), 365));
         expect(row.dueOdometerKm, isNull, reason: 'else it stays due now');
         expect(row.completedAt, isNull);
       },

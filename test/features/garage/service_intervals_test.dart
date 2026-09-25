@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:torque_obd2/data/clock.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/data/repositories/service_repository.dart';
 import 'package:torque_obd2/features/garage/fuel_log_screen.dart';
@@ -148,6 +149,62 @@ void main() {
     });
   });
 
+  group('★ due dates are calendar days', () {
+    // As the app stores one now: UTC midnight of the day picked.
+    final due = calendarDay(2026, 9, 27);
+
+    test('★ on its due date it is due today, not overdue', () {
+      // Compared as instants it was overdue from 00:00 on the 27th, and
+      // cost the health score its −5 on the day it was due.
+      for (final h in [0, 12, 23]) {
+        final at = DateTime(2026, 9, 27, h, 59);
+        expect(
+          reminderStatus(reminder(dueDate: due), now: at),
+          ReminderStatus.dueSoon,
+          reason: '$h:59',
+        );
+        expect(reminderDaysLeft(reminder(dueDate: due), now: at), 0);
+      }
+      expect(
+        reminderStatus(reminder(dueDate: due), now: DateTime(2026, 9, 28)),
+        ReminderStatus.overdue,
+      );
+    });
+
+    test('★ the day before, one day is left — at any hour', () {
+      // Floored from an instant, the 26th said "today".
+      for (final h in [0, 23]) {
+        expect(
+          reminderDaysLeft(
+            reminder(dueDate: due),
+            now: DateTime(2026, 9, 26, h, 1),
+          ),
+          1,
+        );
+      }
+    });
+
+    test('★ a calendar day reads as that day wherever the phone is', () {
+      // Run under TZ=America/New_York the instant read back as the 24th.
+      expect(formatDay(calendarDay(2026, 9, 25)), '25 Sep 2026');
+    });
+
+    test('a date written before (local midnight) reads as the day picked', () {
+      final written = DateTime(2026, 9, 27).toUtc();
+      expect(dayOf(written), calendarDay(2026, 9, 27));
+      expect(formatDay(written), '27 Sep 2026');
+    });
+
+    test('★ days are added on the calendar, not in 24-hour blocks', () {
+      // Local midnight + 183 × 24 h is 23:00 on the 26th in London.
+      expect(addDays(calendarDay(2026, 9, 25), 183), calendarDay(2027, 3, 27));
+      expect(
+        daysBetween(calendarDay(2026, 3, 28), calendarDay(2026, 3, 30)),
+        2,
+      );
+    });
+  });
+
   group('★ §5.5 — economy between full fill-ups only', () {
     var seq = 0;
     FuelEntryRow fill(double km, double litres, {bool part = false}) =>
@@ -198,6 +255,62 @@ void main() {
         isNull,
         reason: 'no distance between them',
       );
+    });
+
+    FuelEntryRow at(String id, double km, double litres, {bool part = false}) =>
+        FuelEntryRow(
+          id: id,
+          vehicleId: 'v',
+          date: calendarDay(2026, 9, 20),
+          odometerKm: km,
+          litres: litres,
+          currencyCode: 'GBP',
+          partFill: part,
+        );
+
+    FuelEconomy of(FuelSummary s, String id) =>
+        s.economy.singleWhere((e) => e.entry.id == id);
+
+    test('★ a part fill and the full one after it, at one reading on one '
+        'day, in any order', () {
+      // Logged the natural way — the part fill, then the top-up that
+      // filled the tank — they tie on reading and day, and the list reads
+      // newest first. The full tank came first and got 32 L, not 42.
+      final start = at('m-start', 10000, 40);
+      final part = at('z-part', 10600, 10, part: true);
+      final full = at('a-full', 10600, 32);
+      for (final order in [
+        [start, part, full],
+        [start, full, part],
+        [full, part, start],
+      ]) {
+        final s = FuelSummary.of(order);
+        expect(of(s, 'a-full').litresPer100Km, closeTo(42 / 600 * 100, 1e-9));
+        expect(of(s, 'z-part').role, FuelSpanRole.partCounted);
+      }
+    });
+
+    test('★ a second full tank at the same reading is a top-up; its litres '
+        'go forward', () {
+      final s = FuelSummary.of([
+        at('a', 10000, 40),
+        at('b', 10000, 2),
+        at('c', 10500, 30),
+      ]);
+      expect(of(s, 'b').role, FuelSpanRole.toppedUp);
+      expect(of(s, 'c').litresPer100Km, closeTo(32 / 500 * 100, 1e-9));
+    });
+
+    test('★ a part fill before the first full tank is not counted, and is '
+        'not said to be', () {
+      final s = FuelSummary.of([
+        at('p', 9800, 10, part: true),
+        at('a', 10000, 40),
+        at('c', 10500, 30),
+      ]);
+      expect(of(s, 'p').role, FuelSpanRole.partBefore);
+      expect(of(s, 'a').role, FuelSpanRole.starts);
+      expect(of(s, 'c').litresPer100Km, closeTo(30 / 500 * 100, 1e-9));
     });
 
     test('miles users see both gallons', () {

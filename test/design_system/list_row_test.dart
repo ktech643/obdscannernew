@@ -123,6 +123,20 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('★ a toned value carries its glyph, not colour alone', (
+    tester,
+  ) async {
+    // Hard rule 11: "Overdue" in amber had the word and the colour, and
+    // not the glyph every other toned value draws.
+    await pump(
+      tester,
+      ListRow(title: 'Oil', value: 'Overdue', tone: Tell.amber, onTap: () {}),
+    );
+    expect(find.byIcon(Tell.amber.glyph), findsOneWidget);
+    await pump(tester, ListRow(title: 'Oil', value: 'Due', onTap: () {}));
+    expect(find.byIcon(Tell.amber.glyph), findsNothing, reason: 'no tone');
+  });
+
   testWidgets('★ the share anchor is clipped to the screen', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;

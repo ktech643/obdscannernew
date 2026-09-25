@@ -23,6 +23,8 @@ import 'package:torque_obd2/session/obd_session.dart';
 /// this is the wiring the screens' own tests cannot see.
 void main() {
   late Persistence store;
+  late SettingsProvider settings;
+  late EntitlementProvider ent;
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -47,6 +49,9 @@ void main() {
       dtcs: DtcRepository(db),
     );
     addTearDown(live.dispose);
+    settings = SettingsProvider(store);
+    ent = EntitlementProvider(store);
+    addTearDown(ent.dispose);
     tester.view.physicalSize = const Size(390, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -56,8 +61,8 @@ void main() {
         child: MultiProvider(
           providers: [
             ChangeNotifierProvider<LiveSession>.value(value: live),
-            ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
-            ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
+            ChangeNotifierProvider.value(value: settings),
+            ChangeNotifierProvider.value(value: ent),
           ],
           child: MaterialApp(
             theme: torqueTheme(),
@@ -108,6 +113,78 @@ void main() {
       find.byType(MaintenanceScreen),
     );
     expect(screen.currencyCode, 'GBP', reason: "from 'GBP £'");
+    await drain(tester);
+  });
+
+  testWidgets('★ Pro bought through the log\'s own door lifts the cap on '
+      'that same screen', (tester) async {
+    final (live, _) = await pumpTab(tester);
+    final car = live.garage!.primary!;
+    for (var i = 0; i < 10; i++) {
+      await live.garage!.services!.addRecord(
+        vehicleId: car.id,
+        type: ServiceType.maintenance,
+        title: 'Record $i',
+        date: DateTime.utc(2026, 9, 1),
+      );
+    }
+    await tester.tap(find.text('Maintenance log'));
+    await settle(tester);
+    expect(find.text('10 of 10 records on the free plan.'), findsOneWidget);
+
+    await ent.subscribe(); // unconfigured: granted at once
+    await settle(tester);
+    // Read once when the log opened, the plan stayed free on this screen:
+    // the user who had just paid met the cap again.
+    expect(
+      tester.widget<MaintenanceScreen>(find.byType(MaintenanceScreen)).isPro,
+      isTrue,
+    );
+    expect(find.text('10 of 10 records on the free plan.'), findsNothing);
+    await tester.tap(find.text('Add a record'));
+    await settle(tester);
+    expect(find.text('What was done'), findsOneWidget, reason: 'the form');
+    await drain(tester);
+  });
+
+  testWidgets('★ the unit and currency chosen in Settings reach a log that '
+      'is open', (tester) async {
+    await pumpTab(tester);
+    await tester.tap(find.text('Maintenance log'));
+    await settle(tester);
+    settings.setDistance(DistanceUnit.mi);
+    settings.setCurrency('EUR €');
+    await settle(tester);
+    final screen = tester.widget<MaintenanceScreen>(
+      find.byType(MaintenanceScreen),
+    );
+    expect(screen.unit, DistanceUnit.mi);
+    expect(screen.currencyCode, 'EUR');
+    await drain(tester);
+  });
+
+  testWidgets('★ a log opened for one car stays that car\'s when another '
+      'becomes primary', (tester) async {
+    final (live, vehicles) = await pumpTab(tester);
+    final civic = await vehicles.create(
+      nickname: 'The Civic',
+      fuel: VehicleFuel.petrol,
+      odometerKm: 50000,
+    );
+    await tester.tap(find.text('Maintenance log'));
+    await settle(tester);
+    await live.garage!.setPrimary(civic.id);
+    settings.setHaptics(false); // any change the log's route listens to
+    await settle(tester);
+    // Rebuilt, it read garage.primary again and became the Civic's, while
+    // a form already open still wrote to the Golf.
+    expect(
+      tester
+          .widget<MaintenanceScreen>(find.byType(MaintenanceScreen))
+          .vehicle
+          .nickname,
+      'The Golf',
+    );
     await drain(tester);
   });
 

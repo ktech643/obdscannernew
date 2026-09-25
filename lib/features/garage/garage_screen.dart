@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 
+import '../../data/clock.dart';
 import '../../data/db/app_database.dart';
 import '../../design_system/design_system.dart';
 import '../../models/enums.dart';
@@ -13,8 +14,16 @@ import 'garage_controller.dart';
 import 'vehicle_form_screen.dart';
 import 'vehicle_identity.dart';
 
-/// Where the rest of the garage lives until its own slices land. Each is
-/// a builder for a screen the caller owns; a null one is not offered.
+/// A screen about one vehicle — the one that was tapped.
+typedef VehicleScreenBuilder = Widget Function(
+  BuildContext context,
+  VehicleRow vehicle,
+);
+
+/// Where the rest of the garage lives. Each is a builder for a screen the
+/// caller owns, given the vehicle the row was tapped for — so a log opened
+/// for one car stays that car's when another becomes primary; a null one
+/// is not offered.
 class GarageLinks {
   const GarageLinks({
     this.maintenance,
@@ -24,11 +33,11 @@ class GarageLinks {
     this.reports,
   });
 
-  final WidgetBuilder? maintenance;
-  final WidgetBuilder? reminders;
-  final WidgetBuilder? fuel;
-  final WidgetBuilder? trips;
-  final WidgetBuilder? reports;
+  final VehicleScreenBuilder? maintenance;
+  final VehicleScreenBuilder? reminders;
+  final VehicleScreenBuilder? fuel;
+  final VehicleScreenBuilder? trips;
+  final VehicleScreenBuilder? reports;
 }
 
 /// SPEC §5.5 — the Garage: the vehicles.
@@ -49,6 +58,7 @@ class GarageScreen extends StatefulWidget {
     this.onConnect,
     this.adapterName,
     this.onUpgrade,
+    this.now,
   });
 
   final GarageController controller;
@@ -67,6 +77,9 @@ class GarageScreen extends StatefulWidget {
   /// SPEC §7.3 — the second vehicle is a paywall trigger. Opens it.
   final VoidCallback? onUpgrade;
 
+  /// For tests; the device's clock otherwise.
+  final DateTime Function()? now;
+
   @override
   State<GarageScreen> createState() => _GarageScreenState();
 }
@@ -78,11 +91,17 @@ class _GarageScreenState extends State<GarageScreen> {
   int? _snapshots;
   String? _countedFor;
 
+  // A reminder becomes overdue when the day turns, with nothing in the
+  // database changing: the count is keyed on the day, and re-read when
+  // the app comes back to the front.
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
     _c.addListener(_onChange);
     widget.session.addListener(_onChange);
+    _lifecycle = AppLifecycleListener(onResume: _onChange);
   }
 
   @override
@@ -100,6 +119,7 @@ class _GarageScreenState extends State<GarageScreen> {
 
   @override
   void dispose() {
+    _lifecycle.dispose();
     _c.removeListener(_onChange);
     widget.session.removeListener(_onChange);
     super.dispose();
@@ -110,14 +130,21 @@ class _GarageScreenState extends State<GarageScreen> {
   }
 
   /// The two counts on the card are read from the database once per
-  /// (vehicle, odometer, list, revision) — the revision is the
+  /// (vehicle, odometer, list, revision, day) — the revision is the
   /// controller's word that a snapshot or reminder changed, which is how a
-  /// scan on another tab reaches a card that never left the tab stack.
+  /// scan on another tab reaches a card that never left the tab stack; the
+  /// day is how a reminder due yesterday is counted today.
   Future<void> _count(VehicleRow v) async {
-    final key = '${v.id}:${v.odometerKm}:${_c.all.length}:${_c.revision}';
+    final key =
+        '${v.id}:${v.odometerKm}:${_c.all.length}:${_c.revision}:'
+        '${today(now: widget.now?.call()).toIso8601String()}';
     if (_countedFor == key) return;
     _countedFor = key;
-    final overdue = await _c.overdueCount(v.id, odometerKm: v.odometerKm);
+    final overdue = await _c.overdueCount(
+      v.id,
+      odometerKm: v.odometerKm,
+      now: widget.now?.call(),
+    );
     final snapshots = await _c.snapshotCount(v.id);
     if (!mounted) return;
     setState(() {
@@ -126,8 +153,15 @@ class _GarageScreenState extends State<GarageScreen> {
     });
   }
 
+  /// Back from a log, the counts are read again — the day may have turned
+  /// while it was open.
   Future<void> _push(WidgetBuilder builder) => Navigator.of(context)
-      .push(PageRouteBuilder<void>(pageBuilder: (ctx, _, _) => builder(ctx)));
+      .push(PageRouteBuilder<void>(pageBuilder: (ctx, _, _) => builder(ctx)))
+      .then((_) => _onChange());
+
+  /// A log for [v], the vehicle the row was tapped for.
+  Future<void> _open(VehicleScreenBuilder builder, VehicleRow v) =>
+      _push((ctx) => builder(ctx, v));
 
   Future<void> _add() async {
     if (!widget.isPro && _c.hasVehicle) {
@@ -290,7 +324,7 @@ class _GarageScreenState extends State<GarageScreen> {
         if (widget.links.maintenance != null)
           ListRow(
             title: 'Maintenance log',
-            onTap: () => _push(widget.links.maintenance!),
+            onTap: () => _open(widget.links.maintenance!, primary),
           ),
         if (widget.links.reminders != null)
           ListRow(
@@ -301,16 +335,19 @@ class _GarageScreenState extends State<GarageScreen> {
                 ? 'None overdue'
                 : '$_overdue overdue',
             tone: (_overdue ?? 0) > 0 ? Tell.amber : Tell.none,
-            onTap: () => _push(widget.links.reminders!),
+            onTap: () => _open(widget.links.reminders!, primary),
           ),
         // An electric car has no fuel to log (§5.5); a hybrid does.
         if (widget.links.fuel != null &&
             primary.fuelType != VehicleFuel.electric)
-          ListRow(title: 'Fuel log', onTap: () => _push(widget.links.fuel!)),
+          ListRow(
+            title: 'Fuel log',
+            onTap: () => _open(widget.links.fuel!, primary),
+          ),
         if (widget.links.trips != null)
           ListRow(
             title: 'Trip recordings',
-            onTap: () => _push(widget.links.trips!),
+            onTap: () => _open(widget.links.trips!, primary),
           ),
         if (widget.links.reports != null)
           ListRow(
@@ -318,7 +355,7 @@ class _GarageScreenState extends State<GarageScreen> {
             trailing: widget.isPro
                 ? null
                 : const TelltaleChip(tone: Tell.none, label: 'Pro'),
-            onTap: () => _push(widget.links.reports!),
+            onTap: () => _open(widget.links.reports!, primary),
           ),
         ListSection(title: 'Vehicles'),
         for (final v in _c.others)

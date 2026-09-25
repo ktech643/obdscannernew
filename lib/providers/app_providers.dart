@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 
 import '../core/config/revenuecat_config.dart';
 import '../models/enums.dart';
@@ -215,7 +218,8 @@ class EntitlementProvider extends ChangeNotifier {
   bool get plansFromStore => _plans.any((p) => p.fromStore);
 
   /// A trial the store will give this user on plan [i], in days, or null.
-  int? planTrialDays(int i) => i < _plans.length ? _plans[i].freeTrialDays : null;
+  int? planTrialDays(int i) =>
+      i < _plans.length ? _plans[i].freeTrialDays : null;
 
   bool _refreshing = false;
 
@@ -252,7 +256,12 @@ class SettingsProvider extends ChangeNotifier {
       TemperatureUnit.values,
       TemperatureUnit.celsius,
     );
-    _currency = _store.getString(Keys.currency) ?? _currency;
+    // The phone's region picks the first currency; a record keeps the one
+    // it was written in. Every install used to start in pounds, and no
+    // screen offered another.
+    _currency =
+        _store.getString(Keys.currency) ??
+        currencyForRegion(_deviceLocale().countryCode);
     _pollingRate = _store.getString(Keys.pollingRate) ?? _pollingRate;
     _autoReconnect = _store.getBool(Keys.autoReconnect) ?? true;
     _keepScreenOn = _store.getBool(Keys.keepScreenOn) ?? true;
@@ -269,7 +278,7 @@ class SettingsProvider extends ChangeNotifier {
   late TemperatureUnit _temperature;
   TemperatureUnit get temperature => _temperature;
 
-  String _currency = 'GBP £';
+  late String _currency;
   String get currency => _currency;
 
   String _pollingRate = 'Auto';
@@ -295,7 +304,69 @@ class SettingsProvider extends ChangeNotifier {
   /// the rate when the adapter is slow, which is the honest default.
   static const pollingRates = ['Auto', '10 Hz', '8 Hz', '4 Hz', '2 Hz'];
 
-  static const currencies = ['GBP £', 'USD \$', 'EUR €', 'JPY ¥', 'AUD \$'];
+  /// The currencies a record can be written in: the three the spec's
+  /// stores price in, and the ones of the markets §10.2 names as the
+  /// app's users.
+  static const currencies = [
+    'USD \$',
+    'EUR €',
+    'GBP £',
+    'JPY ¥',
+    'AUD \$',
+    'CAD \$',
+    'INR ₹',
+    'PKR Rs',
+    'AED',
+    'SAR',
+  ];
+
+  /// The phone's locale, through the binding when there is one (so a
+  /// test's locale reaches it), else from the engine.
+  static ui.Locale _deviceLocale() {
+    try {
+      return WidgetsBinding.instance.platformDispatcher.locale;
+    } catch (_) {
+      return ui.PlatformDispatcher.instance.locale;
+    }
+  }
+
+  /// The currency of a region, from its country code — not from `intl`,
+  /// which answers dollars for `en_PK` and Egyptian pounds for `ar_AE`.
+  /// Dollars where the region has none of [currencies].
+  static String currencyForRegion(String? country) {
+    final code = switch (country?.toUpperCase()) {
+      'GB' || 'GG' || 'JE' || 'IM' => 'GBP',
+      'JP' => 'JPY',
+      'AU' => 'AUD',
+      'CA' => 'CAD',
+      'IN' => 'INR',
+      'PK' => 'PKR',
+      'AE' => 'AED',
+      'SA' => 'SAR',
+      'AT' ||
+      'BE' ||
+      'CY' ||
+      'DE' ||
+      'EE' ||
+      'ES' ||
+      'FI' ||
+      'FR' ||
+      'GR' ||
+      'HR' ||
+      'IE' ||
+      'IT' ||
+      'LT' ||
+      'LU' ||
+      'LV' ||
+      'MT' ||
+      'NL' ||
+      'PT' ||
+      'SI' ||
+      'SK' => 'EUR',
+      _ => 'USD',
+    };
+    return currencies.firstWhere((c) => c.startsWith(code));
+  }
 
   bool _lowPowerMode = false;
   bool get lowPowerMode => _lowPowerMode;

@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:torque_obd2/core/platform/platform_info.dart';
+import 'package:torque_obd2/data/clock.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/data/repositories/dtc_repository.dart';
 import 'package:torque_obd2/data/repositories/service_repository.dart';
@@ -225,6 +226,103 @@ void main() {
       await drain(tester);
     });
 
+    testWidgets('★ an untouched reading is saved as it was, in miles too', (
+      tester,
+    ) async {
+      await seed(tester);
+      await garage.updateOdometer(car.id, 150000);
+      for (var i = 0; i < 100 && garage.all.first.odometerKm != 150000; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      final stamped = garage.all.first.odometerUpdatedAt!;
+      await services.addRecord(
+        vehicleId: car.id,
+        type: ServiceType.maintenance,
+        title: 'Oil',
+        date: calendarDay(2025, 3, 1),
+        odometerKm: 150000,
+        cost: 12.345,
+      );
+      await pumpScreen(
+        tester,
+        MaintenanceScreen(garage: garage, vehicle: car, unit: DistanceUnit.mi),
+      );
+      await tester.tap(find.text('Oil'));
+      await settle(tester);
+      await tester.enterText(field('Notes'), 'Castrol');
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+
+      final row = (await services.records(car.id)).single;
+      expect(row.notes, 'Castrol');
+      // Shown as 93,206 mi, re-read, it was 150,000.5 km — above the car's
+      // 150,000, so the car moved and was stamped as read today.
+      expect(row.odometerKm, 150000);
+      expect(row.cost, 12.345);
+      final v = (await VehicleRepository(db).byId(car.id))!;
+      expect(v.odometerKm, 150000);
+      expect(v.odometerUpdatedAt!.isAtSameMomentAs(stamped), isTrue);
+      await drain(tester);
+    });
+
+    testWidgets('★ a record is stored as the day picked, not an instant', (
+      tester,
+    ) async {
+      await seed(tester);
+      await pumpScreen(tester, MaintenanceScreen(garage: garage, vehicle: car));
+      await tester.tap(find.text('Add a record'));
+      await settle(tester);
+      await tester.enterText(field('What was done'), 'Wipers');
+      await tester.tap(find.text('Add record'));
+      await settle(tester);
+      // Local midnight as an instant read back a day early once the phone
+      // moved west; a calendar day names the same day everywhere.
+      expect((await services.records(car.id)).single.date, today());
+      await drain(tester);
+    });
+
+    testWidgets('★ a higher reading from an old receipt moves the car, '
+        'stamped with its day', (tester) async {
+      await seed(tester);
+      final at = DateTime(2026, 9, 25, 15);
+      await garage.noteReading(
+        car.id,
+        150000,
+        day: calendarDay(2026, 3, 1),
+        now: at,
+      );
+      var v = (await VehicleRepository(db).byId(car.id))!;
+      expect(v.odometerKm, 150000);
+      expect(v.odometerUpdatedAt, calendarDay(2026, 3, 1), reason: 'not now');
+      for (var i = 0; i < 100 && garage.all.first.odometerKm != 150000; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      await garage.noteReading(
+        car.id,
+        151000,
+        day: today(now: at),
+        now: at,
+      );
+      v = (await VehicleRepository(db).byId(car.id))!;
+      expect(
+        v.odometerUpdatedAt!.isAtSameMomentAs(at),
+        isTrue,
+        reason: 'today',
+      );
+      for (var i = 0; i < 100 && garage.all.first.odometerKm != 151000; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      await garage.noteReading(
+        car.id,
+        140000,
+        day: today(now: at),
+        now: at,
+      );
+      v = (await VehicleRepository(db).byId(car.id))!;
+      expect(v.odometerKm, 151000, reason: 'lower never moves it back');
+      await drain(tester);
+    });
+
     testWidgets('delete is two taps', (tester) async {
       await seed(tester);
       await services.addRecord(
@@ -279,8 +377,124 @@ void main() {
       expect(r.dueOdometerKm, 152380);
       expect(r.repeatEveryKm, 10000);
       expect(ServicePreset.monthsForDays(r.repeatEveryDays!), 6);
+      // Six months of 183 days, on the calendar: 25 Sep 2026 to 27 Mar
+      // 2027 in every zone, DST or not.
+      expect(r.dueDate, calendarDay(2027, 3, 27));
       expect(find.text('Coming up'), findsOneWidget, reason: 'the heading');
-      expect(find.text('Due in 10,000 km'), findsOneWidget);
+      // Both triggers: it said "Due in 10,000 km" though the date may come
+      // first.
+      expect(find.text('Due in 10,000 km or 6 months'), findsOneWidget);
+      await drain(tester);
+    });
+
+    testWidgets('★ "every N km" on a car with no reading is refused, and '
+        'says why', (tester) async {
+      await seed(tester);
+      final bare = await garage.add(
+        nickname: 'The Mini',
+        fuel: VehicleFuel.petrol,
+      );
+      for (var i = 0; i < 100 && garage.all.length < 2; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      await pumpScreen(
+        tester,
+        RemindersScreen(garage: garage, vehicle: bare, now: now),
+      );
+      await tester.tap(find.text('Add a reminder'));
+      await settle(tester);
+      await tester.tap(find.text('Timing belt'));
+      await settle(tester);
+      await tester.tap(find.text('Add reminder'));
+      await settle(tester);
+      // Saved with nothing to be due by, it could never be due — the
+      // critical timing belt included.
+      expect(await services.reminders(bare.id), isEmpty);
+      expect(find.textContaining('no odometer reading yet'), findsOneWidget);
+      expect(find.text('Needed — the car has no reading yet'), findsOneWidget);
+
+      await tester.enterText(field('Next due at (km)'), '120,000');
+      await tester.tap(find.text('Add reminder'));
+      await settle(tester);
+      expect((await services.reminders(bare.id)).single.dueOdometerKm, 120000);
+      await drain(tester);
+    });
+
+    testWidgets('★ due soon by its date, the row gives the date', (
+      tester,
+    ) async {
+      await seed(tester);
+      await services.addReminder(
+        vehicleId: car.id,
+        title: 'Oil',
+        dueDate: calendarDay(2026, 10, 5),
+        dueOdometerKm: 150380,
+      );
+      await pumpScreen(
+        tester,
+        RemindersScreen(garage: garage, vehicle: car, now: now),
+      );
+      expect(find.text('Due soon'), findsOneWidget, reason: 'the heading');
+      // It said "Due soon in 8,000 km": the opposite of what was close.
+      expect(find.text('Due in 10 days'), findsOneWidget);
+      await drain(tester);
+    });
+
+    testWidgets('★ a done reminder given a new due point is set again', (
+      tester,
+    ) async {
+      await seed(tester);
+      final r = await services.addReminder(
+        vehicleId: car.id,
+        title: 'Inspection',
+        dueDate: calendarDay(2026, 9, 1),
+      );
+      await services.complete(r.id, now: DateTime(2026, 9, 2));
+      await pumpScreen(
+        tester,
+        RemindersScreen(garage: garage, vehicle: car, now: now),
+      );
+      await tester.tap(find.text('Inspection'));
+      await settle(tester);
+      await tester.tap(find.text('Edit'));
+      await settle(tester);
+      expect(find.textContaining('sets it again'), findsOneWidget);
+      await tester.enterText(field('Next due at (km)'), '160,000');
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+
+      final row = (await services.reminders(car.id)).single;
+      expect(row.dueOdometerKm, 160000);
+      // Kept as done, the edit was saved and could never show. Its old
+      // date, kept on the form, is past: it is due again, and overdue.
+      expect(row.completedAt, isNull);
+      expect(find.text('Done'), findsNothing);
+      expect(find.text('Overdue'), findsNWidgets(2), reason: 'heading, row');
+      await drain(tester);
+    });
+
+    testWidgets('★ a new reminder\'s first due point follows its interval '
+        'until it is set', (tester) async {
+      await seed(tester);
+      await pumpScreen(
+        tester,
+        RemindersScreen(garage: garage, vehicle: car, now: now),
+      );
+      await tester.tap(find.text('Add a reminder'));
+      await settle(tester);
+      await tester.tap(find.text('Oil and filter'));
+      await settle(tester);
+      // The manual says 15,000 km or a year.
+      await tester.enterText(field('Every (km)'), '15,000');
+      await tester.enterText(field('Every (months)'), '12');
+      await settle(tester);
+      expect(find.text('157,380'), findsOneWidget);
+      await tester.tap(find.text('Add reminder'));
+      await settle(tester);
+
+      final r = (await services.reminders(car.id)).single;
+      expect(r.dueOdometerKm, 157380, reason: 'not the preset\'s 152,380');
+      expect(r.dueDate, addDays(calendarDay(2026, 9, 25), 365));
       await drain(tester);
     });
 
@@ -452,6 +666,97 @@ void main() {
           .decoration
           ?.hintText;
       expect(hint, 'Now 150,100');
+      await drain(tester);
+    });
+
+    testWidgets('★ an untouched fill-up saves as it was', (tester) async {
+      await seed(tester);
+      await garage.updateOdometer(car.id, 150000);
+      for (var i = 0; i < 100 && garage.all.first.odometerKm != 150000; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      final stamped = garage.all.first.odometerUpdatedAt!;
+      await services.addFuel(
+        vehicleId: car.id,
+        date: calendarDay(2025, 3, 1),
+        odometerKm: 150000,
+        litres: 45.678,
+      );
+      await pumpScreen(
+        tester,
+        FuelLogScreen(garage: garage, vehicle: car, unit: DistanceUnit.mi),
+      );
+      await tester.tap(find.text('1 Mar 2025'));
+      await settle(tester);
+      await tester.enterText(field('Notes'), 'Shell');
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+
+      final f = (await services.fuel(car.id)).single;
+      expect(f.notes, 'Shell');
+      expect(f.odometerKm, 150000);
+      expect(f.litres, 45.678, reason: 'shown as 45.68, not saved as it');
+      final v = (await VehicleRepository(db).byId(car.id))!;
+      expect(v.odometerUpdatedAt!.isAtSameMomentAs(stamped), isTrue);
+      await drain(tester);
+    });
+
+    testWidgets('★ litres typed to three places are litres', (tester) async {
+      await seed(tester);
+      await pumpScreen(tester, FuelLogScreen(garage: garage, vehicle: car));
+      await tester.tap(find.text('Add a fill-up'));
+      await settle(tester);
+      await tester.enterText(field('Odometer (km)'), '142,500');
+      // A pump shows three places; read as money, "45.123" was 45,123.
+      await tester.enterText(field('Litres'), '45.123');
+      await tester.tap(find.text('Add fill-up'));
+      await settle(tester);
+      expect((await services.fuel(car.id)).single.litres, 45.123);
+      await drain(tester);
+    });
+
+    testWidgets('★ a reading far above the car\'s is questioned', (
+      tester,
+    ) async {
+      await seed(tester);
+      await pumpScreen(tester, FuelLogScreen(garage: garage, vehicle: car));
+      await tester.tap(find.text('Add a fill-up'));
+      await settle(tester);
+      await tester.enterText(field('Odometer (km)'), '1,501,000');
+      await settle(tester);
+      // Saved, it moves the car to 1.5 million km for good.
+      expect(
+        find.textContaining('more than the car\'s last reading'),
+        findsOneWidget,
+      );
+      await drain(tester);
+    });
+
+    testWidgets('★ each row says what its litres count towards', (
+      tester,
+    ) async {
+      await seed(tester);
+      await services.addFuel(
+        vehicleId: car.id,
+        date: calendarDay(2026, 9, 1),
+        odometerKm: 141900,
+        litres: 10,
+        partFill: true,
+      );
+      await services.addFuel(
+        vehicleId: car.id,
+        date: calendarDay(2026, 9, 2),
+        odometerKm: 142000,
+        litres: 40,
+      );
+      await pumpScreen(tester, FuelLogScreen(garage: garage, vehicle: car));
+      // It said "Counted in the next full tank", above a full tank that
+      // "Starts the count".
+      expect(
+        find.text('Before the first full tank — not counted'),
+        findsOneWidget,
+      );
+      expect(find.text('Starts the count'), findsOneWidget);
       await drain(tester);
     });
 

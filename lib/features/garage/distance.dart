@@ -1,3 +1,4 @@
+import '../../core/typed_number.dart';
 import '../../models/enums.dart';
 
 /// Kilometres on disk, the user's unit on screen. Nothing else in the
@@ -28,20 +29,23 @@ class Distance {
     return v < 0 ? '-$out' : out.toString();
   }
 
-  /// `142,380`, `142380`, `142 380`, `142380.5` — and the comma-decimal
-  /// form `142380,5` when there is exactly one comma followed by one or
-  /// two digits (§9.7). Null when it is not a number — and `Infinity`,
-  /// `NaN` and a digit string too long for a double are not numbers here,
-  /// though `double.tryParse` accepts all three.
-  static double? parse(String raw) {
-    var s = raw.trim().replaceAll(' ', '');
-    final commaDecimal = RegExp(r'^\d+,\d{1,2}$');
-    if (commaDecimal.hasMatch(s)) {
-      s = s.replaceFirst(',', '.');
-    } else {
-      s = s.replaceAll(',', '');
-    }
-    final v = double.tryParse(s);
-    return v != null && v.isFinite ? v : null;
+  /// `142,380`, `142380`, `142 380`, `142.380`, `142380,5`,
+  /// `142.380,5` — either convention (§9.7), by [parseTypedNumber]'s rules:
+  /// a reading has no three-decimal form, so one mark before exactly three
+  /// digits groups thousands. Null when it is not a number.
+  static double? parse(String raw) =>
+      parseTypedNumber(raw, threeDecimalsPlausible: false);
+
+  /// Past this above the car's reading, a typed reading is likelier a
+  /// slip than a drive — and a reading higher than the car's moves the
+  /// car's odometer, which nothing later moves back down.
+  static const jumpKm = 50000.0;
+
+  /// A caution, not a refusal, for a reading far above the car's.
+  static String? jumpCaution(double? km, double? carKm, DistanceUnit unit) {
+    if (km == null || carKm == null || km - carKm <= jumpKm) return null;
+    return '${display(km - carKm, unit)} ${unit.label} more than the car\'s '
+        'last reading of ${display(carKm, unit)} — check it before saving. '
+        'The car\'s odometer moves to it.';
   }
 }

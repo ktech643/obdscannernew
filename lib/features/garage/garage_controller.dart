@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 
+import '../../data/clock.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/dtc_repository.dart';
 import '../../data/repositories/service_repository.dart';
@@ -153,6 +154,28 @@ class GarageController extends ChangeNotifier {
 
   Future<void> updateOdometer(String id, double km) =>
       vehicles.updateOdometer(id, km);
+
+  /// A reading from a service record or a fill-up. Higher than the car's,
+  /// it is the newest reading there is, and the car's odometer moves to it
+  /// — which reminders due by distance are judged against. It is stamped
+  /// with the [day] it was read: a receipt from March does not make the
+  /// odometer "read just now". Lower or equal, nothing changes.
+  Future<void> noteReading(
+    String id,
+    double km, {
+    required DateTime day,
+    DateTime? now,
+  }) async {
+    VehicleRow? car;
+    for (final v in all) {
+      if (v.id == id) car = v;
+    }
+    final current = car?.odometerKm;
+    if (current != null && km <= current) return;
+    final n = now ?? DateTime.now();
+    final at = daysBetween(day, today(now: n)) <= 0 ? n : dayOf(day);
+    await vehicles.updateOdometer(id, km, now: at);
+  }
 
   /// Files first, then the row; the cascade takes every record with it.
   Future<void> delete(String id) async {

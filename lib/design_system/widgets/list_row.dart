@@ -137,14 +137,28 @@ class ListRow extends StatelessWidget {
                           constraints: BoxConstraints(
                             maxWidth: box.maxWidth * 0.45,
                           ),
-                          child: Text(
-                            value!,
-                            textAlign: TextAlign.end,
-                            style: TorqueType.body.copyWith(
-                              color: tone == Tell.none
-                                  ? t.inkSecondary
-                                  : t.tell(tone),
-                            ),
+                          // A tone carries its glyph, as everywhere else
+                          // (hard rule 11): "Overdue" in amber alone was
+                          // colour and a word, not the glyph the rule asks.
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (tone != Tell.none) ...[
+                                Icon(tone.glyph, size: 14, color: t.tell(tone)),
+                                const SizedBox(width: Space.x4),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  value!,
+                                  textAlign: TextAlign.end,
+                                  style: TorqueType.body.copyWith(
+                                    color: tone == Tell.none
+                                        ? t.inkSecondary
+                                        : t.tell(tone),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],

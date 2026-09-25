@@ -46,55 +46,72 @@ class LabelledField extends StatelessWidget {
     final t = context.tokens;
     final note = error ?? caution;
     final tone = error != null ? Tell.red : Tell.amber;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Space.x16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: TorqueType.label.copyWith(color: t.inkSecondary)),
-          const SizedBox(height: Space.x4),
-          TextField(
-            controller: controller,
-            keyboardType: keyboard,
-            inputFormatters: formatters,
-            maxLength: maxLength,
-            maxLines: maxLines,
-            minLines: maxLines == null ? 3 : null,
-            textCapitalization: capitalization,
-            textInputAction: textInputAction,
-            autofocus: autofocus,
-            onChanged: onChanged,
-            style: TorqueType.body.copyWith(color: t.inkPrimary),
-            decoration: InputDecoration(
-              hintText: hint,
-              counterText: '',
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: Space.x12,
-                vertical: Space.x12,
-              ),
+    // One node per field: its label, its text and its note. Side by side
+    // in a Row, two loose labels merged into one static node and left each
+    // text field named by its hint, or by nothing once it held a value.
+    return MergeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: Space.x16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TorqueType.label.copyWith(color: t.inkSecondary),
             ),
-          ),
-          if (note != null) ...[
             const SizedBox(height: Space.x4),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(tone.glyph, size: 14, color: t.tell(tone)),
-                const SizedBox(width: Space.x4),
-                Expanded(
-                  child: Text(
-                    note,
-                    style: TorqueType.meta.copyWith(color: t.tell(tone)),
+            ListenableBuilder(
+              listenable: controller,
+              builder: (context, _) => TextField(
+                controller: controller,
+                keyboardType: keyboard,
+                inputFormatters: formatters,
+                maxLength: maxLength,
+                maxLines: maxLines,
+                minLines: maxLines == null ? 3 : null,
+                textCapitalization: capitalization,
+                textInputAction: textInputAction,
+                autofocus: autofocus,
+                onChanged: onChanged,
+                style: TorqueType.body.copyWith(color: t.inkPrimary),
+                decoration: InputDecoration(
+                  hintText: hint,
+                  // §9.8: "cap 5,000 with a counter". Hidden, a pasted note
+                  // was cut to the limit without a word; it shows from 80 %.
+                  counterText: _nearLimit ? null : '',
+                  counterStyle: TorqueType.meta.copyWith(color: t.inkSecondary),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: Space.x12,
+                    vertical: Space.x12,
                   ),
                 ),
-              ],
+              ),
             ),
+            if (note != null) ...[
+              const SizedBox(height: Space.x4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(tone.glyph, size: 14, color: t.tell(tone)),
+                  const SizedBox(width: Space.x4),
+                  Expanded(
+                    child: Text(
+                      note,
+                      style: TorqueType.meta.copyWith(color: t.tell(tone)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
+
+  bool get _nearLimit =>
+      maxLength != null && controller.text.length >= maxLength! * 0.8;
 }
 
 /// One-of-several, as chips: the selected one filled, with a check — the
@@ -222,7 +239,14 @@ class LabelledDateField extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TorqueType.label.copyWith(color: t.inkSecondary)),
+          // The button's own label says it; read here too, it was "Date,
+          // Date, 25 Sep 2026".
+          ExcludeSemantics(
+            child: Text(
+              label,
+              style: TorqueType.label.copyWith(color: t.inkSecondary),
+            ),
+          ),
           const SizedBox(height: Space.x4),
           Row(
             children: [
@@ -258,8 +282,10 @@ class LabelledDateField extends StatelessWidget {
                                   child: Text(
                                     shown,
                                     style: TorqueType.body.copyWith(
+                                      // A text field's hint ink: tertiary
+                                      // on the panel is 2.93:1.
                                       color: date == null
-                                          ? t.inkTertiary
+                                          ? t.inkSecondary
                                           : t.inkPrimary,
                                     ),
                                   ),

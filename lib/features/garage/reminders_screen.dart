@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show Icons, Scaffold;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../data/clock.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/service_repository.dart';
 import '../../design_system/design_system.dart';
@@ -179,8 +180,14 @@ class RemindersScreen extends StatelessWidget {
       : '$m month${m == 1 ? '' : 's'}';
 
   /// The status as a word, with the distance or time left when it is
-  /// coming up — the colour never has to say it alone.
+  /// coming up — the colour never has to say it alone. Due soon, it names
+  /// the trigger that is close; coming up, every trigger it has: a
+  /// reminder due by 10,000 km or 6 months said "Due in 10,000 km" even
+  /// when the date came first, and "Due soon in 8,000 km" when it was the
+  /// date that was close.
   String _word(ReminderRow r, ReminderStatus s, double? odo, DateTime at) {
+    final days = reminderDaysLeft(r, now: at);
+    final km = reminderKmLeft(r, odometerKm: odo);
     switch (s) {
       case ReminderStatus.overdue:
         return 'Overdue';
@@ -189,23 +196,35 @@ class RemindersScreen extends StatelessWidget {
       case ReminderStatus.done:
         return 'Done';
       case ReminderStatus.dueSoon:
+        return _due(
+          km: km != null && km <= dueSoonKm ? km : null,
+          days: days != null && days < dueSoonDays ? days : null,
+        );
       case ReminderStatus.upcoming:
-        final left = <String>[
-          if (r.dueOdometerKm != null && odo != null)
-            'in ${Distance.display(r.dueOdometerKm! - odo, unit)} ${unit.label}',
-          if (r.dueDate != null) _inTime(r.dueDate!.difference(at)),
-        ];
-        final word = s == ReminderStatus.dueSoon ? 'Due soon' : 'Due';
-        return left.isEmpty ? word : '$word ${left.first}';
+        return _due(km: km, days: days);
     }
   }
 
-  static String _inTime(Duration d) {
-    final days = d.inDays;
-    if (days < 1) return 'today';
-    if (days < 14) return 'in $days day${days == 1 ? '' : 's'}';
-    if (days < 60) return 'in ${(days / 7).round()} weeks';
-    return 'in ${(days / 30.4375).round()} months';
+  /// "Due in 10,000 km or 6 months", "Due in 300 km or tomorrow",
+  /// "Due today".
+  String _due({double? km, int? days}) {
+    final within = [
+      if (km != null) '${Distance.display(km, unit)} ${unit.label}',
+      if (days != null && days > 1) _span(days),
+    ];
+    final phrase = [
+      if (within.isNotEmpty) 'in ${within.join(' or ')}',
+      if (days == 0) 'today',
+      if (days == 1) 'tomorrow',
+    ].join(' or ');
+    return phrase.isEmpty ? 'Due' : 'Due $phrase';
+  }
+
+  /// Whole calendar days, said the way a person would.
+  static String _span(int days) {
+    if (days < 14) return '$days day${days == 1 ? '' : 's'}';
+    if (days < 60) return '${(days / 7).round()} weeks';
+    return '${(days / 30.4375).round()} months';
   }
 
   Future<void> _actions(
@@ -428,13 +447,28 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
   late DateTime? _dueDate = _initialDueDate();
   late bool _critical = _e?.critical ?? _p?.critical ?? false;
 
+  // On a new reminder the first due point follows the interval until the
+  // user sets it: a preset's "every 10,000 km" changed to 15,000 left the
+  // first one at +10,000.
+  late bool _dueKmFollows = _e == null;
+  late bool _dueDateFollows = _e == null;
+
+  // What an edit shows, so an untouched field keeps its stored value: the
+  // rounding of "6,214 mi" would otherwise read as a change.
+  // Taken in initState: a lazy map was first read at Save, from what had
+  // been typed, and every field looked untouched.
+  late final Map<TextEditingController, String> _shown;
+
+  @override
+  void initState() {
+    super.initState();
+    _shown = {_everyKm: _everyKm.text, _dueKm: _dueKm.text};
+  }
+
   bool _submitted = false;
   bool _saving = false;
 
-  DateTime get _today {
-    final n = widget.today ?? DateTime.now();
-    return DateTime(n.year, n.month, n.day);
-  }
+  DateTime get _today => today(now: widget.today);
 
   String _kmText(double? km) => km == null ? '' : Distance.display(km, _unit);
 
@@ -446,9 +480,27 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
   }
 
   DateTime? _initialDueDate() {
-    if (_e != null) return _e!.dueDate?.toLocal();
+    if (_e != null) return _e!.dueDate == null ? null : dayOf(_e!.dueDate!);
     final days = _p?.everyDays;
-    return days == null ? null : _today.add(Duration(days: days));
+    return days == null ? null : addDays(_today, days);
+  }
+
+  /// A new interval moves a first due point the user has not set.
+  void _intervalChanged() {
+    if (_dueKmFollows) {
+      final every = _km(_everyKm);
+      final odo = widget.vehicle.odometerKm;
+      _dueKm.text = every == null || every.isNaN || odo == null
+          ? ''
+          : _kmText(odo + every);
+    }
+    if (_dueDateFollows) {
+      final m = _months;
+      _dueDate = m == null || m < 1 || m > ReminderFormScreen.maxEveryMonths
+          ? null
+          : addDays(_today, ServicePreset.daysForMonths(m));
+    }
+    setState(() {});
   }
 
   @override
@@ -462,6 +514,10 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
   double? _km(TextEditingController c) {
     final raw = c.text.trim();
     if (raw.isEmpty) return null;
+    final e = _e;
+    if (e != null && raw == _shown[c]) {
+      return c == _dueKm ? e.dueOdometerKm : e.repeatEveryKm;
+    }
     final v = Distance.parse(raw);
     return v == null ? double.nan : Distance.toKm(v, _unit);
   }
@@ -514,15 +570,24 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
     return null;
   }
 
-  /// Nothing to be due by: no date, no reading, no interval to set them.
-  String? get _triggerError =>
-      _dueDate == null &&
-          _km(_dueKm) == null &&
-          _km(_everyKm) == null &&
-          _months == null
-      ? 'Give it a date, a reading or an interval — otherwise it can never '
-            'be due.'
-      : null;
+  /// Nothing to be due by: no date, no reading, and no interval that can
+  /// set one. "Every 10,000 km" on a car with no reading has nothing to
+  /// count from — it was saved with no due point and could never be due,
+  /// the timing belt included.
+  String? get _triggerError {
+    if (_dueDate != null || _months != null || _km(_dueKm) != null) {
+      return null;
+    }
+    if (_km(_everyKm) != null) {
+      return widget.vehicle.odometerKm == null
+          ? 'The car has no odometer reading yet, so an interval in '
+                '${_unit.label} has nowhere to start. Enter the reading it '
+                'is next due at.'
+          : null;
+    }
+    return 'Give it a date, a reading or an interval — otherwise it can never '
+        'be due.';
+  }
 
   bool get _valid =>
       _titleError == null &&
@@ -532,13 +597,19 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
       _triggerError == null;
 
   Future<void> _pickDate() async {
-    final picked = await showAdaptiveDatePicker(
+    final t = _today;
+    final picked = await pickDay(
       context,
-      initial: _dueDate ?? _today.add(const Duration(days: 30)),
-      first: _today.subtract(const Duration(days: 365 * 5)),
-      last: _today.add(const Duration(days: 365 * 20)),
+      initial: _dueDate ?? addDays(t, 30),
+      first: calendarDay(t.year - 5, t.month, t.day),
+      last: calendarDay(t.year + 21, t.month, t.day),
     );
-    if (picked != null && mounted) setState(() => _dueDate = picked);
+    if (picked != null && mounted) {
+      setState(() {
+        _dueDate = picked;
+        _dueDateFollows = false;
+      });
+    }
   }
 
   Future<void> _save() async {
@@ -558,7 +629,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
     final odo = widget.vehicle.odometerKm;
     if (dueKm == null && everyKm != null && odo != null) dueKm = odo + everyKm;
     if (dueDate == null && everyDays != null) {
-      dueDate = _today.add(Duration(days: everyDays));
+      dueDate = addDays(_today, everyDays);
     }
     final detail = _detail.text.trim();
     try {
@@ -575,6 +646,17 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
           critical: _critical,
         );
       } else {
+        // A done reminder given a new due point or interval is set again:
+        // kept as done, the edit was saved and could never show.
+        final sameDay =
+            (dueDate == null) == (e.dueDate == null) &&
+            (dueDate == null || daysBetween(e.dueDate!, dueDate) == 0);
+        final rearm =
+            e.completedAt != null &&
+            (!sameDay ||
+                dueKm != e.dueOdometerKm ||
+                everyKm != e.repeatEveryKm ||
+                everyDays != e.repeatEveryDays);
         await widget.services.updateReminder(
           e.copyWith(
             title: _title.text.trim(),
@@ -584,6 +666,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
             repeatEveryDays: Value(everyDays),
             repeatEveryKm: Value(everyKm),
             critical: _critical,
+            completedAt: rearm ? const Value(null) : Value(e.completedAt),
           ),
         );
       }
@@ -621,6 +704,14 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
                 ),
                 const SizedBox(height: Space.x16),
               ],
+              if (_e?.completedAt case final done?) ...[
+                Text(
+                  'Done ${formatDay(done)}. A new date, reading or interval '
+                  'sets it again.',
+                  style: TorqueType.meta.copyWith(color: t.inkSecondary),
+                ),
+                const SizedBox(height: Space.x16),
+              ],
               LabelledField(
                 label: 'Reminder',
                 hint: 'Oil and filter',
@@ -641,7 +732,7 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
                       controller: _everyKm,
                       keyboard: km,
                       error: _submitted ? _everyKmError : null,
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) => _intervalChanged(),
                     ),
                   ),
                   const SizedBox(width: Space.x12),
@@ -653,20 +744,22 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
                       keyboard: TextInputType.number,
                       formatters: [FilteringTextInputFormatter.digitsOnly],
                       error: _submitted ? _everyMonthsError : null,
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) => _intervalChanged(),
                     ),
                   ),
                 ],
               ),
               LabelledField(
                 label: 'Next due at (${_unit.label})',
-                hint: widget.vehicle.odometerKm == null
-                    ? 'Optional'
-                    : 'Now ${_kmText(widget.vehicle.odometerKm)}',
+                hint: widget.vehicle.odometerKm != null
+                    ? 'Now ${_kmText(widget.vehicle.odometerKm)}'
+                    : _everyKm.text.trim().isNotEmpty
+                    ? 'Needed — the car has no reading yet'
+                    : 'Optional',
                 controller: _dueKm,
                 keyboard: km,
                 error: _submitted ? _dueKmError : null,
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => setState(() => _dueKmFollows = false),
               ),
               LabelledDateField(
                 label: 'Next due on',
@@ -675,7 +768,10 @@ class _ReminderFormScreenState extends State<ReminderFormScreen> {
                 onPick: _pickDate,
                 onClear: _dueDate == null
                     ? null
-                    : () => setState(() => _dueDate = null),
+                    : () => setState(() {
+                        _dueDate = null;
+                        _dueDateFollows = false;
+                      }),
               ),
               LabelledField(
                 label: 'Notes',
