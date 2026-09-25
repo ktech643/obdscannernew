@@ -21,11 +21,17 @@ Future<void> openProPaywall(BuildContext context) => Navigator.of(
 /// that the code never had. The plans are `EntitlementProvider`'s: the
 /// store's own prices when RevenueCat is configured, the spec's fallback
 /// prices when it is not.
-class PaywallScreen extends StatelessWidget {
+class PaywallScreen extends StatefulWidget {
   const PaywallScreen({super.key});
 
-  /// §7.2, row for row. The hard rule is stated separately, above them.
+  /// §7.2, row for row — the four that are free on both plans included:
+  /// leaving them out understated the free tier to someone deciding
+  /// whether to pay. The hard rule is also stated above the table, in
+  /// words.
   static const comparison = <({String feature, String free, String pro})>[
+    (feature: 'Connect (all transports)', free: 'Yes', pro: 'Yes'),
+    (feature: 'Read codes, stored and pending', free: 'Yes', pro: 'Yes'),
+    (feature: 'Clear codes', free: 'Yes', pro: 'Yes'),
     (
       feature: 'Live gauges',
       free: '6 tiles, 1 layout',
@@ -36,14 +42,28 @@ class PaywallScreen extends StatelessWidget {
     (
       feature: 'DTC descriptions',
       free: 'Generic SAE',
-      pro: 'Manufacturer-specific, ranked causes',
+      pro: '+ manufacturer-specific + ranked causes',
     ),
+    (feature: 'Freeze frame, readiness', free: 'Yes', pro: 'Yes'),
     (feature: 'Mode 06, permanent codes', free: '—', pro: 'Yes'),
-    (feature: 'Health Score', free: 'Score only', pro: 'Breakdown and trend'),
+    (feature: 'Health Score', free: 'Score only', pro: '+ breakdown + trend'),
     (feature: 'Vehicles', free: '1', pro: 'Unlimited'),
     (feature: 'Maintenance entries', free: '10', pro: 'Unlimited'),
     (feature: 'PDF and CSV export', free: '—', pro: 'Yes'),
   ];
+
+  @override
+  State<PaywallScreen> createState() => _PaywallScreenState();
+}
+
+class _PaywallScreenState extends State<PaywallScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // The plans on hand may be from a launch with no network. Ask again,
+    // so what the screen offers is what the store sells now.
+    context.read<EntitlementProvider>().refreshPlans();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +96,7 @@ class PaywallScreen extends StatelessWidget {
               style: TorqueType.body.copyWith(color: t.inkSecondary),
             ),
             const SizedBox(height: Space.x24),
-            _Comparison(rows: comparison),
+            _Comparison(rows: PaywallScreen.comparison),
             const SizedBox(height: Space.x24),
             if (ent.isPro) ...[
               GhostButton(
@@ -94,7 +114,9 @@ class PaywallScreen extends StatelessWidget {
                   title: ent.planTitle(i),
                   price: ent.planPrice(i),
                   period: ent.planPeriod(i),
-                  note: i == 0 ? '3-day free trial first' : null,
+                  note: ent.planTrialDays(i) == null
+                      ? null
+                      : '${ent.planTrialDays(i)}-day free trial first',
                   selected: ent.selectedPlan == i,
                   onTap: () => ent.selectPlan(i),
                 ),
@@ -120,10 +142,20 @@ class PaywallScreen extends StatelessWidget {
                 onPressed: ent.restoring ? null : () => _restore(context, ent),
               ),
               const SizedBox(height: Space.x16),
+              if (ent.billingConfigured && !ent.plansFromStore) ...[
+                Text(
+                  "Couldn't reach the store, so these are the usual prices. "
+                  'The store shows the exact price before anything is '
+                  'charged.',
+                  style: TorqueType.meta.copyWith(color: t.tellAmber),
+                ),
+                const SizedBox(height: Space.x8),
+              ],
               Text(
                 'Subscriptions renew automatically until cancelled in your '
                 'App Store or Google Play account; the lifetime plan is a '
-                'one-time purchase. Prices are in your store\'s currency. '
+                'one-time purchase.'
+                '${ent.plansFromStore ? " Prices are in your store's currency." : ''} '
                 'The store and RevenueCat see an anonymous ID and your '
                 'purchases — never your car\'s data.',
                 style: TorqueType.meta.copyWith(color: t.inkTertiary),

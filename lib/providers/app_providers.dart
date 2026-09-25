@@ -162,7 +162,15 @@ class EntitlementProvider extends ChangeNotifier {
       notifyListeners();
       return PurchaseOutcome.success;
     }
-    final plan = _selectedPlan < _plans.length ? _plans[_selectedPlan] : null;
+    var plan = _selectedPlan < _plans.length ? _plans[_selectedPlan] : null;
+    if (plan?.product == null) {
+      // No product to buy — the store was not reachable when the plans
+      // were loaded. Ask again before saying it cannot be done.
+      await refreshPlans();
+      plan = _selectedPlan < _plans.length ? _plans[_selectedPlan] : null;
+    }
+    // A plan still without a product goes to the service anyway: it is the
+    // one that says what an unbuyable plan means (unavailable).
     if (plan == null) {
       _lastOutcome = PurchaseOutcome.unavailable;
       notifyListeners();
@@ -200,6 +208,30 @@ class EntitlementProvider extends ChangeNotifier {
   /// How many plans the paywall shows: the store's when configured, the
   /// spec's three otherwise.
   int get planCount => _plans.isNotEmpty ? _plans.length : 3;
+
+  /// Whether the prices on screen came from the store. Not after a launch
+  /// with no network — common here: a Wi-Fi adapter makes the phone join a
+  /// network with no internet — and then the paywall says so.
+  bool get plansFromStore => _plans.any((p) => p.fromStore);
+
+  /// A trial the store will give this user on plan [i], in days, or null.
+  int? planTrialDays(int i) => i < _plans.length ? _plans[i].freeTrialDays : null;
+
+  bool _refreshing = false;
+
+  /// Asks the store for the plans again. The plans were loaded once, at
+  /// launch; offline then meant the paywall could never sell anything for
+  /// the rest of the session, however many times "Try again" was tapped.
+  Future<void> refreshPlans() async {
+    if (_refreshing || !_billing.configured) return;
+    _refreshing = true;
+    try {
+      _plans = await _billing.plans();
+    } finally {
+      _refreshing = false;
+    }
+    notifyListeners();
+  }
 
   String planTitle(int i) => i < _plans.length
       ? _plans[i].title

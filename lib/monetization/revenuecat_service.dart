@@ -57,30 +57,102 @@ class RevenueCatService {
   }
 
   /// The plans to display, in paywall order (weekly, monthly, lifetime).
+  /// The three plans, from the store when it answers.
+  ///
+  /// Both product categories are asked for: `getProducts` defaults to
+  /// subscriptions only, and the lifetime plan is a one-time purchase that
+  /// query never returns. An earlier version asked once, matched the plain
+  /// id, and so on Android — where a subscription's id is
+  /// `{subscription}:{basePlan}` — matched nothing: every plan had no
+  /// product, and nothing could be bought.
   Future<List<PlanOption>> plans() async {
     if (!_configured) return _fallbackPlans();
     try {
-      final products = await Purchases.getProducts(RevenueCatConfig.productIds);
+      final ids = RevenueCatConfig.productIds;
+      final products = [
+        ...await Purchases.getProducts(
+          ids,
+          productCategory: ProductCategory.subscription,
+        ),
+        ...await Purchases.getProducts(
+          ids,
+          productCategory: ProductCategory.nonSubscription,
+        ),
+      ];
       if (products.isEmpty) return _fallbackPlans();
+      // iOS says who may have the trial; Play only offers a free phase to
+      // a user who is eligible, so its answer is in the product itself.
+      var eligible = const <String>{};
+      if (!_platform.isAndroid) {
+        try {
+          final map = await Purchases.checkTrialOrIntroductoryPriceEligibility(
+            ids,
+          );
+          eligible = {
+            for (final e in map.entries)
+              if (e.value.status ==
+                  IntroEligibilityStatus.introEligibilityStatusEligible)
+                e.key,
+          };
+        } catch (_) {
+          // Unknown eligibility claims no trial.
+        }
+      }
       return [
-        for (var i = 0; i < RevenueCatConfig.productIds.length; i++)
-          _planFrom(products, i),
+        for (var i = 0; i < ids.length; i++)
+          planFor(
+            products,
+            i,
+            isAndroid: _platform.isAndroid,
+            trialEligible: eligible,
+          ),
       ];
     } catch (_) {
       return _fallbackPlans();
     }
   }
 
-  PlanOption _planFrom(List<StoreProduct> products, int index) {
+  /// Pure: the plan at [index] from what the store returned. Public for
+  /// the tests, which cannot reach a store.
+  static PlanOption planFor(
+    List<StoreProduct> products,
+    int index, {
+    required bool isAndroid,
+    Set<String> trialEligible = const {},
+  }) {
     final id = RevenueCatConfig.productIds[index];
-    final product = products.where((p) => p.identifier == id).firstOrNull;
+    final product = products
+        .where((p) => p.identifier == id || p.identifier.startsWith('$id:'))
+        .firstOrNull;
     return PlanOption(
       title: _titles[index],
       price: product?.priceString ?? RevenueCatConfig.fallbackPrices[index],
       period: RevenueCatConfig.fallbackPeriods[index],
       product: product,
+      freeTrialDays: product == null
+          ? null
+          : isAndroid
+          ? _days(product.defaultOption?.freePhase?.billingPeriod)
+          : trialEligible.contains(id) &&
+                product.introductoryPrice != null &&
+                product.introductoryPrice!.price == 0
+          ? _introDays(product.introductoryPrice!)
+          : null,
     );
   }
+
+  static int? _days(Period? p) => p == null ? null : _toDays(p.unit, p.value);
+
+  static int? _introDays(IntroductoryPrice p) =>
+      _toDays(p.periodUnit, p.periodNumberOfUnits);
+
+  static int? _toDays(PeriodUnit unit, int n) => switch (unit) {
+    PeriodUnit.day => n,
+    PeriodUnit.week => n * 7,
+    PeriodUnit.month => n * 30,
+    PeriodUnit.year => n * 365,
+    PeriodUnit.unknown => null,
+  };
 
   /// Attempts to buy the given plan. Mapped to SPEC §7.5's outcome vocabulary.
   Future<PurchaseOutcome> purchase(PlanOption plan) async {

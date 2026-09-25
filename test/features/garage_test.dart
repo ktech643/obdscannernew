@@ -872,6 +872,50 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('★ bought Pro while the sheet is open: it offers the new '
+        'vehicle at once', (tester) async {
+      // The sheet was built once with the free plan's answer; after a
+      // purchase from its own "See Pro" it still offered only "record
+      // under the other car".
+      final g = newGarage(newDb());
+      await addCar(g, 'The Golf', vin: 'WVWZZZ1KZAW000001');
+      final session = newSession();
+      final pro = ValueNotifier(false);
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        AdaptiveScope(
+          platform: const FakePlatform(isAndroid: false),
+          child: MaterialApp(
+            theme: torqueTheme(),
+            home: ValueListenableBuilder<bool>(
+              valueListenable: pro,
+              builder: (_, isPro, _) => IdentityPromptHost(
+                garage: g,
+                session: session,
+                isPro: isPro,
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await pumpUntil(tester, () => g.loaded);
+      unawaited(session.connect(transportFor('headers_can')));
+      await pumpUntil(tester, () => session.isLive);
+      unawaited(g.onConnected(session));
+      await pumpUntil(tester, () => g.pendingIdentity != null);
+      await settle(tester);
+      expect(find.text('Add it as a new vehicle'), findsNothing);
+
+      pro.value = true;
+      await settle(tester);
+      expect(find.text('Add it as a new vehicle'), findsOneWidget);
+      unawaited(session.disconnect());
+      await settle(tester);
+    });
+
     testWidgets('Pro is offered the new vehicle', (tester) async {
       final (g, session) = await unknownCarOnTheWire(tester, isPro: true);
       expect(find.text('Add it as a new vehicle'), findsOneWidget);

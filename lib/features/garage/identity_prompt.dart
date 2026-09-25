@@ -46,6 +46,12 @@ class IdentityPromptHost extends StatefulWidget {
 class _IdentityPromptHostState extends State<IdentityPromptHost> {
   bool _showing = false;
 
+  /// The plan, live. The sheet is a route built once; handed `isPro` as a
+  /// value it kept the free-plan answer after the user bought Pro from its
+  /// own "See Pro" — and, being undismissable, left them only "record
+  /// under the other car", the mis-attribution §9.6 exists to prevent.
+  late final _pro = ValueNotifier<bool>(widget.isPro);
+
   @override
   void initState() {
     super.initState();
@@ -60,11 +66,19 @@ class _IdentityPromptHostState extends State<IdentityPromptHost> {
       old.garage.removeListener(_maybeShow);
       widget.garage.addListener(_maybeShow);
     }
+    // After the frame: the sheet is a route beside this widget, not below
+    // it, and marking it dirty while this one builds is an error.
+    if (old.isPro != widget.isPro) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _pro.value = widget.isPro;
+      });
+    }
   }
 
   @override
   void dispose() {
     widget.garage.removeListener(_maybeShow);
+    _pro.dispose();
     super.dispose();
   }
 
@@ -76,12 +90,15 @@ class _IdentityPromptHostState extends State<IdentityPromptHost> {
       final answer = await showAdaptiveSheet<IdentityAnswer>(
         context,
         dismissible: false,
-        builder: (_) => IdentitySheet(
-          verdict: verdict,
-          garage: widget.garage,
-          session: widget.session,
-          isPro: widget.isPro,
-          onUpgrade: widget.onUpgrade,
+        builder: (_) => ValueListenableBuilder<bool>(
+          valueListenable: _pro,
+          builder: (_, pro, _) => IdentitySheet(
+            verdict: verdict,
+            garage: widget.garage,
+            session: widget.session,
+            isPro: pro,
+            onUpgrade: widget.onUpgrade,
+          ),
         ),
       );
       // "Add it as a new vehicle" is answered by the form, not the sheet —

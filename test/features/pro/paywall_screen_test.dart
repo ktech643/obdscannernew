@@ -6,6 +6,8 @@ import 'package:torque_obd2/core/platform/platform_info.dart';
 import 'package:torque_obd2/design_system/design_system.dart';
 import 'package:torque_obd2/features/pro/paywall_screen.dart';
 import 'package:torque_obd2/models/enums.dart';
+import 'package:torque_obd2/monetization/plan_option.dart';
+import 'package:torque_obd2/monetization/revenuecat_service.dart';
 import 'package:torque_obd2/providers/app_providers.dart';
 import 'package:torque_obd2/providers/persistence.dart';
 
@@ -60,8 +62,33 @@ void main() {
       find.text('Reading and clearing codes: free on both stores, always.'),
       findsOneWidget,
     );
-    for (final row in PaywallScreen.comparison) {
-      expect(find.text(row.feature), findsOneWidget, reason: row.feature);
+    // ★ §7.2, row for row, written out here rather than read from the
+    // screen's own list — a test that loops over the list it checks passes
+    // whatever the list leaves out.
+    const spec = [
+      ('Connect (all transports)', 'Yes', 'Yes'),
+      ('Read codes, stored and pending', 'Yes', 'Yes'),
+      ('Clear codes', 'Yes', 'Yes'),
+      ('Live gauges', '6 tiles, 1 layout', 'Unlimited, named layouts'),
+      ('Graph window', '60 s', '30 min'),
+      ('Recording', '2 min, last 3 trips', 'Unlimited'),
+      (
+        'DTC descriptions',
+        'Generic SAE',
+        '+ manufacturer-specific + ranked causes',
+      ),
+      ('Freeze frame, readiness', 'Yes', 'Yes'),
+      ('Mode 06, permanent codes', '—', 'Yes'),
+      ('Health Score', 'Score only', '+ breakdown + trend'),
+      ('Vehicles', '1', 'Unlimited'),
+      ('Maintenance entries', '10', 'Unlimited'),
+      ('PDF and CSV export', '—', 'Yes'),
+    ];
+    expect([
+      for (final r in PaywallScreen.comparison) (r.feature, r.free, r.pro),
+    ], spec);
+    for (final row in spec) {
+      expect(find.text(row.$1), findsOneWidget, reason: row.$1);
     }
     final text = allText(tester).toLowerCase();
     expect(text, isNot(contains(' ads')));
@@ -82,8 +109,11 @@ void main() {
         findsOneWidget,
       );
     }
-    expect(find.text('3-day free trial first'), findsOneWidget);
+    // ★ The fallback plans are not the store's: they promise no trial. An
+    // earlier version told every user the first three days were free.
+    expect(find.textContaining('free trial'), findsNothing);
     expect(find.text(ent.planAction(0)), findsOneWidget, reason: 'the CTA');
+    expect(ent.planAction(0), 'Start weekly');
   });
 
   testWidgets('choosing a plan changes the action', (tester) async {
@@ -119,6 +149,28 @@ void main() {
     expect(ent.isPro, isFalse);
   });
 
+  testWidgets('★ a store that could not be reached is said, not hidden', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final ent = EntitlementProvider(store, billing: _Offline());
+    addTearDown(ent.dispose);
+    await tester.pumpWidget(
+      AdaptiveScope(
+        platform: const FakePlatform(isAndroid: false),
+        child: ChangeNotifierProvider<EntitlementProvider>.value(
+          value: ent,
+          child: MaterialApp(theme: torqueTheme(), home: const PaywallScreen()),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.textContaining("Couldn't reach the store"), findsOneWidget);
+    expect(find.textContaining("store's currency"), findsNothing);
+  });
+
   testWidgets('already Pro: no plans to buy, manage instead', (tester) async {
     store.setEnum(Keys.entitlementTier, Entitlement.pro);
     await pump(tester);
@@ -134,4 +186,27 @@ void main() {
     await pump(tester, size: const Size(320, 700));
     expect(tester.takeException(), isNull);
   });
+}
+
+/// A configured store that never answers: the plans stay the fallbacks.
+class _Offline extends RevenueCatService {
+  @override
+  bool get configured => true;
+
+  @override
+  Future<void> configure() async {}
+
+  @override
+  Future<List<PlanOption>> plans() async => const [
+    PlanOption(title: 'Weekly', price: r'$4.99', period: '/week'),
+    PlanOption(title: 'Monthly', price: r'$9.99', period: '/month'),
+    PlanOption(title: 'Lifetime', price: r'$49.99', period: 'once'),
+  ];
+
+  @override
+  Future<bool?> isPro() async => null;
+
+  @override
+  void Function() addEntitlementListener(void Function(bool isPro) onChanged) =>
+      () {};
 }
