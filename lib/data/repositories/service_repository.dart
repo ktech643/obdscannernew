@@ -145,6 +145,18 @@ class ServiceRepository {
     )..where((r) => r.id.equals(id))).getSingle());
   }
 
+  /// Edit a reminder in place: the row as it came from the database with
+  /// the form's fields changed. Dates normalised to UTC, like every write.
+  Future<void> updateReminder(ReminderRow row) => _db
+      .update(_db.reminders)
+      .replace(
+        row.copyWith(
+          dueDate: Value(utcOrNull(row.dueDate)),
+          completedAt: Value(utcOrNull(row.completedAt)),
+          createdAt: utc(row.createdAt),
+        ),
+      );
+
   Future<void> setPaused(String id, bool paused) =>
       (_db.update(_db.reminders)..where((r) => r.id.equals(id))).write(
         RemindersCompanion(paused: Value(paused)),
@@ -253,40 +265,82 @@ class ServiceRepository {
   /// Walked in odometer order, not date order: fills logged from a date
   /// picker share a midnight timestamp, and the odometer is the physical
   /// sequence anyway.
-  Future<List<FuelEconomy>> economy(String vehicleId) async {
-    final entries =
-        await (_db.select(_db.fuelEntries)
-              ..where((f) => f.vehicleId.equals(vehicleId))
-              ..orderBy([
-                (f) => OrderingTerm.asc(f.odometerKm),
-                (f) => OrderingTerm.asc(f.date),
-              ]))
-            .get();
-    final out = <FuelEconomy>[];
-    FuelEntryRow? lastFull;
-    var litresSince = 0.0;
-    for (final e in entries) {
-      double? lPer100;
-      if (e.partFill) {
-        litresSince += e.litres;
-      } else {
-        if (lastFull != null) {
-          final km = e.odometerKm - lastFull.odometerKm;
-          if (km > 0) lPer100 = (litresSince + e.litres) / km * 100;
-        }
-        lastFull = e;
-        litresSince = 0;
-      }
-      out.add(FuelEconomy(e, lPer100));
-    }
-    return out;
-  }
+  /// Edit a fill-up in place; the date normalised to UTC like every write.
+  Future<void> updateFuel(FuelEntryRow row) => _db
+      .update(_db.fuelEntries)
+      .replace(row.copyWith(date: utc(row.date)));
+
+  Future<List<FuelEconomy>> economy(String vehicleId) async =>
+      FuelSummary.of(await fuel(vehicleId)).economy;
 }
 
 class FuelEconomy {
   const FuelEconomy(this.entry, this.litresPer100Km);
   final FuelEntryRow entry;
   final double? litresPer100Km;
+}
+
+/// SPEC §5.5 — "economy **between full fill-ups only**".
+///
+/// A span runs from one full tank to the next: every litre put in after the
+/// first full tank, the part fills included, over the distance between the
+/// two. A part fill has no economy of its own — the tank was not full, so
+/// the litres it took say nothing about the distance before it — and the
+/// first full tank has none either, because nothing is known about what
+/// was in the tank before it. Entries are taken in odometer order, so a
+/// fill-up added later for an earlier date lands where it belongs.
+class FuelSummary {
+  const FuelSummary._(this.economy, this.spanKm, this.spanLitres);
+
+  /// Oldest first, by odometer; one per entry, null where no span ends.
+  final List<FuelEconomy> economy;
+
+  /// The distance and litres of every complete span, summed — the honest
+  /// average, weighted by distance rather than by fill-up.
+  final double spanKm;
+  final double spanLitres;
+
+  double? get averageLitresPer100Km =>
+      spanKm > 0 ? spanLitres / spanKm * 100 : null;
+
+  factory FuelSummary.of(List<FuelEntryRow> entries) {
+    final sorted = [...entries]
+      ..sort((a, b) {
+        final byKm = a.odometerKm.compareTo(b.odometerKm);
+        return byKm != 0 ? byKm : a.date.compareTo(b.date);
+      });
+    final out = <FuelEconomy>[];
+    FuelEntryRow? lastFull;
+    var litresSince = 0.0;
+    var spanKm = 0.0;
+    var spanLitres = 0.0;
+    for (final e in sorted) {
+      double? lPer100;
+      if (e.partFill) {
+        litresSince += e.litres;
+      } else {
+        if (lastFull != null) {
+          final km = e.odometerKm - lastFull.odometerKm;
+          if (km > 0) {
+            final litres = litresSince + e.litres;
+            lPer100 = litres / km * 100;
+            spanKm += km;
+            spanLitres += litres;
+          }
+        }
+        lastFull = e;
+        litresSince = 0;
+      }
+      out.add(FuelEconomy(e, lPer100));
+    }
+    return FuelSummary._(out, spanKm, spanLitres);
+  }
+
+  /// Litres per 100 km to miles per gallon. Both gallons, because "mpg"
+  /// means a different number in the US and the UK and the app does not
+  /// know which the user means.
+  static double usMpg(double litresPer100Km) => 235.214583 / litresPer100Km;
+  static double ukMpg(double litresPer100Km) => 282.480936 / litresPer100Km;
 }
 
 extension ServiceRecordRowX on ServiceRecordRow {

@@ -1251,6 +1251,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 13 done 2026-09-24 — the paywall on Part B; the account flow and the ad code deleted, see §B.24
          ◐ slice 14 done 2026-09-24 — Data & privacy on Part B; no Industry sub-screen remains, see §B.25
          ◐ review of slices 10–14, 2026-09-25 — 22 confirmed, all fixed, see §B.26
+         ◐ slice 15 done 2026-09-25 — the Garage's maintenance log, reminders and fuel log, see §B.27
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1912,6 +1913,66 @@ deleted anywhere else" now name it.
 categories needs a configured store key; the id matching it feeds is tested.
 
 725 tests, analyzer clean.
+
+## B.27 The Garage's logs — maintenance, reminders, fuel (Phase 6, slice 15 — 2026-09-25)
+
+§B.16 gave the Garage a `GarageLinks` slot for each log and offered none. Three
+now exist, each over the Drift stream for the primary vehicle, opened from the
+Garage tab with the user's distance unit, currency and plan (`LiveGarageTab`
+reads the providers; the screens take plain values).
+
+**Maintenance log** (`maintenance_screen.dart`). Records newest first; the
+form takes the kind, what was done (1–200, the table's own limit), a date no
+later than today, the odometer (`Distance.parse`, 0–2,000,000 km, the vehicle
+form's bound), a cost (`Money.parse`: comma or point decimals, a sanity bound),
+where, and notes (≤ 5,000). An edit writes the row as it is on disk with only
+the form's fields changed, so linked codes and attachments survive. A reading
+higher than the car's is the newest reading there is and moves the vehicle's
+odometer — which reminders due by distance are judged against. §7.2's ten
+records on the free plan: the eleventh is a §7.3 door (the alert's "See Pro"),
+and the ten already there stay readable, editable and deletable (§7.5).
+
+**Reminders** (`reminders_screen.dart`). The thirteen §5.5 intervals as
+presets (`ServicePreset`; "plugs 40,000/100,000" is two, copper and long-life;
+the timing belt is critical), each with "Check your owner's manual — intervals
+vary by vehicle." on the picker and on the form. From a preset the next due
+date is today plus the interval and the next reading the car's plus the
+interval, both editable; a reminder needs something to be due by, or it is
+refused with the reason. Months are stored as days of an average month, so "6
+months" round-trips as 6. The list runs overdue, due soon (a month or 1,000
+km), coming up, paused, done — the status always a word, the tone red for an
+overdue critical one. Mark as done rolls a repeating reminder forward from
+today and the current reading (the repository's rule). `reminderStatus` is the
+one overdue rule, now also behind `GarageController.overdueCount`, so the card,
+the list and the health score's −5 each cannot disagree.
+
+**Fuel log** (`fuel_log_screen.dart`). §5.5's economy between full fill-ups
+only, as a pure `FuelSummary` in the repository (which `economy()` now calls):
+a span runs from one full tank to the next, the part fills in between counted
+into it; a part fill has no figure of its own and the first full tank has none,
+and each row says which. The average is weighted by distance, not by fill-up.
+Miles users see both US and UK mpg — the app does not know which gallon they
+mean. A reading lower than one already logged is a caution ("fine if this is an
+older receipt"), not a refusal. An electric car has no fuel log; a hybrid does.
+
+**Design system.** `ListRow`/`ListSection` (§B.26), `LabelledField`,
+`ChoiceChips` and `LabelledDateField` — the three screens and their forms are
+built from these alone. `ServiceRepository` gained `updateReminder` and
+`updateFuel`.
+
+**Deferred, named.** Local notifications for reminders (§5.5 "local
+notifications only") need a notifications plugin and the permission flow;
+until then a reminder is shown, not pinged. Attachments and receipts on a
+record, linking a record to a code from the Diagnostics screen, trip
+recordings and reports (the last two slots stay empty). The vehicle form still
+has its own private field widget; moving it onto `LabelledField` is mechanical
+and left for the next Garage slice.
+
+**Tests.** `test/features/garage/service_intervals_test.dart` (the rule, the
+presets, money, economy), `garage_logs_test.dart` (each screen and form on a
+real in-memory database), `live_garage_tab_test.dart` (the wiring, the
+currency, the electric car). Each ★ test seen failing with its piece removed.
+728 tests, analyzer clean.
 
 ## HARD RULES
 

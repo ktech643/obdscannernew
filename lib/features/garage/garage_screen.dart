@@ -303,7 +303,9 @@ class _GarageScreenState extends State<GarageScreen> {
             tone: (_overdue ?? 0) > 0 ? Tell.amber : Tell.none,
             onTap: () => _push(widget.links.reminders!),
           ),
-        if (widget.links.fuel != null)
+        // An electric car has no fuel to log (§5.5); a hybrid does.
+        if (widget.links.fuel != null &&
+            primary.fuelType != VehicleFuel.electric)
           ListRow(title: 'Fuel log', onTap: () => _push(widget.links.fuel!)),
         if (widget.links.trips != null)
           ListRow(

@@ -11,6 +11,7 @@ import '../../data/repositories/vehicle_repository.dart';
 import '../../models/enums.dart';
 import '../../protocol/vin_reader.dart';
 import '../../session/obd_session.dart';
+import 'service_intervals.dart';
 import 'vehicle_identity.dart';
 
 /// SPEC §5.5 — the vehicles, and §9.6 — which one is plugged in.
@@ -172,15 +173,14 @@ class GarageController extends ChangeNotifier {
     final s = services;
     if (s == null) return 0;
     final at = now ?? DateTime.now();
+    // The one rule, shared with the reminders list, so the card's count and
+    // the list's "Overdue" section can never disagree.
     var n = 0;
     for (final r in await s.reminders(vehicleId)) {
-      if (r.paused || r.completedAt != null) continue;
-      final byDate = r.dueDate != null && r.dueDate!.isBefore(at);
-      final byKm =
-          r.dueOdometerKm != null &&
-          odometerKm != null &&
-          odometerKm >= r.dueOdometerKm!;
-      if (byDate || byKm) n++;
+      if (reminderStatus(r, odometerKm: odometerKm, now: at) ==
+          ReminderStatus.overdue) {
+        n++;
+      }
     }
     return n;
   }

@@ -20,8 +20,12 @@ import 'demo/demo_mode.dart';
 import 'diagnostics/diagnostics_controller.dart';
 import 'diagnostics/diagnostics_screen.dart';
 import 'garage/garage_controller.dart';
+import 'garage/fuel_log_screen.dart';
 import 'garage/garage_screen.dart';
 import 'garage/identity_prompt.dart';
+import 'garage/maintenance_screen.dart';
+import 'garage/reminders_screen.dart';
+import 'garage/service_intervals.dart' show Money;
 import 'pro/paywall_screen.dart';
 import 'settings/settings_screen.dart';
 
@@ -302,6 +306,38 @@ class LiveGarageTab extends StatelessWidget {
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
         onUpgrade: () => openProPaywall(context),
+        links: _links(context, garage),
+      ),
+    );
+  }
+
+  /// SPEC §5.5 — the Garage's logs, each opened for the primary vehicle as
+  /// it is when the row is tapped. The unit, the currency and the plan are
+  /// read here, where the providers are, so the screens stay free of them.
+  GarageLinks _links(BuildContext context, GarageController garage) {
+    final settings = context.watch<SettingsProvider>();
+    final isPro = context.watch<EntitlementProvider>().isPro;
+    final unit = settings.distance;
+    final currency = Money.codeOf(settings.currency);
+    return GarageLinks(
+      maintenance: (ctx) => MaintenanceScreen(
+        garage: garage,
+        vehicle: garage.primary!,
+        unit: unit,
+        currencyCode: currency,
+        isPro: isPro,
+        onUpgrade: () => openProPaywall(ctx),
+      ),
+      reminders: (_) => RemindersScreen(
+        garage: garage,
+        vehicle: garage.primary!,
+        unit: unit,
+      ),
+      fuel: (_) => FuelLogScreen(
+        garage: garage,
+        vehicle: garage.primary!,
+        unit: unit,
+        currencyCode: currency,
       ),
     );
   }
