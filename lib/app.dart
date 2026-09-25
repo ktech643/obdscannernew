@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import 'core/platform/platform_info.dart';
 import 'data/db/app_database.dart';
 import 'data/repositories/dtc_repository.dart';
 import 'data/repositories/service_repository.dart';
@@ -164,9 +163,10 @@ class AppShellTabs {
 ///
 /// The chrome is Part B's: `AdaptiveTabBar` on the design system's ground,
 /// which also runs under the status bar and the home indicator so the
-/// screens sit on one dark surface instead of on a light strip. `Backlit`
-/// wraps only the chrome — a route pushed inside a tab keeps the app's
-/// root theme, which the remaining Industry sub-screens are drawn against.
+/// screens sit on one dark surface instead of on a light strip. Every tab —
+/// and every route pushed inside one — is under `LiveIdentityPrompt`'s
+/// `Backlit`, so all of them get the Part B theme; the root `Material` in
+/// `MaterialApp.builder` is the only Industry thing still underneath.
 /// The earlier debug panel is gone: every control on it drove the old
 /// Provider stack, which none of these tabs read.
 class AppShell extends StatefulWidget {
@@ -214,11 +214,34 @@ class _AppShellState extends State<AppShell> {
 
   void _select(int i) {
     if (i == _tab) {
-      // Tapping the active tab pops it to root, the standard iOS behaviour.
-      _navKeys[i].currentState?.popUntil((r) => r.isFirst);
+      // Tapping the active tab pops it to root, the standard iOS behaviour
+      // — but never past a route that refuses to go (a PopScope that says
+      // no, like the Delete-all sheet while it erases). `popUntil` alone
+      // ignores that refusal.
+      _navKeys[i].currentState?.popUntil(
+        (r) => r.isFirst || r.popDisposition == RoutePopDisposition.doNotPop,
+      );
     } else {
       setState(() => _tab = i);
     }
+  }
+
+  /// Android back, in order: the tab's own stack, asked politely
+  /// (`maybePop`, so a route's PopScope is heard — `pop` is not); then
+  /// back to the Dashboard from any other tab's root; then out of the app.
+  /// An earlier version called `pop`, which removed a sheet that had said
+  /// it must stay, and did nothing at all at a tab's root.
+  Future<void> _back() async {
+    final nav = _navKeys[_tab].currentState;
+    if (nav != null && nav.canPop()) {
+      await nav.maybePop();
+      return;
+    }
+    if (_tab != 1) {
+      setState(() => _tab = 1);
+      return;
+    }
+    await SystemNavigator.pop();
   }
 
   @override
@@ -229,9 +252,7 @@ class _AppShellState extends State<AppShell> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        final nav = _navKeys[_tab].currentState;
-        if (nav != null && nav.canPop()) nav.pop();
+        if (!didPop) _back();
       },
       // The ground runs under the status bar too, so its icons are claimed
       // here, where the box that sits under them is.
@@ -267,7 +288,6 @@ class _AppShellState extends State<AppShell> {
                 // transition is latency the user has to wait through. The
                 // bar pads itself for the home indicator.
                 Backlit(
-                  platform: PlatformInfo.current,
                   child: AdaptiveTabBar(
                     tabs: AppShell.tabs,
                     index: _tab,

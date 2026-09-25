@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../core/platform/platform_info.dart';
 import '../data/db/app_database.dart' show VehicleRow;
 import '../data/repositories/dtc_repository.dart';
 import '../data/repositories/service_repository.dart';
@@ -211,7 +210,6 @@ class _Backlit extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Backlit(
-    platform: PlatformInfo.current,
     child: SafeArea(bottom: false, child: child),
   );
 }
@@ -329,7 +327,6 @@ class LiveIdentityPrompt extends StatelessWidget {
     final garage = live.garage;
     if (garage == null) return child;
     return Backlit(
-      platform: PlatformInfo.current,
       child: IdentityPromptHost(
         garage: garage,
         session: live.session,

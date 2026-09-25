@@ -182,6 +182,7 @@ class PrivacyScreen extends StatelessWidget {
 void _confirmDeleteAll(BuildContext context) => showAdaptiveSheet<void>(
   context,
   dismissible: false,
+  useRootNavigator: true,
   builder: (_) => _DeleteAllSheet(screenContext: context),
 );
 

@@ -30,7 +30,7 @@ class EmptyStateView extends StatelessWidget {
   Widget build(BuildContext context) {
     final t = context.tokens;
     final color = tone == Tell.none ? t.inkTertiary : t.tell(tone);
-    return Padding(
+    final body = Padding(
       padding: const EdgeInsets.all(Space.x24),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -53,6 +53,14 @@ class EmptyStateView extends StatelessWidget {
           ],
         ],
       ),
+    );
+    // As a whole screen's body it can be taller than the screen — text
+    // scale 2.0 on a 320 × 568 phone overflowed by 11 px (AC-16) — so it
+    // scrolls there. Inside a list it is just a child of the list.
+    return LayoutBuilder(
+      builder: (context, c) => c.hasBoundedHeight
+          ? SingleChildScrollView(child: body)
+          : body,
     );
   }
 }

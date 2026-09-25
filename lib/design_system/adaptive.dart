@@ -6,6 +6,7 @@ import '../core/platform/platform_info.dart';
 import 'spacing.dart';
 import 'theme.dart';
 import 'tokens.dart';
+import 'typography.dart';
 
 /// SPEC Part B.4 — one visual language, two chromes.
 ///
@@ -56,7 +57,14 @@ class Backlit extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = tokens ?? TorqueTokens.dark;
+    // High contrast is the system's word, so every Backlit answers it on its
+    // own — the shell's ground and the tabs above it must agree, or the
+    // strip under the status bar is a different colour from the screen.
+    final t =
+        tokens ??
+        ((MediaQuery.maybeHighContrastOf(context) ?? false)
+            ? TorqueTokens.highContrast
+            : TorqueTokens.dark);
     // The status bar's icons follow the ground they sit on. Nothing else
     // in the app sets this, and the system default is dark icons — right
     // for the old light shell, near-invisible on this ground. An
@@ -217,25 +225,47 @@ class AdaptiveTabBar extends StatelessWidget {
   final int index;
   final ValueChanged<int> onSelected;
 
+  /// The labels do not grow with the user's text size. Five labels share
+  /// the width of a phone: at 2.0 "Diagnostics" wrapped and the iOS item
+  /// overflowed its fixed 46 pt (AC-16), and even Android's own clamp of
+  /// 1.3 wraps "Diagnostics" on a 390 pt phone. The system tab bars on both
+  /// platforms keep their labels at one size for the same reason; every
+  /// label is still read in full by VoiceOver and TalkBack.
+  static const maxTextScale = 1.0;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: maxTextScale,
+    child: Builder(builder: _bar),
+  );
+
+  Widget _bar(BuildContext context) {
     final t = context.tokens;
     if (_ios(context)) {
-      return CupertinoTabBar(
-        backgroundColor: t.surfaceRaised,
-        activeColor: t.inkPrimary,
-        inactiveColor: t.inkSecondary,
-        border: Border(top: BorderSide(color: t.hairline, width: 1)),
-        currentIndex: index,
-        onTap: onSelected,
-        items: [
-          for (final tab in tabs)
-            BottomNavigationBarItem(
-              icon: Icon(tab.icon),
-              activeIcon: Icon(tab.selectedIcon ?? tab.icon),
-              label: tab.label,
-            ),
-        ],
+      // Barlow, like every other word in Part B — the Cupertino default is
+      // the system font, which is also why a test could not measure it.
+      return CupertinoTheme(
+        data: CupertinoTheme.of(context).copyWith(
+          textTheme: CupertinoTheme.of(context).textTheme.copyWith(
+            tabLabelTextStyle: TorqueType.meta.copyWith(fontSize: 10),
+          ),
+        ),
+        child: CupertinoTabBar(
+          backgroundColor: t.surfaceRaised,
+          activeColor: t.inkPrimary,
+          inactiveColor: t.inkSecondary,
+          border: Border(top: BorderSide(color: t.hairline, width: 1)),
+          currentIndex: index,
+          onTap: onSelected,
+          items: [
+            for (final tab in tabs)
+              BottomNavigationBarItem(
+                icon: Icon(tab.icon),
+                activeIcon: Icon(tab.selectedIcon ?? tab.icon),
+                label: tab.label,
+              ),
+          ],
+        ),
       );
     }
     return NavigationBar(
@@ -259,10 +289,15 @@ Future<T?> showAdaptiveSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
   bool dismissible = true,
+  bool useRootNavigator = false,
 }) {
   final t = context.tokens;
   return showModalBottomSheet<T>(
     context: context,
+    // On the root navigator the sheet sits above the tab bar too, so
+    // nothing outside it — a tab, Android back routed to a tab's
+    // navigator — can take it away while it must stay.
+    useRootNavigator: useRootNavigator,
     isScrollControlled: true,
     useSafeArea: true,
     isDismissible: dismissible,
