@@ -74,9 +74,12 @@ mixin _SelfClosing<T extends StatefulWidget> on State<T> {
   LayoutRef get ref;
   bool _closing = false;
 
+  /// Anything else that means this sheet has nothing left to say.
+  bool get gone => false;
+
   void _watch() {
     if (_closing || !mounted) return;
-    if (!controller.editing || controller.ref != ref) {
+    if (!controller.editing || controller.ref != ref || gone) {
       _closing = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -124,6 +127,11 @@ class _TileSheetState extends State<_TileSheet> with _SelfClosing {
 
   /// The tile this sheet is about. A new reading closes the sheet.
   String get _pid => widget.pid;
+
+  /// Held after a lapse, the tile is not on the grid any more: the sheet
+  /// went blank and stayed.
+  @override
+  bool get gone => !controller.shown.any((t) => t.pid == _pid);
 
   @override
   void initState() {
@@ -191,14 +199,18 @@ class _TileSheetState extends State<_TileSheet> with _SelfClosing {
                 Wrap(
                   spacing: Space.x8,
                   children: [
+                    // Keyed, so a move that hides one button never hands
+                    // the focused one the other's job.
                     if (i > 0)
                       GhostButton(
+                        key: const ValueKey('earlier'),
                         label: 'Move earlier',
                         icon: Icons.arrow_back,
                         onPressed: () => _outcome(c.moveBy(ref, _pid, -1)),
                       ),
                     if (i < shown.length - 1)
                       GhostButton(
+                        key: const ValueKey('later'),
                         label: 'Move later',
                         icon: Icons.arrow_forward,
                         onPressed: () => _outcome(c.moveBy(ref, _pid, 1)),

@@ -88,6 +88,7 @@ class DashboardLayout {
     required this.createdAt,
     required this.selectedAt,
     required this.saved,
+    this.storedTiles,
   }) : assert(tiles.isNotEmpty, 'a layout keeps at least one tile'),
        tiles = List.unmodifiable(tiles);
 
@@ -121,6 +122,7 @@ class DashboardLayout {
       createdAt: r.createdAt,
       selectedAt: r.selectedAt,
       saved: true,
+      storedTiles: r.tilesJson,
     );
   }
 
@@ -135,6 +137,12 @@ class DashboardLayout {
   final DateTime selectedAt;
   final bool saved;
 
+  /// The row's own tile list, written back as it was until a tile is
+  /// edited. Readings a later build added, which this one cannot decode —
+  /// or a list it could not read at all, shown here as the defaults — are
+  /// not lost to a rename or a switch.
+  final String? storedTiles;
+
   DashboardLayout copyWith({
     String? name,
     List<LayoutTile>? tiles,
@@ -148,6 +156,7 @@ class DashboardLayout {
     createdAt: createdAt,
     selectedAt: selectedAt ?? this.selectedAt,
     saved: saved ?? this.saved,
+    storedTiles: tiles == null ? storedTiles : null,
   );
 
   /// Only a vehicle's layout becomes a row.
@@ -155,7 +164,7 @@ class DashboardLayout {
     id: id,
     vehicleId: vehicleId!,
     name: name,
-    tilesJson: encodeTiles(tiles),
+    tilesJson: storedTiles ?? encodeTiles(tiles),
     createdAt: createdAt,
     selectedAt: selectedAt,
   );
@@ -264,6 +273,7 @@ enum EditOutcome {
   lastTile,
   duplicate,
   invalidName,
+  nameTooLong,
 }
 
 /// Why edit mode ended.

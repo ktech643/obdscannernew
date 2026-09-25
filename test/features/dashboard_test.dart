@@ -190,7 +190,7 @@ void main() {
 
   group('★ §5.6 — the user\'s units reach the gauges', () {
     Finder inTile(String pid, String text) => find.descendant(
-      of: find.byKey(ValueKey(pid)),
+      of: find.byWidgetPredicate((w) => w is GaugeTile && w.spec.pid == pid),
       matching: find.text(text),
     );
 

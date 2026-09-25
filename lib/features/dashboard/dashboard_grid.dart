@@ -462,6 +462,9 @@ enum AddGaugeForm {
 
   /// The free plan's six: a door, with the lock and the word.
   locked,
+
+  /// The free plan's six on an electric car (§9.4): a statement, no door.
+  freeLimit,
   open,
 }
 
@@ -471,12 +474,20 @@ class AddGaugeTile extends StatelessWidget {
   final AddGaugeForm form;
   final VoidCallback? onTap;
 
+  String? get _statement => switch (form) {
+    AddGaugeForm.nothingLeft =>
+      'Every reading this car reports is on the dashboard',
+    AddGaugeForm.freeLimit =>
+      'The free plan shows 6 gauges. Tap one to show something else.',
+    _ => null,
+  };
+
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     final Widget content = switch (form) {
-      AddGaugeForm.nothingLeft => Text(
-        'Every reading this car reports is on the dashboard',
+      AddGaugeForm.nothingLeft || AddGaugeForm.freeLimit => Text(
+        _statement!,
         textAlign: TextAlign.center,
         style: TorqueType.meta.copyWith(color: t.inkSecondary),
       ),
@@ -512,10 +523,10 @@ class AddGaugeTile extends StatelessWidget {
         ),
       ),
     );
-    if (form == AddGaugeForm.nothingLeft) {
+    if (_statement case final words?) {
       return Semantics(
         container: true,
-        label: 'Every reading this car reports is on the dashboard',
+        label: words,
         child: ExcludeSemantics(child: box),
       );
     }

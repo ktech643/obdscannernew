@@ -42,6 +42,23 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('★ what the trailing widget says is in the label', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await pump(
+      tester,
+      ListRow(
+        title: 'Reports',
+        trailing: const TelltaleChip(tone: Tell.none, label: 'Pro'),
+        trailingLabel: 'Pro',
+        onTap: () {},
+      ),
+    );
+    expect(node(tester, 'Reports').label, 'Reports, Pro');
+    handle.dispose();
+  });
+
   testWidgets('a disabled row says so', (tester) async {
     final handle = tester.ensureSemantics();
     await pump(tester, ListRow(title: 'History', enabled: false, onTap: () {}));

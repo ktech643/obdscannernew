@@ -72,8 +72,10 @@ void main() {
     }
   }
 
-  Finder inTile(String pid, String text) =>
-      find.descendant(of: find.byKey(ValueKey(pid)), matching: find.text(text));
+  Finder inTile(String pid, String text) => find.descendant(
+    of: find.byWidgetPredicate((w) => w is GaugeTile && w.spec.pid == pid),
+    matching: find.text(text),
+  );
 
   testWidgets('★ a unit chosen in Settings changes the gauges', (tester) async {
     final live = LiveSession(session: ObdSession(timeScale: 0.05));
@@ -102,5 +104,21 @@ void main() {
     expect(inTile('010D', '42'), findsOneWidget);
 
     await quiesce(tester, live);
+  });
+
+  testWidgets('★ no link, not known to be moving — on the live session', (
+    tester,
+  ) async {
+    // The clock stops with the link, so the last Speed reading stayed
+    // fresh against it after a reconnect gave up: Edit locked while parked.
+    final live = LiveSession(session: ObdSession(timeScale: 0.05));
+    addTearDown(live.dispose);
+    live.session.bus.of('010D').value = PidSample(
+      pid: '010D',
+      value: 68,
+      at: live.session.clock.value,
+    );
+    expect(live.session.isLive, isFalse);
+    expect(live.speedGate.moving.value, isFalse);
   });
 }

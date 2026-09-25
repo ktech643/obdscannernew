@@ -356,6 +356,7 @@ class _GarageScreenState extends State<GarageScreen> {
             trailing: widget.isPro
                 ? null
                 : const TelltaleChip(tone: Tell.none, label: 'Pro'),
+            trailingLabel: widget.isPro ? null : 'Pro',
             onTap: () => _open(widget.links.reports!, primary),
           ),
         ListSection(title: 'Vehicles'),
@@ -370,6 +371,7 @@ class _GarageScreenState extends State<GarageScreen> {
           trailing: widget.isPro || !_c.hasVehicle
               ? null
               : const TelltaleChip(tone: Tell.none, label: 'Pro'),
+          trailingLabel: widget.isPro || !_c.hasVehicle ? null : 'Pro',
           onTap: _add,
         ),
       ],

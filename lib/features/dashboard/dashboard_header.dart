@@ -52,7 +52,8 @@ String eventText(
     LayoutEventKind.undone => 'Undone: ${e.other} ${e.label}',
     LayoutEventKind.switched => 'Showing ${e.label}',
     LayoutEventKind.saveFailed =>
-      "Couldn't save the last change. Tap Done to try again.",
+      "Couldn't save the last change to the dashboard. Try again is at the "
+          'top.',
     LayoutEventKind.ended => switch (e.reason) {
       EndReason.moving =>
         'Editing stopped while moving. Your changes are saved.',
@@ -60,6 +61,35 @@ String eventText(
       _ => 'Done editing',
     },
   };
+}
+
+/// A change that could not be saved, and the way to try again — in edit
+/// mode and out of it: said after Done, it once pointed at a Done that was
+/// gone.
+class SaveErrorLine extends StatelessWidget {
+  const SaveErrorLine({super.key, required this.onRetry});
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Icon(Tell.red.glyph, size: 14, color: t.tellRed),
+        const SizedBox(width: Space.x4),
+        Text(
+          "Couldn't save the last change.",
+          style: TorqueType.meta.copyWith(color: t.tellRed),
+        ),
+        GhostButton(
+          label: 'Try again',
+          icon: Icons.refresh,
+          onPressed: onRetry,
+        ),
+      ],
+    );
+  }
 }
 
 /// Above the grid, outside edit mode: whose gauges these are, the layout,
@@ -71,21 +101,28 @@ class DashboardHeader extends StatelessWidget {
     required this.layouts,
     required this.onEdit,
     required this.onLayouts,
+    required this.onRetry,
   });
 
   final DashboardLayoutController layouts;
   final VoidCallback onEdit;
   final VoidCallback onLayouts;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
     final active = layouts.active;
+    // Only an owner has layouts to choose between: with no car, a Pro user
+    // was offered a sheet whose every action was refused without a word.
+    final owned =
+        layouts.target is VehicleTarget || layouts.target is DemoTarget;
     final showLayout =
         active != null &&
+        owned &&
         (layouts.isPro || layouts.layouts.length > 1) &&
         !layouts.gated;
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(horizontal: Space.gutter - Space.x16),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: Targets.min),
@@ -158,6 +195,18 @@ class DashboardHeader extends StatelessWidget {
         ),
       ),
     );
+    if (!layouts.saveError) return row;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        row,
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Space.gutter),
+          child: SaveErrorLine(onRetry: onRetry),
+        ),
+      ],
+    );
   }
 }
 
@@ -170,12 +219,14 @@ class EditBar extends StatelessWidget {
     required this.layouts,
     required this.onDone,
     required this.onLayouts,
+    required this.onRetry,
     this.status,
   });
 
   final DashboardLayoutController layouts;
   final VoidCallback onDone;
   final VoidCallback onLayouts;
+  final VoidCallback onRetry;
 
   /// A line the screen sets itself ("Keep at least one gauge…"); else the
   /// last event's words.
@@ -218,7 +269,11 @@ class EditBar extends StatelessWidget {
             ],
           ),
           const SizedBox(height: Space.x8),
-          if (line.isNotEmpty)
+          // The failure has its own line, with its retry; said twice, it
+          // was read twice.
+          if (line.isNotEmpty &&
+              !(layouts.saveError &&
+                  layouts.lastEvent?.kind == LayoutEventKind.saveFailed))
             Text(line, style: TorqueType.meta.copyWith(color: t.inkSecondary)),
           if (layouts.target is DemoTarget) ...[
             const SizedBox(height: Space.x4),
@@ -227,32 +282,21 @@ class EditBar extends StatelessWidget {
               style: TorqueType.meta.copyWith(color: t.inkSecondary),
             ),
           ],
-          if (layouts.saveError) ...[
-            const SizedBox(height: Space.x4),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Tell.red.glyph, size: 14, color: t.tellRed),
-                const SizedBox(width: Space.x4),
-                Expanded(
-                  child: Text(
-                    "Couldn't save the last change. Tap Done to try again.",
-                    style: TorqueType.meta.copyWith(color: t.tellRed),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          if (layouts.saveError) SaveErrorLine(onRetry: onRetry),
           Wrap(
             spacing: Space.x8,
             children: [
+              // Keyed: the last undo takes its button away, and the focused
+              // node must not become "Layouts".
               if (layouts.canUndo)
                 GhostButton(
+                  key: const ValueKey('undo'),
                   label: layouts.undoLabel!,
                   icon: Icons.undo,
                   onPressed: layouts.undo,
                 ),
               GhostButton(
+                key: const ValueKey('layouts'),
                 label: 'Layouts',
                 icon: Icons.view_module_outlined,
                 onPressed: onLayouts,

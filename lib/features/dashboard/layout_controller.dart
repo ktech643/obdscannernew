@@ -55,8 +55,13 @@ class DashboardLayoutController extends ChangeNotifier {
   bool _loaded = false;
   bool _isPro = false;
   bool _editing = false;
-  bool _saveError = false;
   bool _disposed = false;
+
+  /// Writes that failed, kept to try again: Done retries every one for the
+  /// car on screen — a failed delete included, which a re-save of the shown
+  /// layout never covered, so the deleted layout came back on the next
+  /// launch.
+  final _failed = <({String? vehicleId, Future<void> Function() write})>[];
   List<DashboardLayout> _layouts = const [];
   final _undo =
       <
@@ -89,7 +94,14 @@ class DashboardLayoutController extends ChangeNotifier {
     _epoch++;
     if (_editing) _end(EndReason.targetChanged);
     _undo.clear();
+    // The last car's failed writes get one more try, quietly; the error
+    // line is about the car on screen, not the one before.
+    final retry = [..._failed];
+    _failed.clear();
     _target = t;
+    for (final f in retry) {
+      _queue(f.write, vehicleId: f.vehicleId);
+    }
     _loaded = false;
     _layouts = const [];
     _published = null;
@@ -110,8 +122,8 @@ class DashboardLayoutController extends ChangeNotifier {
   void _onMoving() {
     if ((moving?.value ?? false) && _editing && _target is VehicleTarget) {
       _end(EndReason.moving);
-      _publish();
     }
+    _publish();
     _notify();
   }
 
@@ -120,7 +132,7 @@ class DashboardLayoutController extends ChangeNotifier {
   LayoutTarget get target => _target;
   bool get loaded => _loaded;
   bool get editing => _editing;
-  bool get saveError => _saveError;
+  bool get saveError => _failed.any((f) => f.vehicleId == _ownerId);
   LayoutEvent? get lastEvent => _lastEvent;
   int get eventSerial => _eventSerial;
 
@@ -158,10 +170,12 @@ class DashboardLayoutController extends ChangeNotifier {
   LayoutRef get ref => LayoutRef(_epoch, active?.id ?? '');
 
   /// What is asked of the car: the tiles the plan shows, and Speed while
-  /// the phone's own car is being edited, for §8.4's gate.
+  /// the phone's own car is edited — or known to be moving, so the gate
+  /// hears it stop. Dropped when it closed edit mode, Speed went stale in
+  /// five seconds and Edit was offered again at speed, round and round.
   Set<String> get visiblePids => {
     for (final t in shown) t.pid,
-    if (_editing && _target is VehicleTarget) SpeedGate.pid,
+    if ((_editing || gated) && _target is VehicleTarget) SpeedGate.pid,
   };
 
   /// The queued writes, done. With none queued, a future of the caller's
@@ -200,8 +214,13 @@ class DashboardLayoutController extends ChangeNotifier {
   /// write — Delete all data calls this before the wipe.
   Future<void> settle() async {
     endEditing(EndReason.settled);
-    final a = active;
-    if (_saveError && a != null && a.saved) _save(a);
+    final retry = [
+      for (final f in _failed)
+        if (f.vehicleId == _ownerId) f,
+    ];
+    for (final f in retry) {
+      _queue(f.write, vehicleId: f.vehicleId);
+    }
     await idle;
   }
 
@@ -381,16 +400,33 @@ class DashboardLayoutController extends ChangeNotifier {
     return null;
   }
 
-  static String? _validName(String raw) {
+  /// The name, trimmed — or why not. Counted as the database counts it
+  /// (UTF-16 units): an emoji is two.
+  static (String?, EditOutcome?) _name(String raw) {
     final n = raw.trim();
-    return n.isEmpty || n.length > DashboardLayout.nameMax ? null : n;
+    if (n.isEmpty) return (null, EditOutcome.invalidName);
+    if (n.length > DashboardLayout.nameMax) {
+      return (null, EditOutcome.nameTooLong);
+    }
+    return (n, null);
+  }
+
+  /// A choice made now is the latest there is, even when a clock stepped
+  /// back or a backup from a fast phone left a later stamp: stamped
+  /// wall-clock time, the chosen layout was announced and never shown.
+  DateTime _stamp() {
+    final n = _now();
+    final a = active;
+    if (a == null || n.isAfter(a.selectedAt)) return n;
+    return a.selectedAt.add(const Duration(microseconds: 1));
   }
 
   /// A copy of the one shown, selected. The second is a Pro door.
   EditOutcome createLayout(LayoutRef r, String name) {
     if (_checkLayout(r) case final no?) return no;
-    final n = _validName(name);
-    if (n == null) return EditOutcome.invalidName;
+    if (gated) return EditOutcome.moving;
+    final (n, bad) = _name(name);
+    if (n == null) return bad!;
     if (!LayoutPlan.canHaveAnotherLayout(_layouts.length, isPro: _isPro)) {
       return EditOutcome.needsPro;
     }
@@ -400,7 +436,7 @@ class DashboardLayoutController extends ChangeNotifier {
       _replaceLayout(saved);
       _save(saved);
     }
-    final now = _now();
+    final now = _stamp();
     final copy = DashboardLayout(
       id: newId(),
       vehicleId: a.vehicleId,
@@ -427,7 +463,7 @@ class DashboardLayoutController extends ChangeNotifier {
     if (gated) return EditOutcome.moving;
     final i = _layouts.indexWhere((l) => l.id == id);
     if (i < 0) return EditOutcome.stale;
-    final chosen = _layouts[i].copyWith(selectedAt: _now());
+    final chosen = _layouts[i].copyWith(selectedAt: _stamp());
     _replaceLayout(chosen);
     _undo.clear();
     _event(LayoutEvent(LayoutEventKind.switched, label: chosen.name));
@@ -440,8 +476,9 @@ class DashboardLayoutController extends ChangeNotifier {
   /// The user's own words, on any plan.
   EditOutcome rename(LayoutRef r, String id, String name) {
     if (_checkLayout(r) case final no?) return no;
-    final n = _validName(name);
-    if (n == null) return EditOutcome.invalidName;
+    if (gated) return EditOutcome.moving;
+    final (n, bad) = _name(name);
+    if (n == null) return bad!;
     final i = _layouts.indexWhere((l) => l.id == id);
     if (i < 0) return EditOutcome.stale;
     final next = _layouts[i].copyWith(name: n, saved: _persists);
@@ -455,6 +492,7 @@ class DashboardLayoutController extends ChangeNotifier {
   /// shown next.
   EditOutcome deleteLayout(LayoutRef r, String id) {
     if (_checkLayout(r) case final no?) return no;
+    if (gated) return EditOutcome.moving;
     if (id != active!.id) return EditOutcome.stale;
     if (_layouts.length == 1) return EditOutcome.lastTile;
     final gone = active!;
@@ -531,16 +569,20 @@ class DashboardLayoutController extends ChangeNotifier {
     _writes = _writes.then((_) async {
       try {
         await write();
-        if (_saveError && _ownerId == vehicleId) {
-          _saveError = false;
+        if (_failed.any((f) => identical(f.write, write))) {
+          _failed.removeWhere((f) => identical(f.write, write));
           _notify();
         }
       } on Object {
-        // A car deleted under a queued save: its foreign key refused it,
-        // and it is not this Dashboard's any more.
-        if (_disposed || _ownerId != vehicleId) return;
-        _saveError = true;
-        _event(const LayoutEvent(LayoutEventKind.saveFailed));
+        // Kept to try again. A car deleted under a queued save refused it
+        // by its foreign key; it is not the one on screen, so nothing says.
+        if (_disposed) return;
+        if (!_failed.any((f) => identical(f.write, write))) {
+          _failed.add((vehicleId: vehicleId, write: write));
+        }
+        if (_ownerId == vehicleId) {
+          _event(const LayoutEvent(LayoutEventKind.saveFailed));
+        }
         _notify();
       } finally {
         _pending--;

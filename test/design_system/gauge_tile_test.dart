@@ -415,6 +415,24 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('★ a tile built already at Caution has crossed nothing', (
+      tester,
+    ) async {
+      // Edit mode and a reorder build tiles anew; a Caution already there
+      // was re-announced as a new fault each time.
+      final handle = tester.ensureSemantics();
+      live.value = sample(118);
+      await pumpDs(tester, tile());
+      expect(
+        _hasLiveRegion(
+          tester,
+          'Coolant, 118 °C, caution, outside its normal range',
+        ),
+        isFalse,
+      );
+      handle.dispose();
+    });
+
     testWidgets('liveRegion fires on the threshold crossing, not per sample', (
       tester,
     ) async {

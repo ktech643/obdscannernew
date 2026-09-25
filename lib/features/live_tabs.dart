@@ -73,6 +73,8 @@ class LiveSession extends ChangeNotifier {
     speedGate = SpeedGate(
       speed: this.session.bus.of(SpeedGate.pid),
       clock: this.session.clock,
+      link: this.session,
+      isLive: () => this.session.isLive,
     );
     dashboard = DashboardLayoutController(
       repository: layouts,

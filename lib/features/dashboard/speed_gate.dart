@@ -11,9 +11,15 @@ import '../../domain/pid_sample.dart';
 /// setting changes nothing here. [moving] notifies only when the answer
 /// flips: nothing downstream rebuilds per sample (hard rule 3).
 class SpeedGate {
-  SpeedGate({required this.speed, required this.clock}) {
+  SpeedGate({
+    required this.speed,
+    required this.clock,
+    this.link,
+    this.isLive,
+  }) {
     speed.addListener(_check);
     clock.addListener(_check);
+    link?.addListener(_check);
     _check();
   }
 
@@ -24,6 +30,13 @@ class SpeedGate {
   /// The Speed notifier on the bus, and the Dashboard's shared clock.
   final ValueListenable<PidSample?> speed;
   final ValueListenable<DateTime> clock;
+
+  /// The session, and whether it has a live link. The clock stops with the
+  /// link: after a reconnect that gave up, the last Speed reading — 68 km/h
+  /// — stayed "fresh" against a clock that no longer moved, and edit mode
+  /// stayed locked in a parked car. No link, not known to be moving.
+  final Listenable? link;
+  final bool Function()? isLive;
   final _moving = ValueNotifier<bool>(false);
 
   ValueListenable<bool> get moving => _moving;
@@ -35,11 +48,13 @@ class SpeedGate {
     return now.difference(s.at) <= freshFor && v > limitKph;
   }
 
-  void _check() => _moving.value = isMoving(speed.value, clock.value);
+  void _check() => _moving.value =
+      (isLive?.call() ?? true) && isMoving(speed.value, clock.value);
 
   void dispose() {
     speed.removeListener(_check);
     clock.removeListener(_check);
+    link?.removeListener(_check);
     _moving.dispose();
   }
 }

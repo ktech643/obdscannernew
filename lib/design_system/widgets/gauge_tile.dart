@@ -125,6 +125,10 @@ class _GaugeTileState extends State<GaugeTile> {
     widget.sample.addListener(_recompute);
     widget.clock.addListener(_recompute);
     _recompute();
+    // A tile built already at Caution has crossed nothing: it is the same
+    // reading on a new tile (edit mode, a reorder), not a new fault, and a
+    // live region here re-announced every Caution tile each time.
+    _announce = false;
   }
 
   @override
@@ -212,9 +216,17 @@ class _GaugeTileState extends State<GaugeTile> {
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
         onTap: widget.onTap,
+        // Long-press callbacks only with a long-press: any one of them makes
+        // a recogniser that, after half a second, wins the arena and does
+        // nothing — a held tile in edit mode could then not be swiped,
+        // tapped or scrolled.
         onLongPress: widget.onLongPress,
-        onLongPressEnd: (_) => setState(() => _pressed = false),
-        onLongPressCancel: () => setState(() => _pressed = false),
+        onLongPressEnd: widget.onLongPress == null
+            ? null
+            : (_) => setState(() => _pressed = false),
+        onLongPressCancel: widget.onLongPress == null
+            ? null
+            : () => setState(() => _pressed = false),
         child: AnimatedScale(
           scale: _pressed ? 0.98 : 1,
           duration: Motion.of(context, Motion.tilePress),

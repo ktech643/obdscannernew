@@ -70,6 +70,12 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final _scroll = ScrollController();
   final _histories = <String, SparklineHistory>{};
+
+  // One element per tile across normal and edit mode: rebuilt, a tile lost
+  // its semantics node (VoiceOver's focus jumped) and re-announced any
+  // Caution it was already at.
+  final _tileKeys = <String, GlobalKey>{};
+  GlobalKey _tileKey(String pid) => _tileKeys.putIfAbsent(pid, GlobalKey.new);
   late int _heard = widget.layouts.eventSerial;
   late String _owner = widget.layouts.target.key;
   SessionState? _state;
@@ -105,7 +111,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Another tab in front: edit mode ends, and Speed stops being asked for
-    // on the tabs that do not need it.
+    // on the tabs that do not need it. The sheets that hear it rebuild after
+    // the frame: they are not below this screen.
     if (!Visibility.of(context) && _c.editing) {
       _c.endEditing(EndReason.hidden);
     }
@@ -222,9 +229,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (support.known && candidateReadings(_c.tiles, support).isEmpty) {
       return AddGaugeForm.nothingLeft;
     }
-    return LayoutPlan.canAddTile(_c.tiles.length, isPro: _c.isPro)
-        ? AddGaugeForm.open
-        : AddGaugeForm.locked;
+    if (LayoutPlan.canAddTile(_c.tiles.length, isPro: _c.isPro)) {
+      return AddGaugeForm.open;
+    }
+    // §9.4: an electric car is never sold more gauges — not even a lock.
+    return _electric ? AddGaugeForm.freeLimit : AddGaugeForm.locked;
   }
 
   void _add() {
@@ -283,12 +292,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       layouts: _c,
                       onDone: _done,
                       onLayouts: _openLayouts,
+                      onRetry: _c.settle,
                       status: _status,
                     )
                   : DashboardHeader(
                       layouts: _c,
                       onEdit: _enterEdit,
                       onLayouts: _openLayouts,
+                      onRetry: _c.settle,
                     ),
             if (!_c.editing && widget.tripStrip != null) widget.tripStrip!,
             Expanded(child: _body(context, session)),
@@ -408,7 +419,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (!editing) {
       final canEdit = !_c.gated;
       return GaugeTile(
-        key: ValueKey(tile.pid),
+        key: _tileKey(tile.pid),
         spec: spec,
         sample: widget.session.bus.of(tile.pid),
         clock: widget.session.clock,
@@ -424,7 +435,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final pid = tile.pid;
     final ref = _c.ref;
     return GaugeTile(
-      key: ValueKey(pid),
+      key: _tileKey(pid),
       spec: spec,
       sample: widget.session.bus.of(pid),
       clock: widget.session.clock,
@@ -461,6 +472,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
         () => SparklineHistory(widget.session.bus.of(p)),
       );
     }
+    final kept = {for (final t in _c.tiles) t.pid};
+    _tileKeys.removeWhere((p, _) => !kept.contains(p));
     final gone = _histories.keys.where((p) => !wanted.contains(p)).toList();
     if (gone.isEmpty) return;
     final dropped = [for (final p in gone) _histories.remove(p)!];

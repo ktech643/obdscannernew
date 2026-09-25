@@ -758,6 +758,22 @@ void main() {
       expect(find.text('Add vehicle'), findsNothing, reason: 'still no form');
     });
 
+    testWidgets('★ the Pro on "Add a vehicle" is said, not only shown', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final g = newGarage(newDb());
+      await addCar(g, 'The Golf');
+      await pumpGarage(tester, garage: g, session: newSession());
+      await settle(tester);
+      // The row excludes its subtree: VoiceOver heard a plain link.
+      expect(
+        find.semantics.byLabel(RegExp('^Add a vehicle, Pro')),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
     testWidgets('delete is two steps and names what goes with it', (
       tester,
     ) async {

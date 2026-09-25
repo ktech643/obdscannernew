@@ -4,13 +4,17 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:torque_obd2/app.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
+import 'package:torque_obd2/data/repositories/vehicle_repository.dart';
 import 'package:torque_obd2/design_system/design_system.dart';
 import 'package:torque_obd2/features/dashboard/dashboard_screen.dart';
 import 'package:torque_obd2/features/garage/garage_screen.dart';
+import 'package:torque_obd2/features/live_tabs.dart';
 import 'package:torque_obd2/features/settings/settings_screen.dart';
+import 'package:torque_obd2/models/enums.dart';
 import 'package:torque_obd2/monetization/revenuecat_service.dart';
 import 'package:torque_obd2/providers/persistence.dart';
 import 'package:torque_obd2/widgets/chrome.dart' show AppTabBar;
@@ -180,6 +184,48 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
     expect(calls, contains('SystemNavigator.pop'), reason: 'out of the app');
+    await drain(tester);
+  });
+
+  testWidgets('★ Android back in edit mode leaves edit mode, not the app', (
+    tester,
+  ) async {
+    // The shell asked the tab's navigator only when it could pop, so the
+    // Dashboard's own PopScope was never heard and back closed the app.
+    final calls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        calls.add(call.method);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.runAsync(
+      () =>
+          VehicleRepository(db)
+              .create(nickname: 'Golf', fuel: VehicleFuel.petrol),
+    );
+    await pumpApp(tester);
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+    await tester.tap(find.text('Edit'));
+    await tester.pump(const Duration(milliseconds: 50));
+    final live = tester
+        .element(find.byType(DashboardScreen))
+        .read<LiveSession>();
+    expect(live.dashboard.editing, isTrue);
+
+    await tester.binding.handlePopRoute();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(live.dashboard.editing, isFalse);
+    expect(calls, isNot(contains('SystemNavigator.pop')));
     await drain(tester);
   });
 

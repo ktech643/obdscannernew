@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:torque_obd2/core/platform/platform_info.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
+import 'package:torque_obd2/data/repositories/layout_repository.dart';
 import 'package:torque_obd2/design_system/design_system.dart';
 import 'package:torque_obd2/features/dashboard/dashboard_grid.dart';
 import 'package:torque_obd2/features/dashboard/dashboard_layout.dart';
@@ -70,8 +71,10 @@ void main() {
     VoidCallback? onAddVehicle,
     ValueListenable<bool>? moving,
     ValueNotifier<int>? tab,
+    LayoutRepository? repository,
   }) async {
     final c = DashboardLayoutController(
+      repository: repository,
       publish: session.setVisible,
       moving: moving,
       defaults: [for (final p in tiles) LayoutTile(p)],
@@ -464,9 +467,21 @@ void main() {
         onUpgrade: () {},
       );
       await enterEdit(tester);
-      await tester.tap(find.text('Add gauge'));
+      // Not even a lock: a statement where the door would be.
+      expect(find.byIcon(Icons.lock_outline), findsNothing);
+      expect(
+        find.text(
+          'The free plan shows 6 gauges. Tap one to show something '
+          'else.',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Layouts'));
       await settle(tester);
-      expect(find.text('6 gauges on the free plan'), findsOneWidget);
+      expect(find.text('Pro'), findsNothing, reason: 'no Pro chips');
+      await tester.tap(find.text('New layout'));
+      await settle(tester);
+      expect(find.text('One layout on the free plan'), findsOneWidget);
       expect(find.text('See Pro'), findsNothing);
     });
 
@@ -585,6 +600,284 @@ void main() {
     expect(tester.getCenter(grips.at(0)).dy, tester.getCenter(grips.at(1)).dy);
   });
 
+  group('★ the review of slice 16', () {
+    testWidgets('★ a tile held for a second can still be swiped, tapped and '
+        'scrolled', (tester) async {
+      // A long-press recogniser with nothing to do won the arena at 500 ms.
+      final c = await pumpScreen(tester, newSession());
+      await enterEdit(tester);
+      final tile = find.byType(GaugeTile).at(2);
+      final width = tester.getSize(tile).width;
+      final g = await tester.startGesture(tester.getCenter(tile));
+      await tester.pump(const Duration(milliseconds: 700));
+      // As tester.drag does: past the touch slop, then the rest.
+      await g.moveBy(const Offset(-20, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      await g.moveBy(Offset(-width * 0.5, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      await g.up();
+      await settle(tester);
+      expect(c.tiles, hasLength(5), reason: 'the held swipe removed');
+
+      final h = await tester.startGesture(
+        tester.getCenter(find.byType(GaugeTile).first),
+      );
+      await tester.pump(const Duration(milliseconds: 700));
+      await h.up();
+      await settle(tester);
+      expect(find.text('Show as'), findsOneWidget, reason: 'the held tap');
+    });
+
+    testWidgets('★ the Layouts sheet goes when the car starts moving', (
+      tester,
+    ) async {
+      final moving = ValueNotifier(false);
+      final c = await pumpScreen(
+        tester,
+        newSession(),
+        pro: true,
+        moving: moving,
+      );
+      c.createLayout(c.ref, 'Two');
+      await enterEdit(tester);
+      await tester.tap(find.text('Layouts'));
+      await settle(tester);
+      expect(find.text('New layout'), findsOneWidget);
+      moving.value = true;
+      await settle(tester);
+      expect(find.text('New layout'), findsNothing);
+      expect(find.textContaining('Delete'), findsNothing);
+    });
+
+    testWidgets('★ the Layouts sheet goes when the car changes under it', (
+      tester,
+    ) async {
+      final c = await pumpScreen(tester, newSession(), pro: true);
+      c.createLayout(c.ref, 'Two');
+      await settle(tester);
+      await tester.tap(find.text('Two')); // the header's layout button
+      await settle(tester);
+      expect(find.text('New layout'), findsOneWidget);
+      // Chosen in the Garage while this sheet waited on the Dashboard's tab:
+      // it came back offering the new car's layouts from the old car's sheet.
+      c.setTarget(VehicleTarget(car().copyWith(id: 'civic')));
+      await settle(tester);
+      expect(find.text('New layout'), findsNothing);
+    });
+
+    testWidgets('★ a tab switch with the Layouts sheet open throws nothing', (
+      tester,
+    ) async {
+      final tab = ValueNotifier(0);
+      final c = await pumpScreen(tester, newSession(), tab: tab);
+      await enterEdit(tester);
+      await tester.tap(find.text('Layouts'));
+      await settle(tester);
+      tab.value = 1;
+      await settle(tester);
+      // It rebuilt a sibling route in the middle of the Dashboard's build.
+      expect(tester.takeException(), isNull);
+      expect(c.editing, isFalse);
+    });
+
+    testWidgets('★ a tile sheet whose tile is held after a lapse closes', (
+      tester,
+    ) async {
+      final c = await pumpScreen(
+        tester,
+        newSession(),
+        pro: true,
+        tiles: const [...six, '012F'],
+      );
+      await enterEdit(tester);
+      await tester.tap(find.byType(GaugeTile).at(6));
+      await settle(tester);
+      expect(find.text('Show as'), findsOneWidget);
+      c.isPro = false;
+      await settle(tester);
+      // It went blank and stayed.
+      expect(find.text('Show as'), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+    });
+
+    testWidgets('★ into edit mode, a tile keeps its node — focus stays', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final session = newSession();
+      await pumpScreen(tester, session);
+      unawaited(
+        session.connect(MockTransport(traces['clean_can']!, speed: 100)),
+      );
+      await pumpUntil(tester, () => session.bus.of('0105').value != null);
+      await tester.pump();
+      final before = nodeOf('0105').id;
+      // Rebuilt, every tile's node went, and VoiceOver's focus with it.
+      tester.semantics.customAction(
+        tileNode('0105'),
+        TileActions.editDashboard,
+      );
+      await settle(tester);
+      expect(nodeOf('0105').id, before);
+      handle.dispose();
+      await quiesce(tester, session);
+    });
+
+    testWidgets('★ the Pro on "New layout" is said, not only shown', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await pumpScreen(tester, newSession());
+      await enterEdit(tester);
+      await tester.tap(find.text('Layouts'));
+      await settle(tester);
+      expect(
+        find.semantics.byLabel(RegExp('^New layout, Pro')),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    testWidgets('★ an armed Delete never falls on another layout', (
+      tester,
+    ) async {
+      final c = await pumpScreen(tester, newSession(), pro: true);
+      c.createLayout(c.ref, 'Two');
+      await settle(tester);
+      await tester.tap(find.text('Two')); // the header's layout button
+      await settle(tester);
+      await tester.tap(find.text('Delete “Two”'));
+      await settle(tester);
+      expect(find.text('Tap again to delete “Two”'), findsOneWidget);
+      await tester.tap(find.text('Main'));
+      await settle(tester);
+      // The same armed button, now for Main, deleted it on the next tap.
+      await tester.tap(find.textContaining('Delete “Main”'));
+      await settle(tester);
+      expect(
+        c.layouts,
+        hasLength(2),
+        reason: 'one tap arms, it does not delete',
+      );
+    });
+
+    testWidgets('★ a failed save is said once, and after Done still has '
+        'its way to try again', (tester) async {
+      final repo = _RefusingRepo();
+      final c = await pumpScreen(tester, newSession(), repository: repo);
+      await settle(tester);
+      await enterEdit(tester);
+      c.remove(c.ref, '0142');
+      await settle(tester);
+      // The event line and the error line said it twice.
+      expect(find.textContaining("Couldn't save"), findsOneWidget);
+      await tester.tap(find.text('Done'));
+      await settle(tester);
+      // "Tap Done to try again" — with Done gone.
+      expect(find.textContaining("Couldn't save"), findsOneWidget);
+      repo.refuse = false;
+      await tester.tap(find.text('Try again'));
+      await settle(tester);
+      expect(find.textContaining("Couldn't save"), findsNothing);
+      expect(repo.rows.values.single.tilesJson, isNot(contains('0142')));
+    });
+
+    testWidgets('★ the last Undo going does not hand its node to Layouts', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final c = await pumpScreen(tester, newSession());
+      await enterEdit(tester);
+      c.remove(c.ref, '0142');
+      await settle(tester);
+      final before = tester.getSemantics(find.text('Layouts')).id;
+      c.undo();
+      await settle(tester);
+      // Unkeyed, the focused Undo's node became "Layouts".
+      expect(tester.getSemantics(find.text('Layouts')).id, before);
+      handle.dispose();
+    });
+
+    testWidgets('★ a tile moved first keeps "Move later" on its own node', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final c = await pumpScreen(tester, newSession());
+      await enterEdit(tester);
+      await tester.tap(find.byType(GaugeTile).at(1));
+      await settle(tester);
+      final before = tester.getSemantics(find.text('Move later')).id;
+      await tester.tap(find.text('Move earlier'));
+      await settle(tester);
+      expect(c.tiles.first.pid, six[1]);
+      // Unkeyed, the focused "Move earlier" became "Move later" in place.
+      expect(tester.getSemantics(find.text('Move later')).id, before);
+      handle.dispose();
+    });
+
+    testWidgets('★ a name the database cannot hold says why, and stays', (
+      tester,
+    ) async {
+      final c = await pumpScreen(tester, newSession(), pro: true);
+      await enterEdit(tester);
+      await tester.tap(find.text('Layouts'));
+      await settle(tester);
+      await tester.tap(find.text('Rename “Main”'));
+      await settle(tester);
+      // Forty characters to the field, 41 to the database: an emoji is two.
+      await tester.enterText(find.byType(TextField), '${'x' * 39}🚗');
+      await tester.tap(find.text('Save'));
+      await settle(tester);
+      expect(find.textContaining('Keep it to 40 characters'), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget, reason: 'still open');
+      expect(c.active!.name, 'Main');
+    });
+
+    testWidgets('★ the name sheet goes when the car starts moving', (
+      tester,
+    ) async {
+      final moving = ValueNotifier(false);
+      await pumpScreen(tester, newSession(), pro: true, moving: moving);
+      await enterEdit(tester);
+      await tester.tap(find.text('Layouts'));
+      await settle(tester);
+      await tester.tap(find.text('New layout'));
+      await settle(tester);
+      expect(find.byType(TextField), findsOneWidget);
+      moving.value = true;
+      await settle(tester);
+      // §8.4: no typing a name above 5 km/h.
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('★ the name sheet goes when its layout is not shown any more', (
+      tester,
+    ) async {
+      final c = await pumpScreen(tester, newSession(), pro: true);
+      await enterEdit(tester);
+      await tester.tap(find.text('Layouts'));
+      await settle(tester);
+      await tester.tap(find.text('Rename “Main”'));
+      await settle(tester);
+      expect(find.byType(TextField), findsOneWidget);
+      c.setTarget(VehicleTarget(car().copyWith(id: 'civic')));
+      await settle(tester);
+      // Save was refused as stale, and the sheet closed without a word.
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('★ no car, no layout button — even on Pro', (tester) async {
+      await pumpScreen(
+        tester,
+        newSession(),
+        pro: true,
+        target: const NoVehicleTarget(),
+      );
+      expect(find.text('Main'), findsNothing);
+      expect(find.text('Edit'), findsOneWidget);
+    });
+  });
+
   test('columnsFor: two up while a line of text still fits', () {
     const one = TextScaler.linear(1), big = TextScaler.linear(2);
     expect(DashboardGrid.columnsFor(320, one), 2);
@@ -639,4 +932,28 @@ void main() {
       );
     }
   });
+}
+
+/// A disk that refuses every write until told otherwise.
+class _RefusingRepo implements LayoutRepository {
+  bool refuse = true;
+  final rows = <String, DashboardLayoutRow>{};
+
+  @override
+  Future<List<DashboardLayoutRow>> forVehicle(String vehicleId) async => [
+    for (final r in rows.values)
+      if (r.vehicleId == vehicleId) r,
+  ];
+
+  @override
+  Future<void> save(DashboardLayoutRow row) async {
+    if (refuse) throw StateError('disk full');
+    rows[row.id] = row;
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    if (refuse) throw StateError('disk full');
+    rows.remove(id);
+  }
 }

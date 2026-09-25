@@ -1255,6 +1255,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 15 done 2026-09-25 — the Garage's maintenance log, reminders and fuel log, see §B.27
          ◐ review of slice 15, 2026-09-25 — 25 confirmed, all fixed, see §B.28
          ◐ slice 16 done 2026-09-26 — Dashboard grid editing and layouts per vehicle, see §B.29
+         ◐ review of slice 16, 2026-09-26 — 19 confirmed, all fixed, see §B.30
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -2195,6 +2196,86 @@ velocity at all (a timed drag at 300 Hz does). 837 tests, analyzer clean.
 §8.4 once-a-day driving warning and B.3's fault pulse; renaming or deleting a
 layout other than the one shown; the same PID twice. Whether §7.2's caps
 count per vehicle or in total is still the open question from §B.28.
+
+## B.30 Adversarial review of slice 16 (2026-09-26)
+
+Six lenses (gestures, accessibility, the plan, data, wiring, test quality),
+three refuters each, over `8f916ba`: 35 findings, 19 survived all three —
+fourteen distinct defects after duplicates. Six of the refuted were true as
+described and are fixed anyway, and one more turned up while fixing the rest (a
+name sheet left open while another car was chosen). Every ★ test was seen
+failing with its fix removed (40 reverts). Three pieces that no test could see
+are gone rather than kept unproven: the Dashboard's early return for an
+electric car's statement tile (it has no tap to call it), the Layouts sheet's
+"another car" check (a new car empties the layouts, and the sheet already
+closes on none), and a deferral of edit mode's end on a tab switch that the
+sheets' own deferral had already made safe.
+
+- **A held tile was lost.** `GaugeTile` gave the long-press end and cancel
+  callbacks even with no long-press, so in edit mode a recogniser won the arena
+  at half a second and did nothing: no swipe, no tap, no scroll. They come only
+  with a long-press.
+- **§8.4 at speed.** Only `select` was gated: from a Layouts sheet opened
+  parked, New layout, Rename and Delete switched the grid at speed. All three
+  answer `moving`, and the Layouts and name sheets close when the car starts
+  moving. Speed stays asked for while the phone's car is known to be moving —
+  dropped with edit mode on a layout with no Speed tile, it went stale in five
+  seconds and Edit came back at speed, round and round. And the gate hears the
+  link: after a reconnect gave up, the clock stopped with the last 68 km/h
+  still "fresh" and edit mode stayed locked in a parked car. No live link, not
+  known to be moving.
+- **The sheets.** A tab switch in edit mode with the Layouts sheet open threw
+  `setState() called during build`: edit mode ends after the frame. A tile
+  sheet whose tile became held after a lapse went blank and stayed; it closes.
+  The Layouts sheet closes when the car changes under it, and the name sheet
+  when the layout it names is not shown any more — Save was refused as stale
+  and closed without a word. An armed Delete, then another layout chosen,
+  deleted that one on the next tap: the button is keyed by its layout.
+- **Time.** Select and New layout stamped the wall clock. With a stored
+  `selectedAt` ahead of the phone — a clock that stepped back, a backup from a
+  phone set ahead — the screen said "Showing X" and kept the old layout. A
+  choice is stamped after the latest there is.
+- **Failed writes.** The retry re-saved only the shown layout, and any later
+  save that worked cleared the error, so a failed delete came back on the next
+  launch. Each failed write is kept and retried until it lands (`settle`, which
+  Done and the new Try again call). A change of car retries the last car's
+  quietly; the error and its words are about the car on screen only. The error
+  line — "Couldn't save the last change." with Try again — shows outside edit
+  mode too: after Done it had pointed at a Done that was gone, and in edit mode
+  the sentence was said twice.
+- **Names and tiles as stored.** The field counts characters, the database
+  UTF-16 units: forty with an emoji passed the field, and Save said "A layout
+  needs a name". It says "Keep it to 40 characters — an emoji counts as two"
+  (`EditOutcome.nameTooLong`). A rename or a switch wrote the tiles back
+  re-encoded, losing readings a later build added and a list this one could not
+  read; the row's own list is written until a tile is edited (`storedTiles`).
+- **The plan.** An electric car was shown a locked "Add gauge, Pro" tile and
+  Pro chips. It gets a statement — "The free plan shows 6 gauges. Tap one to
+  show something else." — and "One layout on the free plan" (§9.4). With no car
+  the header offered a Layouts sheet whose every action was refused; the button
+  is for a car or the demo.
+- **Accessibility.** Entering or leaving edit mode re-announced every tile at
+  Caution as a new alert: a tile built at Caution has crossed nothing. A tile
+  is one element across both modes (a `GlobalKey` per reading), so VoiceOver's
+  focus stays on it. `ListRow.trailingLabel` says the Pro chips — on New
+  layout, the other layouts, and the Garage's Reports and Add a vehicle rows,
+  which were never spoken either. Undo and Layouts, Move earlier and Move
+  later, are keyed: a button that goes no longer hands its node, and the focus,
+  to the other.
+- **Back.** §B.29's shell change (`maybePop` first) has its test: back in edit
+  mode leaves edit mode, not the app.
+
+**Refuted, not changed.** Two quick taps on × remove two tiles — each is a
+removal asked for, and Undo is at the top. A cancelled drag reaches the
+swipe's end only before the drag is won, below the distance that removes. A
+merge import takes the backup's `selectedAt` for a layout it knows — the
+import's rule for every row. At a 5↔6 km/h crawl `moving` flips with the
+readings; it notifies only on a flip, and §8.4 draws the line at 5. The
+remaining test-quality findings (LiveSession's choice of whose layouts, the
+free plan's `select`, the electric-by-support rule) describe tests that could
+miss a future bug in code that is right.
+
+865 tests, analyzer clean.
 
 ## HARD RULES
 

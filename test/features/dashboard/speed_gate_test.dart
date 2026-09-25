@@ -41,6 +41,24 @@ void main() {
     expect(flips, 2);
   });
 
+  test('★ no live link, not known to be moving', () {
+    // The clock stops with the link; after a reconnect gave up, the last
+    // 68 km/h stayed "fresh" and edit mode stayed locked in a parked car.
+    final speed = ValueNotifier<PidSample?>(kph(68));
+    final clock = ValueNotifier<DateTime>(t);
+    final link = ValueNotifier<bool>(true);
+    final gate = SpeedGate(
+      speed: speed,
+      clock: clock,
+      link: link,
+      isLive: () => link.value,
+    );
+    addTearDown(gate.dispose);
+    expect(gate.moving.value, isTrue);
+    link.value = false;
+    expect(gate.moving.value, isFalse);
+  });
+
   test(
     'a trace keeps a minute, spaced, and publishes a new list each time',
     () {

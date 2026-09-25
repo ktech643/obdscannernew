@@ -55,6 +55,7 @@ class ListRow extends StatelessWidget {
     this.value,
     this.tone = Tell.none,
     this.trailing,
+    this.trailingLabel,
     this.destructive = false,
     this.enabled = true,
     this.onTap,
@@ -65,6 +66,10 @@ class ListRow extends StatelessWidget {
   final String? value;
   final Tell tone;
   final Widget? trailing;
+
+  /// What [trailing] says, for a screen reader — the row excludes its
+  /// subtree, so a "Pro" chip drawn there was never spoken.
+  final String? trailingLabel;
   final bool destructive;
 
   /// False for a control that exists but cannot be used now.
@@ -79,7 +84,7 @@ class ListRow extends StatelessWidget {
       button: tappable,
       enabled: tappable ? true : (enabled ? null : false),
       onTap: tappable ? onTap : null,
-      label: [title, ?value, ?subtitle].join(', '),
+      label: [title, ?value, ?trailingLabel, ?subtitle].join(', '),
       child: ExcludeSemantics(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,

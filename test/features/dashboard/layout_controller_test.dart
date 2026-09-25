@@ -318,7 +318,8 @@ void main() {
     expect(c.deleteLayout(c.ref, main.id), EditOutcome.done);
     expect(c.active!.name, 'Track');
     expect(c.deleteLayout(c.ref, c.active!.id), EditOutcome.lastTile);
-    expect(c.rename(c.ref, c.active!.id, 'x' * 41), EditOutcome.invalidName);
+    expect(c.rename(c.ref, c.active!.id, 'x' * 41), EditOutcome.nameTooLong);
+    expect(c.rename(c.ref, c.active!.id, '   '), EditOutcome.invalidName);
     c.isPro = false;
     expect(c.rename(c.ref, c.active!.id, 'Daily'), EditOutcome.done);
     await c.idle;
@@ -395,6 +396,145 @@ void main() {
     expect(pids(c.tiles), ['015C']);
   });
 
+  group('★ the review of slice 16', () {
+    test('★ moving: no new layout, no delete, no rename — not just no '
+        'switch', () async {
+      final c = await forGolf(pro: true);
+      expect(c.createLayout(c.ref, 'Two'), EditOutcome.done);
+      moving.value = true;
+      // From a Layouts sheet opened while parked, delete and new switched
+      // the grid at speed.
+      expect(c.createLayout(c.ref, 'Three'), EditOutcome.moving);
+      expect(c.deleteLayout(c.ref, c.active!.id), EditOutcome.moving);
+      expect(c.rename(c.ref, c.active!.id, 'Track'), EditOutcome.moving);
+      expect(c.active!.name, 'Two');
+      expect(c.layouts, hasLength(2));
+    });
+
+    test('★ a choice is shown even when the clock stepped back', () async {
+      // A layout chosen while the clock was a day ahead.
+      await storeLayout(['0105'], id: 'ahead', at: 0);
+      await repo.save(
+        (await rows()).single.copyWith(selectedAt: DateTime.utc(2030)),
+      );
+      final c = await forGolf(pro: true);
+      expect(c.createLayout(c.ref, 'New'), EditOutcome.done);
+      // Stamped wall-clock time, it was announced and never shown.
+      expect(c.active!.name, 'New');
+      final ahead = c.layouts.firstWhere((l) => l.name == 'Main');
+      expect(c.select(c.ref, ahead.id), EditOutcome.done);
+      expect(c.active!.id, ahead.id);
+    });
+
+    test('★ a failed delete is tried again until it lands, and the error '
+        'stays until then', () async {
+      final flaky = _FlakyRepo(db)..failDeletes = 1;
+      final c = DashboardLayoutController(repository: flaky, publish: (_) {})
+        ..isPro = true;
+      addTearDown(c.dispose);
+      c.setTarget(VehicleTarget(golf));
+      await Future<void>.delayed(Duration.zero);
+      c.createLayout(c.ref, 'Two');
+      await c.idle;
+      final two = c.active!;
+      c.deleteLayout(c.ref, two.id);
+      await c.idle;
+      expect(c.saveError, isTrue);
+      // A later save that works must not clear it: the delete never landed.
+      c.rename(c.ref, c.active!.id, 'Daily');
+      await c.idle;
+      expect(c.saveError, isTrue);
+      await c.settle(); // Done / Try again
+      expect(c.saveError, isFalse);
+      expect((await rows()).map((r) => r.id), isNot(contains(two.id)));
+    });
+
+    test(
+      '★ the error is about the car on screen, not the one before',
+      () async {
+        final civic = await VehicleRepository(db)
+            .create(nickname: 'Civic', fuel: VehicleFuel.petrol);
+        final flaky = _FlakyRepo(db)..failSaves = 1;
+        final c = DashboardLayoutController(repository: flaky, publish: (_) {});
+        addTearDown(c.dispose);
+        c.setTarget(VehicleTarget(golf));
+        await Future<void>.delayed(Duration.zero);
+        c.beginEditing();
+        c.remove(c.ref, '0142');
+        await c.idle;
+        expect(c.saveError, isTrue);
+        c.setTarget(VehicleTarget(civic));
+        await Future<void>.delayed(Duration.zero);
+        await c.idle;
+        expect(c.saveError, isFalse, reason: 'retried quietly, and it landed');
+        expect(
+          pids(decodeTiles((await rows()).single.tilesJson)),
+          isNot(contains('0142')),
+        );
+      },
+    );
+
+    test('★ a retried write for the car before fails without a word here, '
+        'and lands when that car is back', () async {
+      final civic = await VehicleRepository(db)
+          .create(nickname: 'Civic', fuel: VehicleFuel.petrol);
+      final flaky = _FlakyRepo(db)..failSaves = 2;
+      final c = DashboardLayoutController(repository: flaky, publish: (_) {});
+      addTearDown(c.dispose);
+      c.setTarget(VehicleTarget(golf));
+      await Future<void>.delayed(Duration.zero);
+      c.beginEditing();
+      c.remove(c.ref, '0142');
+      await c.idle;
+      c.setTarget(VehicleTarget(civic));
+      await Future<void>.delayed(Duration.zero);
+      await c.idle;
+      // The Golf's failure, said over the Civic's dashboard.
+      expect(c.lastEvent?.kind, isNot(LayoutEventKind.saveFailed));
+      expect(c.saveError, isFalse);
+      c.setTarget(VehicleTarget(golf));
+      await Future<void>.delayed(Duration.zero);
+      await c.idle;
+      expect(
+        pids(decodeTiles((await rows()).single.tilesJson)),
+        isNot(contains('0142')),
+      );
+    });
+
+    test('★ readings this build cannot read survive a rename', () async {
+      // A later build wrote a reading this one does not know.
+      const later = '[{"pid":"0105","variant":"numeric"},{"pid":"01A6"}]';
+      await repo.save(
+        DashboardLayoutRow(
+          id: 'l'.padRight(32, '0'),
+          vehicleId: golf.id,
+          name: 'Main',
+          tilesJson: later,
+          createdAt: DateTime.utc(2026, 9, 1),
+          selectedAt: DateTime.utc(2026, 9, 1),
+        ),
+      );
+      final c = await forGolf();
+      expect(c.rename(c.ref, c.active!.id, 'Daily'), EditOutcome.done);
+      await c.idle;
+      expect((await rows()).single.tilesJson, later);
+    });
+
+    test(
+      '★ Speed stays asked for while moving, so the gate hears it stop',
+      () async {
+        await storeLayout(['0105']);
+        await forGolf();
+        moving.value = true;
+        // Dropped when edit mode ended, it went stale in five seconds and
+        // Edit came back at speed.
+        expect(published.last, {'0105', '010D'});
+        moving.value = false;
+        expect(published.last, {'0105'});
+      },
+    );
+  });
+
   group('decodeTiles never throws', () {
     test('bad input gives nothing, and what is readable is kept', () {
       expect(decodeTiles('not json'), isEmpty);
@@ -418,4 +558,29 @@ void main() {
       expect(decodeTiles(encodeTiles(tiles)), tiles);
     });
   });
+}
+
+/// A repository whose next writes fail, then work.
+class _FlakyRepo extends LayoutRepository {
+  _FlakyRepo(super.db);
+  int failSaves = 0;
+  int failDeletes = 0;
+
+  @override
+  Future<void> save(DashboardLayoutRow row) async {
+    if (failSaves > 0) {
+      failSaves--;
+      throw StateError('disk full');
+    }
+    return super.save(row);
+  }
+
+  @override
+  Future<void> delete(String id) async {
+    if (failDeletes > 0) {
+      failDeletes--;
+      throw StateError('disk full');
+    }
+    return super.delete(id);
+  }
 }
