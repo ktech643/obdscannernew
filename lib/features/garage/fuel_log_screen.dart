@@ -412,7 +412,12 @@ class _FuelEntryFormScreenState extends State<FuelEntryFormScreen> {
               ),
               LabelledField(
                 label: 'Odometer (${widget.unit.label})',
-                hint: '142380',
+                // The car's reading now, as the reminder form gives it —
+                // an example number here read as one the app believed.
+                hint: switch (_vehicleNow()?.odometerKm) {
+                  null => 'The reading on the dash',
+                  final km => 'Now ${Distance.display(km, widget.unit)}',
+                },
                 controller: _odometer,
                 keyboard: number,
                 autofocus: !editing,

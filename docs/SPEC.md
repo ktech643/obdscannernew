@@ -1974,6 +1974,38 @@ real in-memory database), `live_garage_tab_test.dart` (the wiring, the
 currency, the electric car). Each ★ test seen failing with its piece removed.
 728 tests, analyzer clean.
 
+**On the simulator** (iPhone 17 Pro, iOS; a vehicle, an Oil reminder from the
+preset, a service record, two full tanks). Everything computed what it should
+— the preset's 152,380 km and 27 Mar 2027, the record moving the car to
+150,100 and the reminder to "Due in 2,280 km", 6.3 L/100 km over 600 km — and
+four things only a screen showed were fixed:
+
+- **`ListRow` put a value mid-row.** `Expanded(title)` beside `Flexible(value)`
+  split the row in two, so "0 scans ›" and "None overdue ›" sat in the middle
+  and a reminder's subtitle wrapped in half the width. The value now takes its
+  own width, up to 45% of *the row* (a `LayoutBuilder`, not the screen — a
+  sheet can be narrower), and the title the rest.
+- **`ValueList` put a value beside its label.** Two `Flexible`s each held half
+  the row and both packed left: "Petrol" sat just after "Fuel", and a VIN or
+  "ISO 15765-4 CAN 11-bit 500k" beside a short label wrapped mid-word in half
+  the width it had. The label keeps its own width up to half the row; the
+  value takes the rest, flush right. The `value_list` and `connect_connected`
+  goldens had recorded the old layout and are regenerated — a golden taken of
+  a bug certifies it.
+- **The date sat 4 pt left of the fields above it.** A filled `TextField`
+  adds 4 inside its `contentPadding` (Flutter's `_kInputExtraPadding`); the
+  date box had the same 12 and no such gap. It is 16 now, and the test
+  compares the two rendered insets rather than either number.
+- **The fill-up's reading hint was an example, "142380".** Grey, in a
+  required field, below a car that read 150,100, it looked like a reading the
+  app believed. It is the car's reading now ("Now 150,100"), from the garage
+  rather than the screen's copy of the vehicle, as the reminder form does.
+
+Not changed, for a decision: a logged "Oil and filter" service does not mark
+the Oil reminder done — §5.5 does not link the two, and matching them by title
+would be a guess. Golden-diff images (`**/failures/*.png`, four committed in
+slice 3) are ignored now. 734 tests, analyzer clean.
+
 ## HARD RULES
 
 1. `lib/protocol/` imports nothing from `package:flutter`. Ever.

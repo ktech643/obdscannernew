@@ -63,6 +63,66 @@ void main() {
     handle.dispose();
   });
 
+  testWidgets('★ a short value leaves the chevron at the edge and the title '
+      'its width', (tester) async {
+    // Seen on the simulator: "0 scans ›" sat mid-row, and a reminder's
+    // subtitle wrapped in half the width beside "Due in 10,000 km".
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pump(
+      tester,
+      ListRow(
+        title: 'Diagnostic history',
+        subtitle: 'Every 10,000 km or 6 months · next at 152,380 km',
+        value: '0 scans',
+        onTap: () {},
+      ),
+    );
+    final chevron = tester.getRect(find.byIcon(Icons.chevron_right));
+    expect(chevron.right, closeTo(390 - Space.gutter, 1));
+    final value = tester.getRect(find.text('0 scans'));
+    expect(value.right, closeTo(chevron.left - Space.x8, 1));
+    final subtitle = tester.getRect(
+      find.text('Every 10,000 km or 6 months · next at 152,380 km'),
+    );
+    expect(subtitle.width, greaterThan(390 * 0.5), reason: 'not half');
+  });
+
+  testWidgets('★ in a narrow sheet a long value still leaves the title room', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const width = 240.0;
+    await pump(
+      tester,
+      Center(
+        child: SizedBox(
+          width: width,
+          child: ListRow(
+            title: 'Oil and filter',
+            value: 'Due in 10,000 km or 6 months',
+            onTap: () {},
+          ),
+        ),
+      ),
+    );
+    const inner = width - Space.gutter * 2;
+    // Sized from the screen, the value took 161 of these 208 and left the
+    // title seven pixels.
+    expect(
+      tester.getSize(find.text('Due in 10,000 km or 6 months')).width,
+      lessThanOrEqualTo(inner * 0.45 + 0.5),
+    );
+    expect(
+      tester.getSize(find.text('Oil and filter')).width,
+      greaterThan(inner * 0.3),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('★ the share anchor is clipped to the screen', (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;

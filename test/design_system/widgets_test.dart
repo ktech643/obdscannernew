@@ -510,6 +510,49 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('★ ValueList: the value is flush right, not beside its label', (
+      tester,
+    ) async {
+      // Seen on the Garage card: "Petrol" sat just after "Fuel", and each
+      // row's value started wherever its own label ended.
+      await pumpDs(
+        tester,
+        const SizedBox(
+          width: 328,
+          child: ValueList(
+            rows: [
+              ValueRow('Fuel', 'Petrol'),
+              ValueRow('Odometer', '142,380 km'),
+            ],
+          ),
+        ),
+        height: 200,
+      );
+      final list = tester.getRect(find.byType(ValueList));
+      for (final v in ['Petrol', '142,380 km']) {
+        expect(tester.getRect(find.text(v)).right, closeTo(list.right, 1));
+      }
+      expect(tester.getRect(find.text('Fuel')).left, closeTo(list.left, 1));
+    });
+
+    testWidgets('★ ValueList: a short label leaves a long value the row', (
+      tester,
+    ) async {
+      await pumpDs(
+        tester,
+        const SizedBox(
+          width: 240,
+          child: ValueList(rows: [ValueRow('VIN', 'WVWZZZ1KZBW000001')]),
+        ),
+        height: 200,
+      );
+      // Two Flexibles held it to half the row beside a three-letter label.
+      expect(
+        tester.getSize(find.text('WVWZZZ1KZBW000001')).width,
+        greaterThan(240 / 2),
+      );
+    });
+
     testWidgets('★ the tile skeleton is exactly the live tile\'s height', (
       tester,
     ) async {

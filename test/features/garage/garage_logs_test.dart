@@ -435,6 +435,26 @@ void main() {
       await drain(tester);
     });
 
+    testWidgets('★ the reading hint is the car\'s now, not an example', (
+      tester,
+    ) async {
+      await seed(tester);
+      // A service record moved it after this screen's vehicle was read.
+      await garage.updateOdometer(car.id, 150100);
+      for (var i = 0; i < 100 && garage.all.first.odometerKm != 150100; i++) {
+        await tester.pump(const Duration(milliseconds: 10));
+      }
+      await pumpScreen(tester, FuelLogScreen(garage: garage, vehicle: car));
+      await tester.tap(find.text('Add a fill-up'));
+      await settle(tester);
+      final hint = tester
+          .widget<TextField>(field('Odometer (km)'))
+          .decoration
+          ?.hintText;
+      expect(hint, 'Now 150,100');
+      await drain(tester);
+    });
+
     testWidgets('★ a fill-up needs its reading and its litres; an older '
         'reading is a caution, not a refusal', (tester) async {
       await seed(tester);

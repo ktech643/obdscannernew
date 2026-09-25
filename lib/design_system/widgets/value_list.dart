@@ -17,8 +17,12 @@ class ValueRow {
 
 /// SPEC B.5 — `ValueList`: dense label/value rows, hairlines between,
 /// radius 0. Lists stay quiet; the boldness was spent on the Dashboard.
-/// Both columns are flexible, so a long protocol name or a VIN at text
-/// scale 2.0 wraps rather than overflows.
+/// The label keeps its own width up to half the row and the value takes
+/// the rest, flush right, so a long protocol name or a VIN at text scale
+/// 2.0 wraps rather than overflows. Two `Flexible`s did that too, but
+/// each was held to half the row and both packed to the left: the value
+/// sat wherever its label ended, and a VIN beside "VIN" wrapped in half
+/// the width it had.
 class ValueList extends StatelessWidget {
   const ValueList({super.key, required this.rows});
   final List<ValueRow> rows;
@@ -69,49 +73,52 @@ class _Row extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: ValueList.rowHeight),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: Space.x8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    row.label,
-                    style: TorqueType.body.copyWith(color: t.inkSecondary),
+            child: LayoutBuilder(
+              builder: (context, box) => Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: box.maxWidth / 2),
+                    child: Text(
+                      row.label,
+                      style: TorqueType.body.copyWith(color: t.inkSecondary),
+                    ),
                   ),
-                ),
-                const SizedBox(width: Space.x12),
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (row.tone != Tell.none && !absent) ...[
-                            Icon(row.tone.glyph, size: 14, color: color),
-                            const SizedBox(width: Space.x4),
+                  const SizedBox(width: Space.x12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (row.tone != Tell.none && !absent) ...[
+                              Icon(row.tone.glyph, size: 14, color: color),
+                              const SizedBox(width: Space.x4),
+                            ],
+                            Flexible(
+                              child: Text(
+                                text,
+                                textAlign: TextAlign.end,
+                                style: TorqueType.body.copyWith(color: color),
+                              ),
+                            ),
                           ],
-                          Flexible(
-                            child: Text(
-                              text,
-                              textAlign: TextAlign.end,
-                              style: TorqueType.body.copyWith(color: color),
+                        ),
+                        if (absent && row.reason != null)
+                          Text(
+                            row.reason!,
+                            textAlign: TextAlign.end,
+                            style: TorqueType.meta.copyWith(
+                              color: t.inkSecondary,
                             ),
                           ),
-                        ],
-                      ),
-                      if (absent && row.reason != null)
-                        Text(
-                          row.reason!,
-                          textAlign: TextAlign.end,
-                          style: TorqueType.meta.copyWith(
-                            color: t.inkSecondary,
-                          ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

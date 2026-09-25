@@ -245,7 +245,13 @@ class LabelledDateField extends StatelessWidget {
                             borderRadius: BorderRadius.circular(Radii.input),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.all(Space.x12),
+                            // A filled TextField puts 4 more than its
+                            // contentPadding before the text, so 16 here
+                            // lines the date up with the fields above it.
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: Space.x16,
+                              vertical: Space.x12,
+                            ),
                             child: Row(
                               children: [
                                 Expanded(

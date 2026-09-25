@@ -96,58 +96,72 @@ class ListRow extends StatelessWidget {
                   horizontal: Space.gutter,
                   vertical: Space.x12,
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            title,
-                            style: TorqueType.body.copyWith(
-                              color: destructive
-                                  ? t.tellRed
-                                  : enabled
-                                  ? t.inkPrimary
-                                  : t.inkTertiary,
-                            ),
-                          ),
-                          if (subtitle != null) ...[
-                            const SizedBox(height: Space.x4),
+                child: LayoutBuilder(
+                  builder: (context, box) => Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
                             Text(
-                              subtitle!,
-                              style: TorqueType.meta.copyWith(
-                                color: t.inkSecondary,
+                              title,
+                              style: TorqueType.body.copyWith(
+                                color: destructive
+                                    ? t.tellRed
+                                    : enabled
+                                    ? t.inkPrimary
+                                    : t.inkTertiary,
                               ),
                             ),
+                            if (subtitle != null) ...[
+                              const SizedBox(height: Space.x4),
+                              Text(
+                                subtitle!,
+                                style: TorqueType.meta.copyWith(
+                                  color: t.inkSecondary,
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                    ),
-                    if (value != null) ...[
-                      const SizedBox(width: Space.x12),
-                      Flexible(
-                        child: Text(
-                          value!,
-                          textAlign: TextAlign.end,
-                          style: TorqueType.body.copyWith(
-                            color: tone == Tell.none
-                                ? t.inkSecondary
-                                : t.tell(tone),
-                          ),
                         ),
                       ),
+                      if (value != null) ...[
+                        const SizedBox(width: Space.x12),
+                        // Its own width, up to just under half the row it is
+                        // in — a Flexible here split the row in two, so a
+                        // short value left the chevron mid-row and squeezed
+                        // the title's line into the other half. The row's
+                        // width, not the screen's: a sheet can be narrower.
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: box.maxWidth * 0.45,
+                          ),
+                          child: Text(
+                            value!,
+                            textAlign: TextAlign.end,
+                            style: TorqueType.body.copyWith(
+                              color: tone == Tell.none
+                                  ? t.inkSecondary
+                                  : t.tell(tone),
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (trailing != null) ...[
+                        const SizedBox(width: Space.x8),
+                        trailing!,
+                      ],
+                      if (tappable) ...[
+                        const SizedBox(width: Space.x8),
+                        Icon(
+                          Icons.chevron_right,
+                          size: 20,
+                          color: t.inkTertiary,
+                        ),
+                      ],
                     ],
-                    if (trailing != null) ...[
-                      const SizedBox(width: Space.x8),
-                      trailing!,
-                    ],
-                    if (tappable) ...[
-                      const SizedBox(width: Space.x8),
-                      Icon(Icons.chevron_right, size: 20, color: t.inkTertiary),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),
