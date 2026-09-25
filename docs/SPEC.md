@@ -1250,6 +1250,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 12 done 2026-09-24 — the tab shell on Part B, see §B.23
          ◐ slice 13 done 2026-09-24 — the paywall on Part B; the account flow and the ad code deleted, see §B.24
          ◐ slice 14 done 2026-09-24 — Data & privacy on Part B; no Industry sub-screen remains, see §B.25
+         ◐ review of slices 10–14, 2026-09-25 — 22 confirmed, all fixed, see §B.26
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -1849,6 +1850,68 @@ sheet has two independent guards, the route's `dismissible: false` and the
 `PopScope` while busy, and either alone satisfies the test: removing one
 still passes, removing both fails, which is what was run to prove it. 667
 tests, analyzer clean.
+
+## B.26 Adversarial review of slices 10–14 (2026-09-25)
+
+Six lenses (units, freeze frame, shell, paywall, privacy, test quality),
+three refuters each, over `62aad70`…`2bb652d`: 32 findings, 22 survived all
+three refuters — about nineteen distinct defects after duplicates, two of them
+blockers. All are fixed, in five commits; every ★ test was seen failing with
+its fix removed (the harness keeps the file in memory and restores it — a
+shell loop that did not word-split restored nothing once).
+
+- **Freeze frame (`9048222`).** *Blocker:* a link that dropped during the
+  pre-clear frame read made `readFreezeFrame` return null — the same as "no
+  frame" — and `clearDtcs` went on to write the snapshot without it and send
+  Mode 04 through the ElmSession it had captured, which, disposed, still wrote
+  to the transport the ladder had just reused: the car erased the frame, on a
+  conversation the clear was not part of. `clearDtcs` now checks the link after
+  every await; a disposed ElmSession writes nothing. The screens said a copy was
+  kept when nothing is recorded; they now say so only when
+  `DiagnosticsController.recording`, and a history snapshot opens its frame
+  (`FreezeFrameView`). A frame lives only while its own code is stored or
+  pending. Every Mode 02 mask is walked, so fuel and module voltage are read.
+  §B.22's "hard rule 8's snapshot now holds the one thing the clear destroys"
+  is true from this commit, not the one it was written for.
+- **Units (`73033c6`).** The health breakdown's coolant line is said in the
+  user's unit; a reading that rounds to zero prints "0", never "-0".
+- **Shell (`d97f1d0`).** Back used `pop` and a re-tapped tab `popUntil`, both
+  deaf to a route's PopScope, so the Delete-all sheet could be taken away mid-
+  erase; back now uses `maybePop`, the re-tap stops at a route that refuses,
+  and the sheet opens on the root navigator. Back at a tab root goes to the
+  Dashboard, then out. Tab labels no longer grow with text size (CupertinoTabBar
+  overflowed at 2.0; even Android's own 1.3 wraps at 390 pt) and are Barlow on
+  iOS; EmptyStateView scrolls when it is a screen's body. Backlit answers high
+  contrast itself. §B.23's "a route pushed inside a tab keeps the root theme"
+  was false — every tab is under LiveIdentityPrompt's Backlit — and its test
+  asserted nothing that could fail; both corrected.
+- **Paywall (`ef3c111`).** *Blocker:* Android could not buy — one
+  `getProducts` call (subscriptions only, so no lifetime) and plain-id matching
+  against Play's `{subscription}:{basePlan}`. Both categories are asked for and
+  matched by prefix (`RevenueCatService.planFor`, pure and tested). Plans reload
+  when the paywall opens or a buy finds no product, and the paywall says when
+  its prices are not the store's. The "3-day free trial" is claimed only when
+  the store offers one to this user. The identity sheet follows the entitlement
+  live. §B.24's table was not "row for row"; it is now the spec's thirteen.
+- **Rows, onboarding, iPad (`655515d`).** Tapless rows are statements, not
+  disabled controls (VoiceOver read the privacy facts as "dimmed", at 3.97:1);
+  the three private row widgets became the design system's `ListRow`. An edited
+  odometer survives a unit toggle. The iPad share anchor is clipped to the
+  screen.
+
+**Refuted, and what was still done.** A multi-ECU car whose ECU without a
+frame answers 0202 first (not shown reachable); Mode 02 masks in the fixture
+naming PIDs it never answers (fixture only); an offline grace that never
+expires (the configured SDK does not return null there); several test-quality
+notes that named no user-visible defect. One refuted as a blocker was still
+true and was fixed as copy: the phone's own backup to iCloud or Google holds
+the app's data, so "stored on this device and nowhere else" and "nothing is
+deleted anywhere else" now name it.
+
+**Not testable here, named.** That `plans()` really asks both product
+categories needs a configured store key; the id matching it feeds is tested.
+
+725 tests, analyzer clean.
 
 ## HARD RULES
 
