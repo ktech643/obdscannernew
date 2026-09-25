@@ -17,6 +17,8 @@ export 'widgets/connection_banner.dart';
 export 'widgets/dtc_row.dart';
 export 'widgets/empty_state_view.dart';
 export 'widgets/gauge_tile.dart';
+export 'widgets/labelled_field.dart';
+export 'widgets/list_row.dart';
 export 'widgets/range_bar.dart';
 export 'widgets/skeleton.dart';
 export 'widgets/step_progress.dart';

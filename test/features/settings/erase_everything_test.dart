@@ -379,7 +379,10 @@ void main() {
       await pumpPrivacy(tester);
 
       expect(find.textContaining('RevenueCat'), findsOneWidget);
-      expect(find.textContaining('iCloud'), findsNothing);
+      // The false claim was iCloud *sync*; the phone's own backup is real
+      // and is now named as the one other place the data can be.
+      expect(find.textContaining('iCloud sync'), findsNothing);
+      expect(find.textContaining("phone's own backup"), findsOneWidget);
       expect(find.text('Ad requests'), findsNothing);
       expect(find.text('Personalised ads'), findsNothing);
       expect(find.textContaining('iPhone'), findsNothing, reason: 'Android');

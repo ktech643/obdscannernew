@@ -333,6 +333,26 @@ void main() {
       );
     });
 
+    testWidgets('★ an edited prefill stays edited through a unit toggle', (
+      tester,
+    ) async {
+      final vehicles = VehicleRepository(db);
+      await vehicles.create(
+        nickname: 'Old name',
+        fuel: VehicleFuel.petrol,
+        odometerKm: 142380.5,
+      );
+      await atAddCar(tester);
+      await tester.pump();
+      await tester.enterText(field('Odometer'), '150,000');
+      await tester.tap(find.text('mi'));
+      await tester.pump();
+      await save(tester);
+
+      final primary = (await vehicles.primary())!;
+      expect(primary.odometerKm, closeTo(150000, 2), reason: 'the new reading');
+    });
+
     testWidgets('★ toggling the unit converts the figure, never relabels it', (
       tester,
     ) async {

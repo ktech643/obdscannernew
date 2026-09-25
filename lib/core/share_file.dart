@@ -73,9 +73,20 @@ class ShareFile {
   }
 
   /// The box of [context] in global coordinates — the popover's anchor.
+  ///
+  /// Clipped to the screen: share_plus refuses an anchor that is not wholly
+  /// inside the view, so a row half-scrolled under the tab bar made the
+  /// iPad share fail. A row scrolled entirely out of sight anchors to the
+  /// middle of the screen instead.
   static Rect? originOf(BuildContext context) {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return null;
-    return box.localToGlobal(Offset.zero) & box.size;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    final screen = Offset.zero & MediaQuery.sizeOf(context);
+    final visible = rect.intersect(screen);
+    if (visible.width <= 0 || visible.height <= 0) {
+      return Rect.fromCenter(center: screen.center, width: 1, height: 1);
+    }
+    return visible;
   }
 }

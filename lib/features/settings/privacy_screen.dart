@@ -9,7 +9,6 @@ import '../../data/backup/backup_codec.dart';
 import '../../data/db/app_database.dart';
 import '../../design_system/design_system.dart';
 import 'erase_everything.dart';
-import 'settings_rows.dart';
 
 /// Hands the export to the platform share sheet as a `.json` file.
 /// [origin] anchors the iPad popover; see [ShareFile].
@@ -72,38 +71,40 @@ class PrivacyScreen extends StatelessWidget {
                   const SizedBox(height: Space.x12),
                   Text(
                     'Codes, live readings, VINs, service history and trips '
-                    'are stored on this device and nowhere else. There is no '
-                    'cloud sync and no account.',
+                    'are stored on this device, and Torque sends them nowhere '
+                    '— there is no cloud sync and no account. Your phone\'s '
+                    'own backup, to iCloud or Google, includes them as it does '
+                    'every app\'s data, if you have it turned on.',
                     style: TorqueType.body.copyWith(color: t.inkSecondary),
                   ),
                 ],
               ),
             ),
-            const SettingsSection(title: 'What leaves the device'),
-            const SettingsLinkRow(
+            const ListSection(title: 'What leaves the device'),
+            const ListRow(
               title: 'The adapter in your car',
               subtitle:
                   'Commands go to it and readings come back, over Bluetooth '
                   "or the adapter's own Wi-Fi. Nothing goes further.",
             ),
-            const SettingsLinkRow(
+            const ListRow(
               title: 'Purchases',
               subtitle:
                   'The App Store or Google Play, and RevenueCat — which '
                   'checks whether you have Pro — see an anonymous ID and '
                   'your purchases. Never your codes, VIN or vehicle data.',
             ),
-            const SettingsLinkRow(
+            const ListRow(
               title: 'Everything else',
               subtitle:
                   'Nothing. No ads, no analytics, no crash reporting, no '
                   'tracking.',
             ),
-            const SettingsSection(title: 'Your controls'),
+            const ListSection(title: 'Your controls'),
             // Its own context: on iPad the share sheet is a popover anchored
             // to the row that opened it.
             Builder(
-              builder: (row) => SettingsLinkRow(
+              builder: (row) => ListRow(
                 title: 'Export everything as JSON',
                 subtitle:
                     'Every vehicle, scan, service record, reminder, fuel '
@@ -112,7 +113,7 @@ class PrivacyScreen extends StatelessWidget {
                 onTap: () => _export(context, ShareFile.originOf(row)),
               ),
             ),
-            SettingsLinkRow(
+            ListRow(
               title: 'Delete all data',
               destructive: true,
               onTap: () => _confirmDeleteAll(context),
@@ -210,8 +211,8 @@ class _DeleteAllSheetState extends State<_DeleteAllSheet> {
     'Torque starts again from its first screen',
     'A Pro purchase is kept — it belongs to your App Store or Google Play '
         'account',
-    'Nothing is deleted anywhere else, because nothing about your car was '
-        'ever sent anywhere else',
+    'Torque never sent anything about your car anywhere. A copy in your '
+        'phone\'s own backup, to iCloud or Google, is not erased by this',
   ];
 
   Future<void> _erase() async {

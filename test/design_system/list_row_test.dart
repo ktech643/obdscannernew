@@ -1,0 +1,96 @@
+import 'package:flutter/material.dart';
+
+import 'dart:ui' show Tristate;
+
+import 'package:flutter/semantics.dart' show SemanticsAction, SemanticsData;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:torque_obd2/core/share_file.dart';
+import 'package:torque_obd2/design_system/design_system.dart';
+
+/// ListRow's three kinds: a link, a statement, a disabled control — and
+/// ShareFile's anchor, which must lie inside the screen.
+void main() {
+  Future<void> pump(WidgetTester tester, Widget child) => tester.pumpWidget(
+    MaterialApp(
+      theme: torqueTheme(),
+      home: Scaffold(body: ListView(children: [child])),
+    ),
+  );
+
+  SemanticsData node(WidgetTester tester, String label) => tester
+      .getSemantics(find.bySemanticsLabel(RegExp('^$label')))
+      .getSemanticsData();
+
+  testWidgets('★ a row with no tap is a statement, not a disabled control', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await pump(
+      tester,
+      const ListRow(title: 'Purchases', subtitle: 'The store sees an ID.'),
+    );
+    final data = node(tester, 'Purchases');
+    // VoiceOver read the privacy screen's facts as "dimmed" before.
+    expect(data.flagsCollection.isEnabled, Tristate.none);
+    expect(data.hasAction(SemanticsAction.tap), isFalse);
+    final title = tester.widget<Text>(find.text('Purchases'));
+    expect(
+      title.style?.color,
+      TorqueTokens.dark.inkPrimary,
+      reason: 'not 3.97:1',
+    );
+    handle.dispose();
+  });
+
+  testWidgets('a disabled row says so', (tester) async {
+    final handle = tester.ensureSemantics();
+    await pump(tester, ListRow(title: 'History', enabled: false, onTap: () {}));
+    final data = node(tester, 'History');
+    expect(data.flagsCollection.isEnabled, Tristate.isFalse);
+    expect(data.hasAction(SemanticsAction.tap), isFalse);
+    handle.dispose();
+  });
+
+  testWidgets('a link is a button with a chevron', (tester) async {
+    final handle = tester.ensureSemantics();
+    var taps = 0;
+    await pump(tester, ListRow(title: 'Export', onTap: () => taps++));
+    final data = node(tester, 'Export');
+    expect(data.flagsCollection.isButton, isTrue);
+    expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    await tester.tap(find.text('Export'));
+    expect(taps, 1);
+    handle.dispose();
+  });
+
+  testWidgets('★ the share anchor is clipped to the screen', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late BuildContext row;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Stack(
+          children: [
+            Positioned(
+              left: 0,
+              right: 0,
+              top: 780, // half under the bottom edge
+              height: 48,
+              child: Builder(
+                builder: (c) {
+                  row = c;
+                  return const ColoredBox(color: Colors.black);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    final origin = ShareFile.originOf(row)!;
+    expect(origin.bottom, lessThanOrEqualTo(800));
+    expect(origin.top, 780);
+    expect(origin.height, 20);
+  });
+}

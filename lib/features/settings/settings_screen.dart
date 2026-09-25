@@ -9,7 +9,6 @@ import '../live_tabs.dart';
 import '../pro/paywall_screen.dart';
 import 'diagnostics_log_screen.dart';
 import 'privacy_screen.dart';
-import 'settings_rows.dart';
 
 /// SPEC §5.6 — Settings on the Part B design system.
 ///
@@ -43,19 +42,19 @@ class SettingsScreen extends StatelessWidget {
             style: TorqueType.titleLg.copyWith(color: t.inkPrimary),
           ),
         ),
-        const SettingsSection(title: 'Units'),
-        SettingsLinkRow(
+        const ListSection(title: 'Units'),
+        ListRow(
           title: 'Distance',
           value: settings.distance.label,
           onTap: () => _pickDistance(context, settings),
         ),
-        SettingsLinkRow(
+        ListRow(
           title: 'Temperature',
           value: settings.temperature.label,
           onTap: () => _pickTemperature(context, settings),
         ),
-        const SettingsSection(title: 'Connection'),
-        SettingsLinkRow(
+        const ListSection(title: 'Connection'),
+        ListRow(
           title: 'Polling rate',
           value: settings.pollingRate,
           onTap: () => _pickPollingRate(context, settings),
@@ -75,8 +74,8 @@ class SettingsScreen extends StatelessWidget {
           value: settings.haptics,
           onChanged: settings.setHaptics,
         ),
-        const SettingsSection(title: 'Subscription'),
-        SettingsLinkRow(
+        const ListSection(title: 'Subscription'),
+        ListRow(
           title: ent.isPro ? 'Torque Pro' : 'Torque Free',
           value:
               ent.isPro
@@ -84,25 +83,25 @@ class SettingsScreen extends StatelessWidget {
                   : '6 gauges · 1 vehicle · 2-minute recordings',
         ),
         if (!ent.isPro)
-          SettingsLinkRow(
+          ListRow(
             title: 'Go Pro',
             onTap: () => openProPaywall(context),
           ),
-        SettingsLinkRow(
+        ListRow(
           title: 'Restore purchases',
           onTap: () => _restorePurchases(context, ent),
         ),
         if (ent.isPro)
-          SettingsLinkRow(
+          ListRow(
             title: 'Manage subscription',
             onTap: ent.manageSubscription,
           ),
-        const SettingsSection(title: 'Your data'),
-        SettingsLinkRow(
+        const ListSection(title: 'Your data'),
+        ListRow(
           title: 'Data & privacy',
           onTap: () => _openPrivacy(context),
         ),
-        SettingsLinkRow(
+        ListRow(
           title: 'Diagnostics log',
           value: '${live.log.length} events',
           onTap: () => _openDiagnosticsLog(context, live),

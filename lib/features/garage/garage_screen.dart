@@ -269,12 +269,13 @@ class _GarageScreenState extends State<GarageScreen> {
           live: widget.session.isLive,
           onTap: () => _vehicleActions(primary),
         ),
-        _Section(title: 'This vehicle'),
-        _LinkRow(
+        ListSection(title: 'This vehicle'),
+        ListRow(
           title: 'Diagnostic history',
           value: _snapshots == null
               ? null
               : '$_snapshots scan${_snapshots == 1 ? '' : 's'}',
+          enabled: _c.dtcs != null,
           onTap: _c.dtcs == null
               ? null
               : () => _push(
@@ -287,12 +288,12 @@ class _GarageScreenState extends State<GarageScreen> {
                 ),
         ),
         if (widget.links.maintenance != null)
-          _LinkRow(
+          ListRow(
             title: 'Maintenance log',
             onTap: () => _push(widget.links.maintenance!),
           ),
         if (widget.links.reminders != null)
-          _LinkRow(
+          ListRow(
             title: 'Reminders',
             value: _overdue == null
                 ? null
@@ -303,28 +304,28 @@ class _GarageScreenState extends State<GarageScreen> {
             onTap: () => _push(widget.links.reminders!),
           ),
         if (widget.links.fuel != null)
-          _LinkRow(title: 'Fuel log', onTap: () => _push(widget.links.fuel!)),
+          ListRow(title: 'Fuel log', onTap: () => _push(widget.links.fuel!)),
         if (widget.links.trips != null)
-          _LinkRow(
+          ListRow(
             title: 'Trip recordings',
             onTap: () => _push(widget.links.trips!),
           ),
         if (widget.links.reports != null)
-          _LinkRow(
+          ListRow(
             title: 'Reports · PDF and CSV',
             trailing: widget.isPro
                 ? null
                 : const TelltaleChip(tone: Tell.none, label: 'Pro'),
             onTap: () => _push(widget.links.reports!),
           ),
-        _Section(title: 'Vehicles'),
+        ListSection(title: 'Vehicles'),
         for (final v in _c.others)
-          _LinkRow(
+          ListRow(
             title: v.nickname,
             value: _title(v),
             onTap: () => _vehicleActions(v),
           ),
-        _LinkRow(
+        ListRow(
           title: 'Add a vehicle',
           trailing: widget.isPro || !_c.hasVehicle
               ? null
@@ -492,115 +493,6 @@ String _ago(DateTime at) {
   return '$months month${months == 1 ? '' : 's'} ago';
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title});
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Space.gutter,
-        Space.x24,
-        Space.gutter,
-        Space.x8,
-      ),
-      child: Text(
-        title,
-        style: TorqueType.titleMd.copyWith(color: t.inkPrimary),
-      ),
-    );
-  }
-}
-
-/// A tappable row: title, a value on the right, a chevron. Radius 0,
-/// hairline under, 48px minimum — the garage's lists stay quiet.
-class _LinkRow extends StatelessWidget {
-  const _LinkRow({
-    required this.title,
-    this.value,
-    this.tone = Tell.none,
-    this.trailing,
-    this.onTap,
-  });
-
-  final String title;
-  final String? value;
-  final Tell tone;
-  final Widget? trailing;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    final enabled = onTap != null;
-    return Semantics(
-      button: enabled,
-      enabled: enabled,
-      onTap: onTap,
-      label: [title, ?value].join(', '),
-      child: ExcludeSemantics(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          excludeFromSemantics: true,
-          onTap: onTap,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: Targets.min),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: t.hairline)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Space.gutter,
-                  vertical: Space.x12,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: TorqueType.body.copyWith(
-                          color: enabled ? t.inkPrimary : t.inkTertiary,
-                        ),
-                      ),
-                    ),
-                    if (value != null) ...[
-                      const SizedBox(width: Space.x12),
-                      Flexible(
-                        child: Text(
-                          value!,
-                          textAlign: TextAlign.end,
-                          style: TorqueType.body.copyWith(
-                            color: tone == Tell.none
-                                ? t.inkSecondary
-                                : t.tell(tone),
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (trailing != null) ...[
-                      const SizedBox(width: Space.x8),
-                      trailing!,
-                    ],
-                    if (enabled) ...[
-                      const SizedBox(width: Space.x8),
-                      Icon(Icons.chevron_right, size: 20, color: t.inkTertiary),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The actions on one vehicle. Delete is two steps: this sheet, then the
-/// alert that names what goes with it.
 class _VehicleSheet extends StatelessWidget {
   const _VehicleSheet({
     required this.vehicle,

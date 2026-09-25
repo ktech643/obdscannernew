@@ -499,10 +499,16 @@ class _A3AddYourCarState extends State<_A3AddYourCar> {
   void _setUnit(DistanceUnit next) {
     if (next == _unit) return;
     final v = Distance.parse(_odometer.text.trim());
+    // Untouched before the toggle means untouched after it. A field the
+    // user had edited stays edited: an earlier version re-marked every
+    // converted figure as the prefill, so an edit followed by a toggle
+    // was taken for "not changed" and never saved.
+    final untouched =
+        _odometerShown != null && _odometer.text.trim() == _odometerShown;
     setState(() {
       if (v != null) {
         _odometer.text = Distance.display(Distance.toKm(v, _unit), next);
-        if (_odometerShown != null) _odometerShown = _odometer.text;
+        if (untouched) _odometerShown = _odometer.text;
       }
       _unit = next;
     });
