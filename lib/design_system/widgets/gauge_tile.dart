@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Icons;
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/widgets.dart';
 
 import '../../domain/pid_sample.dart';
@@ -47,6 +48,11 @@ class GaugeTile extends StatefulWidget {
     this.variant = GaugeVariant.numeric,
     this.history,
     this.onTap,
+    this.onLongPress,
+    this.onTapHint,
+    this.onLongPressHint,
+    this.semanticsSuffix,
+    this.semanticsActions,
     this.primary = false,
   });
 
@@ -64,6 +70,21 @@ class GaugeTile extends StatefulWidget {
   /// Recent values for the sparkline variant, oldest first.
   final ValueListenable<List<double>>? history;
   final VoidCallback? onTap;
+
+  /// SPEC §5.3 "Long-press → edit". On the tile's one Semantics node, as
+  /// its long-press action.
+  final VoidCallback? onLongPress;
+
+  /// What a tap or a long-press does, for TalkBack's "double-tap to …".
+  final String? onTapHint;
+  final String? onLongPressHint;
+
+  /// Appended to the tile's spoken label: "Gauge 3 of 6".
+  final String? semanticsSuffix;
+
+  /// Screen-reader actions — move, change, remove — on the same one node,
+  /// so a tile stays one stop (B.8).
+  final Map<CustomSemanticsAction, VoidCallback>? semanticsActions;
 
   /// The hero tile uses the XL readout.
   final bool primary;
@@ -170,12 +191,19 @@ class _GaugeTileState extends State<GaugeTile> {
         history: widget.history,
         announce: _takeAnnounce,
         clock: widget.clock,
-        onTap: widget.onTap,
+        semantics: _TileSemantics(
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          onTapHint: widget.onTapHint,
+          onLongPressHint: widget.onLongPressHint,
+          suffix: widget.semanticsSuffix,
+          actions: widget.semanticsActions,
+        ),
       ),
     );
 
-    if (widget.onTap != null) {
-      // Touch goes through the detector; the accessibility action lives on
+    if (widget.onTap != null || widget.onLongPress != null) {
+      // Touch goes through the detector; the accessibility actions live on
       // the readout's Semantics node, so the detector adds no node of its own.
       tile = GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -184,6 +212,9 @@ class _GaugeTileState extends State<GaugeTile> {
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),
         onTap: widget.onTap,
+        onLongPress: widget.onLongPress,
+        onLongPressEnd: (_) => setState(() => _pressed = false),
+        onLongPressCancel: () => setState(() => _pressed = false),
         child: AnimatedScale(
           scale: _pressed ? 0.98 : 1,
           duration: Motion.of(context, Motion.tilePress),
@@ -217,7 +248,7 @@ class _Chrome extends StatelessWidget {
     required this.history,
     required this.announce,
     required this.clock,
-    required this.onTap,
+    required this.semantics,
   });
 
   final GaugeSpec spec;
@@ -229,7 +260,7 @@ class _Chrome extends StatelessWidget {
   final ValueListenable<List<double>>? history;
   final bool Function() announce;
   final ValueListenable<DateTime> clock;
-  final VoidCallback? onTap;
+  final _TileSemantics semantics;
 
   @override
   Widget build(BuildContext context) {
@@ -265,11 +296,30 @@ class _Chrome extends StatelessWidget {
           history: history,
           announce: announce,
           clock: clock,
-          onTap: onTap,
+          semantics: semantics,
         ),
       ],
     );
   }
+}
+
+/// What the tile's one Semantics node offers besides its label.
+@immutable
+class _TileSemantics {
+  const _TileSemantics({
+    this.onTap,
+    this.onLongPress,
+    this.onTapHint,
+    this.onLongPressHint,
+    this.suffix,
+    this.actions,
+  });
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final String? onTapHint;
+  final String? onLongPressHint;
+  final String? suffix;
+  final Map<CustomSemanticsAction, VoidCallback>? actions;
 }
 
 /// The top-right word: "Caution", "4 s ago", "No data", "Not supported".
@@ -340,7 +390,7 @@ class _Readout extends StatelessWidget {
     required this.history,
     required this.announce,
     required this.clock,
-    required this.onTap,
+    required this.semantics,
   });
 
   final GaugeSpec spec;
@@ -352,7 +402,7 @@ class _Readout extends StatelessWidget {
   final ValueListenable<List<double>>? history;
   final bool Function() announce;
   final ValueListenable<DateTime> clock;
-  final VoidCallback? onTap;
+  final _TileSemantics semantics;
 
   @override
   Widget build(BuildContext context) {
@@ -494,12 +544,17 @@ class _Readout extends StatelessWidget {
           ),
         };
 
+        final base = _semanticLabel(s, st);
         return Semantics(
           container: true,
-          button: onTap != null,
-          onTap: onTap,
+          button: semantics.onTap != null,
+          onTap: semantics.onTap,
+          onLongPress: semantics.onLongPress,
+          onTapHint: semantics.onTapHint,
+          onLongPressHint: semantics.onLongPressHint,
+          customSemanticsActions: semantics.actions,
           liveRegion: announce(),
-          label: _semanticLabel(s, st),
+          label: semantics.suffix == null ? base : '$base. ${semantics.suffix}',
           child: ExcludeSemantics(
             child: AnimatedOpacity(
               opacity: dimmed ? t.dimmedOpacity : 1,

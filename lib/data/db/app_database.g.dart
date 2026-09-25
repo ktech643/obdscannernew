@@ -4701,6 +4701,430 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
   }
 }
 
+class $DashboardLayoutsTable extends DashboardLayouts
+    with TableInfo<$DashboardLayoutsTable, DashboardLayoutRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $DashboardLayoutsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _vehicleIdMeta = const VerificationMeta(
+    'vehicleId',
+  );
+  @override
+  late final GeneratedColumn<String> vehicleId = GeneratedColumn<String>(
+    'vehicle_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES vehicles (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    check: () => ComparableExpr(name.length).isBetweenValues(1, 40),
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 40,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _tilesJsonMeta = const VerificationMeta(
+    'tilesJson',
+  );
+  @override
+  late final GeneratedColumn<String> tilesJson = GeneratedColumn<String>(
+    'tiles_json',
+    aliasedName,
+    false,
+    check: () => const CustomExpression<bool>(
+      "CASE WHEN json_valid(tiles_json) "
+      "THEN json_type(tiles_json) = 'array' "
+      "AND json_array_length(tiles_json) BETWEEN 1 AND 64 ELSE 0 END",
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _selectedAtMeta = const VerificationMeta(
+    'selectedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> selectedAt = GeneratedColumn<DateTime>(
+    'selected_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    vehicleId,
+    name,
+    tilesJson,
+    createdAt,
+    selectedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'dashboard_layouts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<DashboardLayoutRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('vehicle_id')) {
+      context.handle(
+        _vehicleIdMeta,
+        vehicleId.isAcceptableOrUnknown(data['vehicle_id']!, _vehicleIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_vehicleIdMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('tiles_json')) {
+      context.handle(
+        _tilesJsonMeta,
+        tilesJson.isAcceptableOrUnknown(data['tiles_json']!, _tilesJsonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_tilesJsonMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('selected_at')) {
+      context.handle(
+        _selectedAtMeta,
+        selectedAt.isAcceptableOrUnknown(data['selected_at']!, _selectedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_selectedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  DashboardLayoutRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return DashboardLayoutRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      vehicleId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}vehicle_id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      tilesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tiles_json'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      selectedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}selected_at'],
+      )!,
+    );
+  }
+
+  @override
+  $DashboardLayoutsTable createAlias(String alias) {
+    return $DashboardLayoutsTable(attachedDatabase, alias);
+  }
+}
+
+class DashboardLayoutRow extends DataClass
+    implements Insertable<DashboardLayoutRow> {
+  final String id;
+  final String vehicleId;
+  final String name;
+  final String tilesJson;
+  final DateTime createdAt;
+  final DateTime selectedAt;
+  const DashboardLayoutRow({
+    required this.id,
+    required this.vehicleId,
+    required this.name,
+    required this.tilesJson,
+    required this.createdAt,
+    required this.selectedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['vehicle_id'] = Variable<String>(vehicleId);
+    map['name'] = Variable<String>(name);
+    map['tiles_json'] = Variable<String>(tilesJson);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['selected_at'] = Variable<DateTime>(selectedAt);
+    return map;
+  }
+
+  DashboardLayoutsCompanion toCompanion(bool nullToAbsent) {
+    return DashboardLayoutsCompanion(
+      id: Value(id),
+      vehicleId: Value(vehicleId),
+      name: Value(name),
+      tilesJson: Value(tilesJson),
+      createdAt: Value(createdAt),
+      selectedAt: Value(selectedAt),
+    );
+  }
+
+  factory DashboardLayoutRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return DashboardLayoutRow(
+      id: serializer.fromJson<String>(json['id']),
+      vehicleId: serializer.fromJson<String>(json['vehicleId']),
+      name: serializer.fromJson<String>(json['name']),
+      tilesJson: serializer.fromJson<String>(json['tilesJson']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      selectedAt: serializer.fromJson<DateTime>(json['selectedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'vehicleId': serializer.toJson<String>(vehicleId),
+      'name': serializer.toJson<String>(name),
+      'tilesJson': serializer.toJson<String>(tilesJson),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'selectedAt': serializer.toJson<DateTime>(selectedAt),
+    };
+  }
+
+  DashboardLayoutRow copyWith({
+    String? id,
+    String? vehicleId,
+    String? name,
+    String? tilesJson,
+    DateTime? createdAt,
+    DateTime? selectedAt,
+  }) => DashboardLayoutRow(
+    id: id ?? this.id,
+    vehicleId: vehicleId ?? this.vehicleId,
+    name: name ?? this.name,
+    tilesJson: tilesJson ?? this.tilesJson,
+    createdAt: createdAt ?? this.createdAt,
+    selectedAt: selectedAt ?? this.selectedAt,
+  );
+  DashboardLayoutRow copyWithCompanion(DashboardLayoutsCompanion data) {
+    return DashboardLayoutRow(
+      id: data.id.present ? data.id.value : this.id,
+      vehicleId: data.vehicleId.present ? data.vehicleId.value : this.vehicleId,
+      name: data.name.present ? data.name.value : this.name,
+      tilesJson: data.tilesJson.present ? data.tilesJson.value : this.tilesJson,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      selectedAt: data.selectedAt.present
+          ? data.selectedAt.value
+          : this.selectedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DashboardLayoutRow(')
+          ..write('id: $id, ')
+          ..write('vehicleId: $vehicleId, ')
+          ..write('name: $name, ')
+          ..write('tilesJson: $tilesJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('selectedAt: $selectedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, vehicleId, name, tilesJson, createdAt, selectedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is DashboardLayoutRow &&
+          other.id == this.id &&
+          other.vehicleId == this.vehicleId &&
+          other.name == this.name &&
+          other.tilesJson == this.tilesJson &&
+          other.createdAt == this.createdAt &&
+          other.selectedAt == this.selectedAt);
+}
+
+class DashboardLayoutsCompanion extends UpdateCompanion<DashboardLayoutRow> {
+  final Value<String> id;
+  final Value<String> vehicleId;
+  final Value<String> name;
+  final Value<String> tilesJson;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> selectedAt;
+  final Value<int> rowid;
+  const DashboardLayoutsCompanion({
+    this.id = const Value.absent(),
+    this.vehicleId = const Value.absent(),
+    this.name = const Value.absent(),
+    this.tilesJson = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.selectedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  DashboardLayoutsCompanion.insert({
+    required String id,
+    required String vehicleId,
+    required String name,
+    required String tilesJson,
+    required DateTime createdAt,
+    required DateTime selectedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       vehicleId = Value(vehicleId),
+       name = Value(name),
+       tilesJson = Value(tilesJson),
+       createdAt = Value(createdAt),
+       selectedAt = Value(selectedAt);
+  static Insertable<DashboardLayoutRow> custom({
+    Expression<String>? id,
+    Expression<String>? vehicleId,
+    Expression<String>? name,
+    Expression<String>? tilesJson,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? selectedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (vehicleId != null) 'vehicle_id': vehicleId,
+      if (name != null) 'name': name,
+      if (tilesJson != null) 'tiles_json': tilesJson,
+      if (createdAt != null) 'created_at': createdAt,
+      if (selectedAt != null) 'selected_at': selectedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  DashboardLayoutsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? vehicleId,
+    Value<String>? name,
+    Value<String>? tilesJson,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? selectedAt,
+    Value<int>? rowid,
+  }) {
+    return DashboardLayoutsCompanion(
+      id: id ?? this.id,
+      vehicleId: vehicleId ?? this.vehicleId,
+      name: name ?? this.name,
+      tilesJson: tilesJson ?? this.tilesJson,
+      createdAt: createdAt ?? this.createdAt,
+      selectedAt: selectedAt ?? this.selectedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (vehicleId.present) {
+      map['vehicle_id'] = Variable<String>(vehicleId.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (tilesJson.present) {
+      map['tiles_json'] = Variable<String>(tilesJson.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (selectedAt.present) {
+      map['selected_at'] = Variable<DateTime>(selectedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('DashboardLayoutsCompanion(')
+          ..write('id: $id, ')
+          ..write('vehicleId: $vehicleId, ')
+          ..write('name: $name, ')
+          ..write('tilesJson: $tilesJson, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('selectedAt: $selectedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4710,6 +5134,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $FuelEntriesTable fuelEntries = $FuelEntriesTable(this);
   late final $DtcSnapshotsTable dtcSnapshots = $DtcSnapshotsTable(this);
   late final $TripSessionsTable tripSessions = $TripSessionsTable(this);
+  late final $DashboardLayoutsTable dashboardLayouts = $DashboardLayoutsTable(
+    this,
+  );
   late final Index idxServiceVehicleDate = Index(
     'idx_service_vehicle_date',
     'CREATE INDEX idx_service_vehicle_date ON service_records (vehicle_id, date)',
@@ -4730,6 +5157,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_trip_vehicle_started',
     'CREATE INDEX idx_trip_vehicle_started ON trip_sessions (vehicle_id, started_at)',
   );
+  late final Index idxLayoutVehicle = Index(
+    'idx_layout_vehicle',
+    'CREATE INDEX idx_layout_vehicle ON dashboard_layouts (vehicle_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4741,11 +5172,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     fuelEntries,
     dtcSnapshots,
     tripSessions,
+    dashboardLayouts,
     idxServiceVehicleDate,
     idxReminderVehicle,
     idxFuelVehicleDate,
     idxSnapshotVehicleTaken,
     idxTripVehicleStarted,
+    idxLayoutVehicle,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -4783,6 +5216,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('trip_sessions', kind: UpdateKind.delete)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'vehicles',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('dashboard_layouts', kind: UpdateKind.delete)],
     ),
   ]);
   @override
@@ -4922,6 +5362,26 @@ final class $$VehiclesTableReferences
     ).filter((f) => f.vehicleId.id.sqlEquals($_itemColumn<String>('id')!));
 
     final cache = $_typedResult.readTableOrNull(_tripSessionsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$DashboardLayoutsTable, List<DashboardLayoutRow>>
+  _dashboardLayoutsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.dashboardLayouts,
+    aliasName: 'vehicles__id__dashboard_layouts__vehicle_id',
+  );
+
+  $$DashboardLayoutsTableProcessedTableManager get dashboardLayoutsRefs {
+    final manager = $$DashboardLayoutsTableTableManager(
+      $_db,
+      $_db.dashboardLayouts,
+    ).filter((f) => f.vehicleId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(
+      _dashboardLayoutsRefsTable($_db),
+    );
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
@@ -5144,6 +5604,31 @@ class $$VehiclesTableFilterComposer
           }) => $$TripSessionsTableFilterComposer(
             $db: $db,
             $table: $db.tripSessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> dashboardLayoutsRefs(
+    Expression<bool> Function($$DashboardLayoutsTableFilterComposer f) f,
+  ) {
+    final $$DashboardLayoutsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.dashboardLayouts,
+      getReferencedColumn: (t) => t.vehicleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$DashboardLayoutsTableFilterComposer(
+            $db: $db,
+            $table: $db.dashboardLayouts,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -5453,6 +5938,31 @@ class $$VehiclesTableAnnotationComposer
     );
     return f(composer);
   }
+
+  Expression<T> dashboardLayoutsRefs<T extends Object>(
+    Expression<T> Function($$DashboardLayoutsTableAnnotationComposer a) f,
+  ) {
+    final $$DashboardLayoutsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.dashboardLayouts,
+      getReferencedColumn: (t) => t.vehicleId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$DashboardLayoutsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.dashboardLayouts,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$VehiclesTableTableManager
@@ -5474,6 +5984,7 @@ class $$VehiclesTableTableManager
             bool fuelEntriesRefs,
             bool dtcSnapshotsRefs,
             bool tripSessionsRefs,
+            bool dashboardLayoutsRefs,
           })
         > {
   $$VehiclesTableTableManager(_$AppDatabase db, $VehiclesTable table)
@@ -5586,6 +6097,7 @@ class $$VehiclesTableTableManager
                 fuelEntriesRefs = false,
                 dtcSnapshotsRefs = false,
                 tripSessionsRefs = false,
+                dashboardLayoutsRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -5595,6 +6107,7 @@ class $$VehiclesTableTableManager
                     if (fuelEntriesRefs) db.fuelEntries,
                     if (dtcSnapshotsRefs) db.dtcSnapshots,
                     if (tripSessionsRefs) db.tripSessions,
+                    if (dashboardLayoutsRefs) db.dashboardLayouts,
                   ],
                   addJoins: null,
                   getPrefetchedDataCallback: (items) async {
@@ -5704,6 +6217,27 @@ class $$VehiclesTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (dashboardLayoutsRefs)
+                        await $_getPrefetchedData<
+                          VehicleRow,
+                          $VehiclesTable,
+                          DashboardLayoutRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$VehiclesTableReferences
+                              ._dashboardLayoutsRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$VehiclesTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).dashboardLayoutsRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.vehicleId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -5730,6 +6264,7 @@ typedef $$VehiclesTableProcessedTableManager =
         bool fuelEntriesRefs,
         bool dtcSnapshotsRefs,
         bool tripSessionsRefs,
+        bool dashboardLayoutsRefs,
       })
     >;
 typedef $$ServiceRecordsTableCreateCompanionBuilder =
@@ -8004,6 +8539,355 @@ typedef $$TripSessionsTableProcessedTableManager =
       TripSessionRow,
       PrefetchHooks Function({bool vehicleId})
     >;
+typedef $$DashboardLayoutsTableCreateCompanionBuilder =
+    DashboardLayoutsCompanion Function({
+      required String id,
+      required String vehicleId,
+      required String name,
+      required String tilesJson,
+      required DateTime createdAt,
+      required DateTime selectedAt,
+      Value<int> rowid,
+    });
+typedef $$DashboardLayoutsTableUpdateCompanionBuilder =
+    DashboardLayoutsCompanion Function({
+      Value<String> id,
+      Value<String> vehicleId,
+      Value<String> name,
+      Value<String> tilesJson,
+      Value<DateTime> createdAt,
+      Value<DateTime> selectedAt,
+      Value<int> rowid,
+    });
+
+final class $$DashboardLayoutsTableReferences
+    extends
+        BaseReferences<
+          _$AppDatabase,
+          $DashboardLayoutsTable,
+          DashboardLayoutRow
+        > {
+  $$DashboardLayoutsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $VehiclesTable _vehicleIdTable(_$AppDatabase db) =>
+      db.vehicles.createAlias('dashboard_layouts__vehicle_id__vehicles__id');
+
+  $$VehiclesTableProcessedTableManager get vehicleId {
+    final $_column = $_itemColumn<String>('vehicle_id')!;
+
+    final manager = $$VehiclesTableTableManager(
+      $_db,
+      $_db.vehicles,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_vehicleIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$DashboardLayoutsTableFilterComposer
+    extends Composer<_$AppDatabase, $DashboardLayoutsTable> {
+  $$DashboardLayoutsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tilesJson => $composableBuilder(
+    column: $table.tilesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get selectedAt => $composableBuilder(
+    column: $table.selectedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$VehiclesTableFilterComposer get vehicleId {
+    final $$VehiclesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.vehicleId,
+      referencedTable: $db.vehicles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VehiclesTableFilterComposer(
+            $db: $db,
+            $table: $db.vehicles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$DashboardLayoutsTableOrderingComposer
+    extends Composer<_$AppDatabase, $DashboardLayoutsTable> {
+  $$DashboardLayoutsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tilesJson => $composableBuilder(
+    column: $table.tilesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get selectedAt => $composableBuilder(
+    column: $table.selectedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$VehiclesTableOrderingComposer get vehicleId {
+    final $$VehiclesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.vehicleId,
+      referencedTable: $db.vehicles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VehiclesTableOrderingComposer(
+            $db: $db,
+            $table: $db.vehicles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$DashboardLayoutsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $DashboardLayoutsTable> {
+  $$DashboardLayoutsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get tilesJson =>
+      $composableBuilder(column: $table.tilesJson, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get selectedAt => $composableBuilder(
+    column: $table.selectedAt,
+    builder: (column) => column,
+  );
+
+  $$VehiclesTableAnnotationComposer get vehicleId {
+    final $$VehiclesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.vehicleId,
+      referencedTable: $db.vehicles,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VehiclesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.vehicles,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$DashboardLayoutsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $DashboardLayoutsTable,
+          DashboardLayoutRow,
+          $$DashboardLayoutsTableFilterComposer,
+          $$DashboardLayoutsTableOrderingComposer,
+          $$DashboardLayoutsTableAnnotationComposer,
+          $$DashboardLayoutsTableCreateCompanionBuilder,
+          $$DashboardLayoutsTableUpdateCompanionBuilder,
+          (DashboardLayoutRow, $$DashboardLayoutsTableReferences),
+          DashboardLayoutRow,
+          PrefetchHooks Function({bool vehicleId})
+        > {
+  $$DashboardLayoutsTableTableManager(
+    _$AppDatabase db,
+    $DashboardLayoutsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$DashboardLayoutsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$DashboardLayoutsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$DashboardLayoutsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> vehicleId = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String> tilesJson = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> selectedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => DashboardLayoutsCompanion(
+                id: id,
+                vehicleId: vehicleId,
+                name: name,
+                tilesJson: tilesJson,
+                createdAt: createdAt,
+                selectedAt: selectedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String vehicleId,
+                required String name,
+                required String tilesJson,
+                required DateTime createdAt,
+                required DateTime selectedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => DashboardLayoutsCompanion.insert(
+                id: id,
+                vehicleId: vehicleId,
+                name: name,
+                tilesJson: tilesJson,
+                createdAt: createdAt,
+                selectedAt: selectedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$DashboardLayoutsTable, DashboardLayoutRow>(
+                    table,
+                  ),
+                  $$DashboardLayoutsTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({vehicleId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (vehicleId) {
+                      state = state.withJoin(
+                        currentTable: table,
+                        currentColumn: table.vehicleId,
+                        referencedTable: $$DashboardLayoutsTableReferences
+                            ._vehicleIdTable(db),
+                        referencedColumn: $$DashboardLayoutsTableReferences
+                            ._vehicleIdTable(db)
+                            .id,
+                      ) as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$DashboardLayoutsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $DashboardLayoutsTable,
+      DashboardLayoutRow,
+      $$DashboardLayoutsTableFilterComposer,
+      $$DashboardLayoutsTableOrderingComposer,
+      $$DashboardLayoutsTableAnnotationComposer,
+      $$DashboardLayoutsTableCreateCompanionBuilder,
+      $$DashboardLayoutsTableUpdateCompanionBuilder,
+      (DashboardLayoutRow, $$DashboardLayoutsTableReferences),
+      DashboardLayoutRow,
+      PrefetchHooks Function({bool vehicleId})
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -8020,4 +8904,6 @@ class $AppDatabaseManager {
       $$DtcSnapshotsTableTableManager(_db, _db.dtcSnapshots);
   $$TripSessionsTableTableManager get tripSessions =>
       $$TripSessionsTableTableManager(_db, _db.tripSessions);
+  $$DashboardLayoutsTableTableManager get dashboardLayouts =>
+      $$DashboardLayoutsTableTableManager(_db, _db.dashboardLayouts);
 }

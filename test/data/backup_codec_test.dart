@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:torque_obd2/data/backup/backup_codec.dart';
 import 'package:torque_obd2/data/db/app_database.dart';
 import 'package:torque_obd2/data/repositories/dtc_repository.dart';
+import 'package:torque_obd2/data/repositories/layout_repository.dart';
 import 'package:torque_obd2/data/repositories/service_repository.dart';
 import 'package:torque_obd2/data/repositories/trip_repository.dart';
 import 'package:torque_obd2/data/repositories/vehicle_repository.dart';
@@ -23,6 +24,7 @@ void main() {
   tearDown(() => db.close());
 
   const tripId = '0123456789abcdef0123456789abcdef';
+  const layoutId = 'fedcba9876543210fedcba9876543210';
 
   /// A garage with one of everything, cross-references included.
   Future<VehicleRow> populate() async {
@@ -73,6 +75,16 @@ void main() {
             fileBytes: const Value(123),
           ),
         );
+    await LayoutRepository(db).save(
+      DashboardLayoutRow(
+        id: layoutId,
+        vehicleId: v.id,
+        name: 'Main',
+        tilesJson: '[{"pid":"010C","variant":"arc"},{"pid":"0105","variant":"numeric"}]',
+        createdAt: at(0),
+        selectedAt: at(2),
+      ),
+    );
     return v;
   }
 
@@ -98,9 +110,10 @@ void main() {
     final report = await codec.import(doc);
     expect(
       report.total,
-      7,
-      reason: '1 vehicle, record, reminder, fill, trip; 2 snapshots',
+      8,
+      reason: '1 vehicle, record, reminder, fill, trip, layout; 2 snapshots',
     );
+    expect(report.dashboardLayouts, 1);
     expect(report.skipped, 0);
     expect(await snapshot(), before);
 
@@ -134,6 +147,57 @@ void main() {
       expect(back.createdAt.isUtc, isTrue);
     },
   );
+
+  test('★ a merge replaces a layout\'s tiles whole — never a union', () async {
+    await populate();
+    final doc = roundTrip(await codec.export());
+    // Since the backup, this device removed Coolant and added Oil temp.
+    final repo = LayoutRepository(db);
+    final here = (await db.select(db.dashboardLayouts).get()).single;
+    await repo.save(
+      here.copyWith(
+        tilesJson: '[{"pid":"010C","variant":"arc"},{"pid":"015C"}]',
+      ),
+    );
+    await codec.import(doc);
+    final back = (await db.select(db.dashboardLayouts).get()).single;
+    expect(
+      back.tilesJson,
+      '[{"pid":"010C","variant":"arc"},{"pid":"0105","variant":"numeric"}]',
+    );
+  });
+
+  test('★ a layout the schema refuses is skipped and counted; the rest '
+      'commits', () async {
+    await populate();
+    final doc = roundTrip(await codec.export());
+    final good = (doc['dashboardLayouts'] as List).single as Map;
+    doc['dashboardLayouts'] = [
+      good,
+      {...good, 'id': 'a' * 32, 'vehicleId': 'nobody'},
+      {...good, 'id': 'b' * 32, 'tilesJson': 'not json'},
+      {...good, 'id': 'c' * 32, 'name': 'x' * 41},
+    ];
+    await db.wipe();
+    final report = await codec.import(doc);
+    expect(report.dashboardLayouts, 1);
+    expect(report.skipped, greaterThanOrEqualTo(3));
+    expect(
+      await db.select(db.vehicles).get(),
+      hasLength(1),
+      reason: 'committed',
+    );
+  });
+
+  test('a backup from before layouts imports, with none', () async {
+    await populate();
+    final doc = roundTrip(await codec.export())..remove('dashboardLayouts');
+    await db.wipe();
+    final report = await codec.import(doc);
+    expect(report.dashboardLayouts, 0);
+    expect(report.vehicles, 1);
+    expect(BackupCodec.version, 1, reason: 'the section is additive');
+  });
 
   test('importing the same backup twice changes nothing', () async {
     await populate();
@@ -253,7 +317,7 @@ void main() {
       final report = await codec.import(doc);
       expect(report.skipped, 1);
       expect(report.fuelEntries, 1);
-      expect(report.total, 7, reason: 'the rest of the restore went through');
+      expect(report.total, 8, reason: 'the rest of the restore went through');
     },
   );
 
@@ -324,7 +388,7 @@ void main() {
       expect(report.reminders, 1);
       expect(report.fuelEntries, 1);
       expect(report.tripSessions, 1);
-      expect(report.total, 7);
+      expect(report.total, 8);
     },
   );
 

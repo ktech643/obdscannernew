@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:torque_obd2/core/platform/platform_info.dart';
 import 'package:torque_obd2/design_system/design_system.dart';
+import 'package:torque_obd2/features/dashboard/dashboard_layout.dart';
 import 'package:torque_obd2/features/dashboard/dashboard_screen.dart';
+import 'package:torque_obd2/features/dashboard/layout_controller.dart';
 import 'package:torque_obd2/features/session_banner.dart';
 import 'package:torque_obd2/models/enums.dart';
 import 'package:torque_obd2/session/obd_session.dart';
@@ -54,7 +56,9 @@ void main() {
     return s;
   }
 
-  Future<void> pumpDashboard(
+  /// The layout comes from a controller — the one caller of setVisible —
+  /// here with no car and nothing saved, showing [layout] or the defaults.
+  Future<DashboardLayoutController> pumpDashboard(
     WidgetTester tester,
     ObdSession session, {
     List<String>? layout,
@@ -62,7 +66,13 @@ void main() {
     Size size = const Size(390, 780),
     DistanceUnit distance = DistanceUnit.km,
     TemperatureUnit temperature = TemperatureUnit.celsius,
+    LayoutTarget target = const NoVehicleTarget(),
   }) async {
+    final layouts = DashboardLayoutController(
+      publish: session.setVisible,
+      defaults: layout == null ? null : [for (final p in layout) LayoutTile(p)],
+    )..setTarget(target);
+    addTearDown(layouts.dispose);
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -76,7 +86,7 @@ void main() {
             body: SafeArea(
               child: DashboardScreen(
                 session: session,
-                layout: layout,
+                layouts: layouts,
                 onConnect: onConnect,
                 distance: distance,
                 temperature: temperature,
@@ -86,6 +96,7 @@ void main() {
         ),
       ),
     );
+    return layouts;
   }
 
   /// Shuts the session down and pumps until nothing is left scheduled.
@@ -201,8 +212,16 @@ void main() {
       );
       await tester.pump();
 
-      expect(session.bus.of('0105').value?.value, 89, reason: 'metric on the bus');
-      expect(inTile('0105', '192'), findsOneWidget, reason: '89 °C shown as °F');
+      expect(
+        session.bus.of('0105').value?.value,
+        89,
+        reason: 'metric on the bus',
+      );
+      expect(
+        inTile('0105', '192'),
+        findsOneWidget,
+        reason: '89 °C shown as °F',
+      );
       expect(inTile('0105', '°F'), findsOneWidget);
       expect(inTile('0105', '89'), findsNothing);
       expect(inTile('010D', '42'), findsOneWidget, reason: '68 km/h as mph');

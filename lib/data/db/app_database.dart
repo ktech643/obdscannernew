@@ -26,13 +26,14 @@ part 'app_database.g.dart';
     FuelEntries,
     DtcSnapshots,
     TripSessions,
+    DashboardLayouts,
   ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   /// v1 (2026-09-05): the six tables. v2 (2026-09-24): the freeze frame on
   /// `DtcSnapshots` — one nullable column, so a plain `addColumn` is the
@@ -40,13 +41,19 @@ class AppDatabase extends _$AppDatabase {
   /// against `drift_schemas/drift_schema_v2.json`. A step that changes a
   /// table's shape rather than adding to it should move to
   /// `drift_dev schema steps` + `stepByStep`, which references the old
-  /// schema instead of the current table.
+  /// schema instead of the current table. v3 (2026-09-26): the Dashboard's
+  /// layouts, one new table and its index — `createTable` writes no index,
+  /// so the step creates it too.
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
       if (from < 2) {
         await m.addColumn(dtcSnapshots, dtcSnapshots.freezeFrameJson);
+      }
+      if (from < 3) {
+        await m.createTable(dashboardLayouts);
+        await m.createIndex(idxLayoutVehicle);
       }
     },
     beforeOpen: (details) async {
@@ -61,6 +68,7 @@ class AppDatabase extends _$AppDatabase {
   /// `TripRepository.deleteAllFiles()` alongside this, or
   /// `reconcileFiles()` afterwards, or the CSVs outlive their rows.
   Future<void> wipe() => transaction(() async {
+    await delete(dashboardLayouts).go();
     await delete(tripSessions).go();
     await delete(dtcSnapshots).go();
     await delete(fuelEntries).go();

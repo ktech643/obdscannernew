@@ -57,6 +57,9 @@ class Motion {
   /// A generic layout change (a banner pushing content).
   static const layout = Duration(milliseconds: 200);
 
+  /// A tile swiped short of removal returning to its place.
+  static const springBack = Duration(milliseconds: 160);
+
   static const easeOut = Curves.easeOut;
 
   static Duration of(BuildContext context, Duration d) =>

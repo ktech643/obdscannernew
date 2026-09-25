@@ -561,6 +561,7 @@ Files: `lib/data/db/{tables,app_database,open}.dart`, `lib/data/repositories/{ve
 - **Trip files:** the only path ever resolved is exactly `trips/<32-hex>.csv`; anything else (the database file, an attachment, `..`) is refused, and an imported trip row is accepted only with the path the app produces for its own id — a backup is someone else's data. The row is inserted before the file is created. `reconcileFiles()` at launch deletes orphan CSVs and zeroes `fileBytes` on rows whose file is gone; `deleteAllFiles()` is the file half of "Delete all data" (`wipe()` is only the row half). Retention: 30 days by `startedAt`, then 200 MB by `lastOpenedAt` (LRU); a recording trip is never touched; one failed delete doesn't stop the pass.
 - **Backup (`BackupCodec`):** one JSON document, all tables, files by path only. Import runs in one transaction; a row that doesn't parse or fails a CHECK is skipped and counted, never fatal — including the case where Drift's Dart-side length check (UTF-16 units) passes but SQLite's `LENGTH()` (code points) refuses; a merge overwrites a known id in full, nulls included; `replace: true` refuses a document without a vehicle list before wiping, and rolls the wipe back if none of its vehicles could be read. Every timestamp encoding (ISO string or epoch integer) is read back as a UTC instant.
 - **Fuel economy** is computed between full fills only, partials folded in, walked in odometer order (date-picker entries share a midnight timestamp). A km-recurring reminder completed without a reading rolls from the vehicle's odometer, else its own target, else is simply completed — never a silent no-op.
+- **Dashboard layouts (v3, 2026-09-26):** `DashboardLayouts` — one row per named layout of one vehicle, cascading; `tilesJson` (the whole ordered membership) CHECKed as a JSON array of 1–64; the one shown is the latest `selectedAt`. See §B.29.
 - **Schema test:** v1 opens a *fresh* database so `onCreate` runs and is diffed against the dump; starting at v1 and validating at v1 only compares the dump with itself. Each future version adds a step. `tool/schema.sh` re-dumps and regenerates the verifier.
 - **Free-tier caps (§7.2)** are answerable from `count()`/`recordCount()`/`recent(limit:)` but enforced by the entitlement layer (Phase 8), not here.
 - **Not built here:** attachment/photo path handling (Phase 6 UI), the bundled DTC-definition database (`assets/db/dtc.sqlite.gz` needs a licensed, verified source — never fabricate definitions), and wiring the existing Provider UI to these repositories (Phase 6).
@@ -1252,6 +1253,8 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 14 done 2026-09-24 — Data & privacy on Part B; no Industry sub-screen remains, see §B.25
          ◐ review of slices 10–14, 2026-09-25 — 22 confirmed, all fixed, see §B.26
          ◐ slice 15 done 2026-09-25 — the Garage's maintenance log, reminders and fuel log, see §B.27
+         ◐ review of slice 15, 2026-09-25 — 25 confirmed, all fixed, see §B.28
+         ◐ slice 16 done 2026-09-26 — Dashboard grid editing and layouts per vehicle, see §B.29
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -2092,6 +2095,106 @@ not") described tests that could miss a future bug in code that is right.
 vehicle; the free plan has one vehicle, so the two readings differ only for a
 garage that was Pro and lapsed (two refuters of three called it policy). A
 logged service still does not mark its reminder done (§B.27).
+
+## B.29 Dashboard grid editing (Phase 6, slice 16 — 2026-09-26)
+
+§5.3's "Long-press → edit: drag reorder, tap to change PID, swipe to remove.
+Layouts save per vehicle. Free 6 tiles/1 layout; Pro unlimited + named
+layouts", with B.8's floor for every gesture and §8.4's "Tile editing
+disabled above 5 km/h". Designed by a panel (three designs — the user first,
+the data first, the simplest — scored by three judges and synthesized).
+
+**Storage.** `DashboardLayouts`, schema **v3** (`drift_schema_v3.json`): one
+row per named layout of one vehicle, cascading with it. `tilesJson` is the
+whole ordered list of `{pid, variant}` — membership, not just order, so a
+removed tile cannot come back on a cold launch — kept by a SQL CHECK to a
+JSON array of 1–64 entries; the CHECK is a `CASE`, so text that is not JSON
+is an ordinary CHECK failure that an import skips and counts rather than a
+"malformed JSON" error that aborts it. The layout shown is the latest
+`selectedAt`: no one-active flag to repair after a merge or a delete. The
+v3 step creates the table *and* its index (`createTable` writes none).
+`LayoutRepository` (rows only; no stream), `BackupCodec` exports and imports
+the table (a merge replaces a known layout's tiles whole, never a union;
+nothing is trimmed to the plan), and `wipe()` empties it first. A car with
+no row shows the defaults and writes its first row on its first edit.
+
+**One owner.** `DashboardLayoutController` (`lib/features/dashboard/`),
+owned by `LiveSession`, follows the primary vehicle, Demo Mode (edits in
+memory only — the demo never records against the real garage) or no car
+(defaults, editing refused with an "Add your car" path, nothing written).
+It is the only writer of layout rows and the **only caller of
+`setVisible`**: the tiles the plan shows, plus Speed while the phone's own
+car is edited. Each edit is saved as it is made, one full row queued behind
+the last; a stale `LayoutRef` (the car or the layout changed since the sheet
+or gesture began) changes nothing. The plan is pushed live through
+`LiveSettingsSync`, so Pro bought through a door lifts the cap on the screen
+already open (§B.28's blocker, not repeated).
+
+**The plan.** Free shows and polls the first six stored tiles; the rest are
+*held* — kept, not drawn, not polled — so a Pro layout survives a lapse
+whole (§7.5), and a line names them ("3 more gauges are saved on this
+layout…"), with no See Pro. The 7th tile (counted on tiles *stored*, so the
+default six are six) and a 2nd layout are the §7.3 doors, opened only by a
+tap; an electric car — by its fuel type, or §9.4's "0100 but under six
+gauges and no RPM or MAF" — is never offered Pro, and a car with nothing
+left to add gets a statement instead of a door. Undo is never gated.
+
+**Edit mode.** In by a long-press, the header's Edit, or the tile's "Edit
+dashboard" action (VoiceOver has no long-press); out by Done, Android back
+(the shell now asks `maybePop` first, so a root `PopScope` is heard), a
+tab switch (`Visibility.of`), a change of car, or moving (§8.4: a fresh
+Speed reading over 5 km/h — the header says "Edit when parked", a statement,
+and an open edit ends with its changes kept; Demo Mode is not the phone's
+car). A tile moves by its grip (`Draggable`, not `LongPressDraggable`, whose
+own haptic ignores the §5.6 switch), is removed by a sideways swipe past a
+third of its width — distance, never speed, so a flick deletes nothing — or
+its ×, and opens a sheet to change its reading or style ("Number, Arc,
+Trace, Bar"; a trace keeps the last minute in `SparklineHistory`) or move
+it. The last tile cannot go (an empty visible set would bring back the
+session's default six). Undo is labelled ("Undo remove Coolant"), untimed,
+and cleared on leaving.
+
+**Accessibility (B.8).** Each tile stays one semantics node: in edit mode it
+says "Gauge 3 of 6" and carries Move earlier / later / first / last, Change
+reading and Remove — each only where it does something; the grip and the ×
+are hidden from screen readers. Each slot has its own key, so a moved tile
+keeps its node and VoiceOver's focus goes with it, into another row too.
+Every edit is announced, a frame after the change (`AdaptiveAnnounce`). The
+grid is two up while a 16-pt line still gets 100 pt of tile width, else one
+up (`columnsFor`, on the grid's own width); rows are as tall as their
+tallest tile. TalkBack is proven through the semantics tree only (no
+Android build yet), and VoiceOver's speech needs a device.
+
+**Seen on the simulator, and fixed:**
+- The header's Edit sat mid-row beside a short car name ("The Golf"): a
+  `Flexible` name beside a `Spacer` split the free space — the §B.28 row trap
+  again. The accepted golden had recorded it.
+- A tall sheet (a gauge's readings) filled the screen: no scrim to tap, a
+  downward drag scrolled its list, no back on iOS — it could not be left.
+  `showAdaptiveSheet` now gives a dismissible sheet a drag handle and stops
+  it at 90 % of the screen; every tall sheet in the app gains that.
+- An Arc beside a Number made a row of two heights, grips at two levels.
+- The hint's grip glyph "⠿" is not in Barlow and drew an empty box.
+- `idle` awaited a future made under a test's fake clock and hung Delete
+  all data's test; with nothing queued it returns a future of its own zone.
+
+**Tests.** `test/data/layout_repository_test.dart`, the v3 steps in
+`schema_migration_test.dart`, `backup_codec_test.dart`,
+`test/features/dashboard/{layout_controller,speed_gate,dashboard_edit}_test.dart`
+(the edit-mode goldens among them), `test/design_system/adaptive_sheet_test.dart`,
+`live_settings_sync_test.dart`. 37 reverts, each seen failing for its own
+reason — and three that were not, fixed before this was written: a guard
+`to >= 3` on the v3 step that no test could see (the schema verifier does
+not mind an extra table), so it is gone; an epoch check that a change of car
+could not distinguish from a change of layout id (a reload keeps the id, and
+now has a test); and a "fast flick" that `tester.fling` delivered with no
+velocity at all (a timed drag at 300 Hz does). 837 tests, analyzer clean.
+
+**Deferred, named.** The trip strip and recording (next slice; the
+`tripStrip` slot is reserved), the graph screen and §7.2's graph window, the
+§8.4 once-a-day driving warning and B.3's fault pulse; renaming or deleting a
+layout other than the one shown; the same PID twice. Whether §7.2's caps
+count per vehicle or in total is still the open question from §B.28.
 
 ## HARD RULES
 

@@ -27,6 +27,11 @@ import 'garage/maintenance_screen.dart';
 import 'garage/reminders_screen.dart';
 import 'garage/service_intervals.dart' show Money;
 import 'pro/paywall_screen.dart';
+import '../data/repositories/layout_repository.dart';
+import 'dashboard/dashboard_layout.dart';
+import 'dashboard/layout_controller.dart';
+import 'dashboard/speed_gate.dart';
+import 'garage/vehicle_form_screen.dart';
 import 'settings/settings_screen.dart';
 
 /// Holds the one live [ObdSession] and the discovery feeding it, so the
@@ -43,6 +48,7 @@ class LiveSession extends ChangeNotifier {
     VehicleRepository? vehicles,
     ServiceRepository? services,
     TripRepository? trips,
+    LayoutRepository? layouts,
     ScreenWake? screenWake,
   }) : log = ProtocolLog(),
        screenWake = screenWake ?? ScreenWake(),
@@ -64,9 +70,45 @@ class LiveSession extends ChangeNotifier {
       dtcs: dtcs,
       countOverdue: garage == null ? null : _countOverdue,
     );
+    speedGate = SpeedGate(
+      speed: this.session.bus.of(SpeedGate.pid),
+      clock: this.session.clock,
+    );
+    dashboard = DashboardLayoutController(
+      repository: layouts,
+      publish: this.session.setVisible,
+      moving: speedGate.moving,
+    );
+    _syncLayoutTarget();
     garage?.addListener(_syncVehicle);
     _wasLive = this.session.isLive;
     this.session.addListener(_onSession);
+  }
+
+  /// SPEC §5.3 — the Dashboard's layouts, for whichever car is primary:
+  /// the one thing that decides what the car is asked for.
+  late final DashboardLayoutController dashboard;
+
+  /// SPEC §8.4 — whether the phone's car is moving, from Speed.
+  late final SpeedGate speedGate;
+
+  /// Whose layouts the Dashboard shows: the demo's while Demo Mode runs,
+  /// else the primary's once the garage has been read. While a §9.6 question
+  /// is open the primary stays: the sheet cannot be dismissed, so nothing
+  /// can be edited until it is answered.
+  void _syncLayoutTarget() {
+    final g = garage;
+    dashboard.setTarget(
+      _demo
+          ? const DemoTarget()
+          : g == null
+          ? const NoVehicleTarget()
+          : !g.loaded
+          ? const LoadingTarget()
+          : g.primary == null
+          ? const NoVehicleTarget()
+          : VehicleTarget(g.primary!),
+    );
   }
 
   late final ObdSession session;
@@ -106,6 +148,7 @@ class LiveSession extends ChangeNotifier {
   /// demo scan or clear filed under their vehicle would sit in its history
   /// as if it had happened to it.
   void _syncVehicle() {
+    _syncLayoutTarget();
     final g = garage;
     if (g == null) return;
     diagnostics.vehicleId = _demo || g.pendingIdentity != null
@@ -153,7 +196,9 @@ class LiveSession extends ChangeNotifier {
     required bool haptics,
     int? maxPollingHz,
     bool keepScreenOn = true,
+    bool? isPro,
   }) {
+    if (isPro != null) dashboard.isPro = isPro;
     session.autoReconnect = autoReconnect;
     session.scheduler.maxHz = maxPollingHz;
     AdaptiveHaptics.enabled = haptics;
@@ -197,6 +242,8 @@ class LiveSession extends ChangeNotifier {
     garage?.removeListener(_syncVehicle);
     _discovery.dispose();
     diagnostics.dispose();
+    dashboard.dispose();
+    speedGate.dispose();
     garage?.dispose();
     session.dispose();
     super.dispose();
@@ -250,13 +297,27 @@ class LiveDashboardTab extends StatelessWidget {
     // SPEC §5.6 — the unit toggles reach the gauges. Watched here, at the
     // tab, so a change in Settings rebuilds the specs and nothing else.
     final settings = context.watch<SettingsProvider>();
+    final garage = live.garage;
     return _Backlit(
       child: DashboardScreen(
         session: live.session,
+        layouts: live.dashboard,
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
         distance: settings.distance,
         temperature: settings.temperature,
+        onUpgrade: () => openProPaywall(context),
+        // Layouts are kept per car; with none yet, the form that adds one.
+        onAddVehicle: garage == null
+            ? null
+            : () => Navigator.of(context).push(
+                PageRouteBuilder<void>(
+                  pageBuilder: (_, _, _) => VehicleFormScreen(
+                    controller: garage,
+                    unit: settings.distance,
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -396,6 +457,9 @@ class LiveSettingsSync extends StatelessWidget {
       haptics: settings.haptics,
       maxPollingHz: _hzFor(settings.pollingRate),
       keepScreenOn: settings.keepScreenOn,
+      // The plan reaches the Dashboard's layouts live — its listeners are
+      // all below this widget, so a notify during this build is safe.
+      isPro: context.watch<EntitlementProvider>().isPro,
     );
     return child;
   }

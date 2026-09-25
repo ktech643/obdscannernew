@@ -19,10 +19,10 @@ void main() {
   late SchemaVerifier verifier;
   setUpAll(() => verifier = SchemaVerifier(GeneratedHelper()));
 
-  test('v2: what tables.dart creates is exactly what was dumped', () async {
+  test('★ v3: what tables.dart creates is exactly what was dumped', () async {
     // A fresh executor is at user_version 0, so opening runs onCreate.
     final db = AppDatabase(NativeDatabase.memory());
-    await verifier.migrateAndValidate(db, 2);
+    await verifier.migrateAndValidate(db, 3);
     await db.close();
   });
 
@@ -31,6 +31,20 @@ void main() {
     // app's own onUpgrade run — the freeze-frame column on DtcSnapshots.
     final db = AppDatabase(await verifier.startAt(1));
     await verifier.migrateAndValidate(db, 2);
+    await db.close();
+  });
+
+  test('★ v2 → v3: the layouts table and its index', () async {
+    // createTable writes no index; without createIndex this fails on the
+    // missing idx_layout_vehicle.
+    final db = AppDatabase(await verifier.startAt(2));
+    await verifier.migrateAndValidate(db, 3);
+    await db.close();
+  });
+
+  test('★ v1 → v3: both steps, in order', () async {
+    final db = AppDatabase(await verifier.startAt(1));
+    await verifier.migrateAndValidate(db, 3);
     await db.close();
   });
 

@@ -79,6 +79,43 @@ class GaugeCatalog {
     '0142',
   ];
 
+  /// The tile's name for [pid] — the short label, else the registry's.
+  static String labelFor(String pid) =>
+      _labels[pid] ?? PidRegistry.lookup(pid)?.name ?? pid;
+
+  /// The readings a picker offers, in the order it offers them: the ones
+  /// with a short tile name first (the common gauges, in that list's
+  /// order), then the rest by name. Gaugeable only.
+  static List<String> get pickerOrder {
+    final all = gaugeable.toSet();
+    final first = [
+      for (final p in _labels.keys)
+        if (all.contains(p)) p,
+    ];
+    final rest =
+        [
+          for (final p in all)
+            if (!_labels.containsKey(p)) p,
+        ]..sort(
+          (a, b) => (PidRegistry.lookup(a)?.name ?? a).compareTo(
+            PidRegistry.lookup(b)?.name ?? b,
+          ),
+        );
+    return [...first, ...rest];
+  }
+
+  /// SPEC §9.4 — a car that answers 0100 with fewer than six gauges and no
+  /// engine speed or airflow is an electric car, and is never sold Pro for
+  /// more gauges it does not have.
+  static bool looksFullyElectric(Set<String> supported) {
+    if (supported.isEmpty) return false;
+    if (supported.contains('010C') || supported.contains('0110')) {
+      return false;
+    }
+    final gauges = gaugeable.toSet();
+    return supported.where(gauges.contains).length < 6;
+  }
+
   /// Every PID that makes a sensible gauge — enums and one-shot reads are
   /// excluded, since a tile that never changes is a waste of a tile.
   static List<String> get gaugeable => [

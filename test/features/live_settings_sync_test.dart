@@ -25,6 +25,7 @@ void main() {
         providers: [
           ChangeNotifierProvider<LiveSession>.value(value: live),
           ChangeNotifierProvider(create: (_) => SettingsProvider(store)),
+          ChangeNotifierProvider(create: (_) => EntitlementProvider(store)),
         ],
         child: const MaterialApp(
           home: LiveSettingsSync(child: SizedBox.shrink()),
@@ -32,6 +33,23 @@ void main() {
       ),
     );
   }
+
+  testWidgets('★ the plan reaches the Dashboard\'s layouts, live', (
+    tester,
+  ) async {
+    // Read once by a screen, a plan bought through a door stayed free on
+    // the screen already open (§B.28). The layouts hear it from here.
+    final live = LiveSession(session: ObdSession(timeScale: 0.05));
+    addTearDown(live.dispose);
+    await pump(tester, live);
+    expect(live.dashboard.isPro, isFalse);
+    await Provider.of<EntitlementProvider>(
+      tester.element(find.byType(SizedBox)),
+      listen: false,
+    ).subscribe(); // unconfigured: granted at once
+    await tester.pump();
+    expect(live.dashboard.isPro, isTrue);
+  });
 
   testWidgets('★ auto-reconnect off reaches the session', (tester) async {
     final live = LiveSession(session: ObdSession(timeScale: 0.05));

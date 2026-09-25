@@ -215,3 +215,39 @@ class TripSessions extends Table {
   @override
   Set<Column> get primaryKey => {id};
 }
+
+/// SPEC §5.3 — "Layouts save per vehicle." One row is one named layout of
+/// one vehicle's Dashboard; the vehicle's cascade takes its layouts with it.
+///
+/// [tilesJson] is the whole ordered list of `{"pid": …, "variant": …}` —
+/// membership, not just order: a PID not in it is not on the layout. (An
+/// earlier dashboard stored order alone and brought removed tiles back on
+/// a cold launch.) The CHECK keeps it a JSON array of 1–64 entries; the
+/// `CASE` makes text that is not JSON an ordinary CHECK failure, which an
+/// import skips and counts, rather than a "malformed JSON" error that
+/// aborts it.
+///
+/// The layout shown is the one with the latest [selectedAt] — no "exactly
+/// one active" flag to repair after a delete, a merge or an import.
+@DataClassName('DashboardLayoutRow')
+@TableIndex(name: 'idx_layout_vehicle', columns: {#vehicleId})
+class DashboardLayouts extends Table {
+  TextColumn get id => text()();
+  TextColumn get vehicleId =>
+      text().references(Vehicles, #id, onDelete: KeyAction.cascade)();
+  TextColumn get name => text()
+      .withLength(min: 1, max: 40)
+      .check(name.length.isBetweenValues(1, 40))();
+  TextColumn get tilesJson => text().check(
+    const CustomExpression<bool>(
+      "CASE WHEN json_valid(tiles_json) "
+      "THEN json_type(tiles_json) = 'array' "
+      "AND json_array_length(tiles_json) BETWEEN 1 AND 64 ELSE 0 END",
+    ),
+  )();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get selectedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}

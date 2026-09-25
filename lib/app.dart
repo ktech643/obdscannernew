@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'data/db/app_database.dart';
 import 'data/repositories/dtc_repository.dart';
 import 'data/repositories/service_repository.dart';
+import 'data/repositories/layout_repository.dart';
 import 'data/repositories/trip_repository.dart';
 import 'data/repositories/vehicle_repository.dart';
 import 'monetization/revenuecat_service.dart';
@@ -100,6 +101,7 @@ class _TorqueAppState extends State<TorqueApp> {
           vehicles: c.read<VehicleRepository>(),
           services: c.read<ServiceRepository>(),
           trips: c.read<TripRepository>(),
+          layouts: LayoutRepository(db),
         ),
       ),
       Provider<EraseEverything>(
@@ -232,11 +234,11 @@ class _AppShellState extends State<AppShell> {
   /// An earlier version called `pop`, which removed a sheet that had said
   /// it must stay, and did nothing at all at a tab's root.
   Future<void> _back() async {
+    // `maybePop` answers false for a root route with nothing to say, and
+    // true when a route popped or a PopScope refused — the Dashboard's, to
+    // leave edit mode — which `canPop()` first never let it hear.
     final nav = _navKeys[_tab].currentState;
-    if (nav != null && nav.canPop()) {
-      await nav.maybePop();
-      return;
-    }
+    if (nav != null && await nav.maybePop()) return;
     if (_tab != 1) {
       setState(() => _tab = 1);
       return;

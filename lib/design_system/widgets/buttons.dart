@@ -206,9 +206,22 @@ class _DestructiveButtonState extends State<DestructiveButton> {
 
 /// A quiet text action — "Skip", "Not now". Exactly 48px tall, no chrome.
 class GhostButton extends StatelessWidget {
-  const GhostButton({super.key, required this.label, required this.onPressed});
+  const GhostButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.semanticLabel,
+  });
   final String label;
   final VoidCallback? onPressed;
+
+  /// A leading glyph, in the label's colour.
+  final IconData? icon;
+
+  /// What a screen reader says, when it must say more than the words shown
+  /// ("Main, change layout"). The words shown by default.
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +229,7 @@ class GhostButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: onPressed != null,
-      label: label,
+      label: semanticLabel ?? label,
       onTap: onPressed,
       child: ExcludeSemantics(
         child: GestureDetector(
@@ -235,12 +248,26 @@ class GhostButton extends StatelessWidget {
               child: Center(
                 widthFactor: 1,
                 heightFactor: 1,
-                child: Text(
-                  label,
-                  style: TorqueType.label.copyWith(
+                child: Builder(
+                  builder: (context) {
                     // Disabled text is exempt from the 4.5:1 floor.
-                    color: onPressed == null ? t.inkTertiary : t.tellAmber,
-                  ),
+                    final color = onPressed == null
+                        ? t.inkTertiary
+                        : t.tellAmber;
+                    final text = Text(
+                      label,
+                      style: TorqueType.label.copyWith(color: color),
+                    );
+                    if (icon == null) return text;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 18, color: color),
+                        const SizedBox(width: Space.x4),
+                        Flexible(child: text),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

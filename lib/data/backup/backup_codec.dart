@@ -17,7 +17,11 @@ import '../repositories/vehicle_repository.dart';
 ///
 /// After `import(replace: true)`, call `TripRepository.reconcileFiles()`:
 /// the wipe removes rows, and the CSVs of trips the backup doesn't know
-/// about would otherwise sit on disk uncounted.
+/// about would otherwise sit on disk uncounted. And after any import while
+/// the app runs, call `live.dashboard.reload()` (or rebuild the provider
+/// tree, as Delete all data does): the layout controller keeps no stream
+/// on its table, so it would show — and on the next edit overwrite — what
+/// it read before.
 class BackupCodec {
   BackupCodec(this._db);
   final AppDatabase _db;
@@ -54,6 +58,10 @@ class BackupCodec {
     ],
     'tripSessions': [
       for (final r in await _db.select(_db.tripSessions).get())
+        r.toJson(serializer: _json),
+    ],
+    'dashboardLayouts': [
+      for (final r in await _db.select(_db.dashboardLayouts).get())
         r.toJson(serializer: _json),
     ],
   };
@@ -156,6 +164,21 @@ class BackupCodec {
         }
         if (await _upsert(_db.tripSessions, r.toCompanion(false), report)) {
           report.tripSessions++;
+        }
+      }
+      // A layout overwrites a known id in full — its tile list is replaced,
+      // never unioned, so a tile removed on one device is not brought back
+      // by the other. Nothing is trimmed to the free plan (§7.5); the
+      // Dashboard shows the plan's share. After a merge the layout shown is
+      // whichever row, here or in the backup, was chosen last.
+      for (final r in _rows(
+        doc['dashboardLayouts'],
+        DashboardLayoutRow.fromJson,
+        report,
+      )) {
+        if (!owned(r.vehicleId)) continue;
+        if (await _upsert(_db.dashboardLayouts, r.toCompanion(false), report)) {
+          report.dashboardLayouts++;
         }
       }
 
@@ -264,6 +287,7 @@ class ImportReport {
   int fuelEntries = 0;
   int dtcSnapshots = 0;
   int tripSessions = 0;
+  int dashboardLayouts = 0;
 
   /// Rows that didn't parse, failed the schema's limits, named a vehicle
   /// the backup doesn't contain, or carried a path the app never writes.
@@ -275,11 +299,12 @@ class ImportReport {
       reminders +
       fuelEntries +
       dtcSnapshots +
-      tripSessions;
+      tripSessions +
+      dashboardLayouts;
 
   @override
   String toString() =>
       'ImportReport(vehicles: $vehicles, records: $serviceRecords, '
       'reminders: $reminders, fuel: $fuelEntries, snapshots: $dtcSnapshots, '
-      'trips: $tripSessions, skipped: $skipped)';
+      'trips: $tripSessions, layouts: $dashboardLayouts, skipped: $skipped)';
 }

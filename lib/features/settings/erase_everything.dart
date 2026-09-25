@@ -64,6 +64,9 @@ class EraseEverything {
   Future<void> call() async {
     await live.stopDemo();
     await live.session.disconnect();
+    // Ends edit mode and waits for every queued layout write: one still
+    // queued after the wipe would name a car that is gone.
+    await live.dashboard.settle();
 
     await db.wipe();
     await trips.deleteAllFiles();

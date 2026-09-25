@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 
 import '../core/platform/platform_info.dart';
@@ -302,6 +304,14 @@ Future<T?> showAdaptiveSheet<T>(
     useSafeArea: true,
     isDismissible: dismissible,
     enableDrag: dismissible,
+    // A tall sheet whose content is one list filled the screen: no scrim
+    // to tap, a downward drag scrolled the list, and iOS has no back — a
+    // gauge's sheet on the simulator could not be left. A handle to pull
+    // it down by, and a strip of scrim above it to tap.
+    showDragHandle: dismissible,
+    constraints: dismissible
+        ? BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.9)
+        : null,
     backgroundColor: t.surfaceRaised,
     barrierColor: t.surfaceDeep.withValues(alpha: 0.6),
     shape: const RoundedRectangleBorder(
@@ -433,4 +443,22 @@ Future<DateTime?> showAdaptiveDatePicker(
     firstDate: lo,
     lastDate: hi,
   );
+}
+
+/// B.8 — telling a screen reader what just happened, when nothing it is
+/// focused on says so: a tile moved, a gauge removed, edit mode ended.
+///
+/// Sent a frame after the change, because VoiceOver can drop an
+/// announcement made in the same frame as the tree it describes. The view
+/// and the text direction are read now, while [context] is certainly
+/// mounted.
+abstract final class AdaptiveAnnounce {
+  static void polite(BuildContext context, String message) {
+    final view = View.of(context);
+    final direction = Directionality.of(context);
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      SemanticsService.sendAnnouncement(view, message, direction);
+    });
+    SchedulerBinding.instance.scheduleFrame();
+  }
 }

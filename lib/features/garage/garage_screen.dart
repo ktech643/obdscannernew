@@ -218,8 +218,9 @@ class _GarageScreenState extends State<GarageScreen> {
     context,
     title: 'Delete ${v.nickname}?',
     message:
-        'Every service record, reminder, fill-up, diagnostic snapshot and '
-        'trip recorded for it goes too. This cannot be undone.',
+        'Every service record, reminder, fill-up, diagnostic snapshot, '
+        'dashboard layout and trip recorded for it goes too. This cannot be '
+        'undone.',
     actions: [
       AdaptiveAlertAction(label: 'Keep', onPressed: () {}, isDefault: true),
       AdaptiveAlertAction(
