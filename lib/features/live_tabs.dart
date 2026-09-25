@@ -299,6 +299,7 @@ class LiveGarageTab extends StatelessWidget {
         controller: garage,
         session: live.session,
         unit: context.watch<SettingsProvider>().distance,
+        temperature: context.watch<SettingsProvider>().temperature,
         isPro: context.watch<EntitlementProvider>().isPro,
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,

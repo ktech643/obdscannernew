@@ -109,12 +109,16 @@ class _ClearCodesSheetState extends State<ClearCodesSheet> {
         icon: Icons.lightbulb_outline,
         text: 'Turns off the Check Engine light.',
       ),
-      const _Consequence(
+      _Consequence(
         icon: Icons.delete_outline,
-        text:
-            'Erases the freeze-frame data — what the car was doing when '
-            'the fault happened, which a mechanic uses. Torque keeps a copy '
-            'in the snapshot it writes first; the car itself forgets it.',
+        text: _c.recording
+            ? 'Erases the freeze-frame data — what the car was doing when '
+                  'the fault happened, which a mechanic uses. Torque keeps a '
+                  'copy in the snapshot it writes first; the car itself '
+                  'forgets it.'
+            : 'Erases the freeze-frame data — what the car was doing when '
+                  'the fault happened, which a mechanic uses. Nothing is '
+                  'being recorded here, so no copy is kept.',
       ),
       const _Consequence(
         icon: Icons.warning_amber_outlined,

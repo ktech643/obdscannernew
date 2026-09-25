@@ -876,11 +876,23 @@ class ObdSession extends ChangeNotifier {
     final elm = _elm;
     if (elm == null) return ClearResult.interrupted;
 
+    // Every step below awaits the car, and the link can be replaced during
+    // any of them — the reconnect ladder brings up a new session on the
+    // same transport. A clear that carried on would write its snapshot
+    // from a reading of the old link and send Mode 04 to a conversation
+    // it is not part of. So it stops, before anything is written or sent.
+    final gen = _generation;
+    bool replaced() => gen != _generation || !identical(_elm, elm);
+
     final before = await readDtcs();
+    if (replaced()) return ClearResult.interrupted;
     // The freeze frame goes into the snapshot too: Mode 04 erases it, and
     // "what was the engine doing when the code set" is the one thing a
     // mechanic asks that nothing else can answer afterwards.
     final frame = before.all.isEmpty ? null : await readFreezeFrame();
+    // A null frame from a link that went away is not "this car keeps no
+    // frame" — and clearing now would erase the frame nobody kept.
+    if (replaced()) return ClearResult.interrupted;
     DtcSnapshotRow? snapshot;
     if (dtcs != null && vehicleId != null) {
       snapshot = await dtcs!.beginClear(
@@ -891,6 +903,14 @@ class ObdSession extends ChangeNotifier {
         protocol: _protocol?.number,
         freezeFrame: frame,
       );
+    }
+    if (replaced()) {
+      // Mode 04 never went out, so there is nothing to reconcile: not
+      // pending, not refused — the clear simply did not happen.
+      if (snapshot != null) {
+        await dtcs!.failClear(snapshot.id, ClearOutcome.unknown);
+      }
+      return ClearResult.interrupted;
     }
 
     final cleared = await elm.send('04', timeout: ElmSession.slowTimeout);
@@ -984,10 +1004,14 @@ class ObdSession extends ChangeNotifier {
   ///
   /// Null when the car keeps no frame, does not answer Mode 02, or the link
   /// changed underneath. One PID per request — Mode 02 batching is not
-  /// universal — so the read costs at most [maxPids] + 2 round trips, each
-  /// a `NO DATA` at worst. A car that will not give the support mask for
-  /// the frame is asked for the eight most useful PIDs anyway.
-  Future<FreezeFrame?> readFreezeFrame({int frame = 0, int maxPids = 12}) async {
+  /// universal — so the read costs at most [maxPids] + 4 round trips (the
+  /// code and up to three masks), each a `NO DATA` at worst. A car that
+  /// will not give the support mask for the frame is asked for the eight
+  /// most useful PIDs anyway.
+  Future<FreezeFrame?> readFreezeFrame({
+    int frame = 0,
+    int maxPids = 14,
+  }) async {
     final elm = _elm;
     if (elm == null) return null;
     final gen = _generation;
@@ -998,18 +1022,33 @@ class ObdSession extends ChangeNotifier {
     final dtc = FreezeFrameDecoder.decodeDtc(_payload(dtcReply), frame: frame);
     if (dtc == null) return null;
 
-    var supported = const <String>{};
-    final maskReply = await elm.send('0200$f');
-    if (gen != _generation) return null;
-    if (maskReply.isOk) {
-      supported = FreezeFrameDecoder.decodeSupportMask(
+    // Each mask's last bit says whether the next range exists; a mask that
+    // does not answer ends the walk.
+    final supported = <String>{};
+    for (final base in FreezeFrameDecoder.maskPids) {
+      if (base != 0) {
+        final next =
+            '01${base.toRadixString(16).padLeft(2, '0').toUpperCase()}';
+        if (!supported.contains(next)) break;
+      }
+      final b = base.toRadixString(16).padLeft(2, '0').toUpperCase();
+      final maskReply = await elm.send('02$b$f');
+      if (gen != _generation) return null;
+      if (!maskReply.isOk) break;
+      final got = FreezeFrameDecoder.decodeSupportMask(
         _payload(maskReply),
         frame: frame,
+        base: base,
       );
+      if (got.isEmpty) break;
+      supported.addAll(got);
     }
 
     final values = <String, double>{};
-    for (final pid in FreezeFrameDecoder.pidsToRead(supported, limit: maxPids)) {
+    for (final pid in FreezeFrameDecoder.pidsToRead(
+      supported,
+      limit: maxPids,
+    )) {
       final r = await elm.send('02${pid.substring(2)}$f');
       if (gen != _generation) return null;
       if (!r.isOk) continue;

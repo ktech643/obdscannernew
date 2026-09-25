@@ -98,6 +98,15 @@ void main() {
       },
     );
 
+    test('★ a disposed session writes nothing, and says the link is gone', () async {
+      // The reconnect ladder reuses the transport object: a command from
+      // the old session would be a second conversation on the new link.
+      await session.dispose();
+      final r = await session.send('04');
+      expect(transport.writes, isEmpty, reason: 'never reached the wire');
+      expect(r.status, ElmStatus.timeout);
+    });
+
     test('a burst of ten commands never overlaps', () async {
       final futures = [for (var i = 0; i < 10; i++) session.send('010$i')];
       for (var i = 0; i < 10; i++) {

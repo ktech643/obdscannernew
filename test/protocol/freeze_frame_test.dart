@@ -77,6 +77,25 @@ void main() {
       expect(pids, hasLength(18));
     });
 
+    test('★ the second and third masks name PIDs 21–40 and 41–60', () {
+      final second = FreezeFrameDecoder.decodeSupportMask([
+        0x42, 0x20, 0x00, 0x90, 0x07, 0xE0, 0x11,
+      ], base: 0x20);
+      expect(second, containsAll(['0121', '012F', '0140']));
+      expect(second.every((p) => p.compareTo('0121') >= 0), isTrue);
+      final third = FreezeFrameDecoder.decodeSupportMask([
+        0x42, 0x40, 0x00, 0xFA, 0xDC, 0x80, 0x00,
+      ], base: 0x40);
+      expect(third, contains('0142'));
+      // A second mask is not mistaken for the first.
+      expect(
+        FreezeFrameDecoder.decodeSupportMask([
+          0x42, 0x20, 0x00, 0x90, 0x07, 0xE0, 0x11,
+        ]),
+        isEmpty,
+      );
+    });
+
     test('anything else is an empty mask', () {
       expect(FreezeFrameDecoder.decodeSupportMask([0x42, 0x00, 0x01, 1, 2, 3, 4]), isEmpty);
       expect(FreezeFrameDecoder.decodeSupportMask([0x41, 0x00, 0xBE, 0x3F, 0xA8, 0x13]), isEmpty);

@@ -500,6 +500,17 @@ void main() {
       await quiesce(tester, c.session);
     });
 
+    testWidgets('★ with nothing being recorded, nothing claims a copy was '
+        'kept', (tester) async {
+      // No vehicle: the scan is not written, and clearing keeps nothing.
+      final c = await connectedAndScanned(tester, 'dtc_scan_can');
+      expect(c.recording, isFalse);
+      await reveal(tester);
+      expect(find.textContaining('no copy is kept'), findsOne);
+      expect(find.textContaining('diagnostic history'), findsNothing);
+      await quiesce(tester, c.session);
+    });
+
     testWidgets('a clean car shows no frame and was not asked for one', (
       tester,
     ) async {
@@ -540,6 +551,13 @@ void main() {
       // All four, on screen, with no disclosure control to expand.
       expect(find.textContaining('Turns off the Check Engine light'), findsOne);
       expect(find.textContaining('freeze-frame data'), findsOne);
+      // ★ No vehicle here, so nothing is recorded: the sheet must not say
+      // a copy is kept.
+      expect(
+        find.textContaining('Nothing is being recorded here, so no copy'),
+        findsOne,
+      );
+      expect(find.textContaining('Torque keeps a copy'), findsNothing);
       expect(
         find.textContaining('fail an emissions test until it has been '
             'driven 50–100 miles'),
@@ -755,6 +773,10 @@ void main() {
       // The re-read is clean of stored and pending, so the breakdown must
       // not still itemise them.
       expect(c.result!.stored, isEmpty);
+      // ★ P0420 is permanent and survives; P0301's frame does not. An
+      // earlier version kept the frame while any code at all remained.
+      expect(c.result!.permanent, isNotEmpty);
+      expect(c.freezeFrame, isNull, reason: 'its code is gone');
       expect(
         c.health!.deductions.map((d) => d.reason),
         isNot(contains('Confirmed code P0301')),

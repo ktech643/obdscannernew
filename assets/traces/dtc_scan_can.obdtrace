@@ -9,7 +9,8 @@
 # notes: stored and pending lists empty and the PERMANENT code still
 # notes: there — which is what permanent means, and must not be reported
 # notes: as "the code came straight back".
-# notes: Mode 02 answers with the freeze frame the ECU kept for P0301 — an idle misfire, engine still warming.
+# notes: Mode 02 answers with the freeze frame the ECU kept for P0301 — an idle misfire, engine still warming;
+# notes: its Mode 02 masks match its Mode 01 ones, so fuel (2F) and module voltage (42) are in the frame too.
 T+0000  > ATZ
 T+0980  < ELM327 v1.5\r\r>
 T+1010  > ATE0
@@ -94,3 +95,11 @@ T+7253  > 020600
 T+7348  < 7E8 04 42 06 00 8C\r\r>
 T+7383  > 020700
 T+7478  < 7E8 04 42 07 00 90\r\r>
+T+7508  > 022000
+T+7603  < 7E8 07 42 20 00 90 07 E0 11\r\r>
+T+7638  > 024000
+T+7733  < 7E8 07 42 40 00 FA DC 80 00\r\r>
+T+7768  > 022F00
+T+7863  < 7E8 04 42 2F 00 80\r\r>
+T+7898  > 024200
+T+7993  < 7E8 05 42 42 00 36 B0\r\r>

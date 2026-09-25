@@ -22,6 +22,7 @@ import 'package:torque_obd2/features/garage/vehicle_identity.dart';
 import 'package:torque_obd2/features/live_tabs.dart';
 import 'package:torque_obd2/models/enums.dart';
 import 'package:torque_obd2/protocol/dtc_decoder.dart';
+import 'package:torque_obd2/protocol/freeze_frame.dart';
 import 'package:torque_obd2/protocol/vin_reader.dart';
 import 'package:torque_obd2/session/adapter_discovery.dart';
 import 'package:torque_obd2/session/obd_session.dart';
@@ -917,6 +918,46 @@ void main() {
       expect(find.text('Before clear · never verified'), findsOneWidget);
       expect(find.text('1 code · light on'), findsNWidgets(2));
       expect(find.text('P0301'), findsNWidgets(2));
+    });
+
+    testWidgets('★ the freeze frame a snapshot kept can be opened, in the '
+        'user\'s units', (tester) async {
+      // §B.22 says the snapshot keeps the copy; the review found no screen
+      // ever showed it again.
+      final db = newDb();
+      final repo = DtcRepository(db);
+      final car = await VehicleRepository(db)
+          .create(nickname: 'The Civic', fuel: VehicleFuel.petrol);
+      await repo.beginClear(
+        vehicleId: car.id,
+        codes: const [RawDtc('P0301', DtcMode.stored)],
+        freezeFrame: const FreezeFrame(
+          dtc: 'P0301',
+          values: {'010C': 750, '0105': 50},
+        ),
+        now: DateTime.utc(2026, 9, 2, 10, 0),
+      );
+      await tester.pumpWidget(
+        AdaptiveScope(
+          platform: const FakePlatform(isAndroid: false),
+          child: MaterialApp(
+            theme: torqueTheme(),
+            home: DtcHistoryScreen(
+              vehicle: car,
+              dtcs: repo,
+              temperature: TemperatureUnit.fahrenheit,
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      expect(find.textContaining('freeze frame at P0301'), findsOneWidget);
+
+      await tester.tap(find.text('Show the freeze frame'));
+      await settle(tester);
+      expect(find.text('Freeze frame'), findsOneWidget);
+      expect(find.text('750 rpm'), findsOneWidget);
+      expect(find.text('122 °F'), findsOneWidget, reason: '50 °C, in °F');
     });
   });
 

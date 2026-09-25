@@ -4,14 +4,13 @@ import 'package:flutter/widgets.dart';
 import '../../data/dtc_dictionary.dart';
 import '../../design_system/design_system.dart';
 import '../../protocol/dtc_decoder.dart';
-import '../../protocol/freeze_frame.dart';
 import '../../protocol/readiness_decoder.dart';
-import '../../session/gauge_catalog.dart';
 import '../../session/health_score.dart';
 import '../../session/obd_session.dart';
 import '../session_banner.dart';
 import '../../models/enums.dart' show DistanceUnit, TemperatureUnit;
 import 'clear_codes_sheet.dart';
+import 'freeze_frame_view.dart';
 import 'code_detail_screen.dart';
 import 'diagnostics_controller.dart';
 
@@ -337,10 +336,21 @@ class _Result extends StatelessWidget {
             ),
         ],
         if (controller.freezeFrame != null)
-          _FreezeFrame(
-            frame: controller.freezeFrame!,
-            distance: distance,
-            temperature: temperature,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Space.gutter,
+              Space.x24,
+              Space.gutter,
+              0,
+            ),
+            child: FreezeFrameView(
+              frame: controller.freezeFrame!,
+              distance: distance,
+              temperature: temperature,
+              note: controller.recording
+                  ? FreezeFrameNote.kept
+                  : FreezeFrameNote.notKept,
+            ),
           ),
         if (result.readiness != null) _Readiness(report: result.readiness!),
         if (controller.health != null) _Health(score: controller.health!),
@@ -583,77 +593,6 @@ class _ClearOutcome extends StatelessWidget {
 /// §4.7 — three states, never two. "Not supported by this car" is not
 /// "not finished", and merging them tells an owner their car will fail an
 /// emissions test when it will not.
-/// §5.4 — what the engine was doing when the ECU stored its first code,
-/// in the user's units through the same specs the gauges use, so the
-/// number here and the number on a tile agree. Shown between the codes
-/// and the monitors: it is evidence about the codes, read off the car.
-class _FreezeFrame extends StatelessWidget {
-  const _FreezeFrame({
-    required this.frame,
-    required this.distance,
-    required this.temperature,
-  });
-
-  final FreezeFrame frame;
-  final DistanceUnit distance;
-  final TemperatureUnit temperature;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    final rows = <ValueRow>[
-      for (final pid in FreezeFrameDecoder.preferredPids)
-        if (frame.values[pid] case final v?)
-          if (GaugeCatalog.specFor(
-                pid,
-                distance: distance,
-                temperature: temperature,
-              )
-              case final spec?)
-            ValueRow(
-              spec.label,
-              spec.unit.isEmpty
-                  ? spec.format(v)
-                  : '${spec.format(v)} ${spec.unit}',
-            ),
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Space.gutter,
-        Space.x24,
-        Space.gutter,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Freeze frame',
-            style: TorqueType.titleMd.copyWith(color: t.inkPrimary),
-          ),
-          const SizedBox(height: Space.x4),
-          Text(
-            'What the engine was doing when ${frame.dtc} was stored. The '
-            'car keeps one frame and clearing codes erases it; Torque saved '
-            'this copy.',
-            style: TorqueType.body.copyWith(color: t.inkSecondary),
-          ),
-          if (rows.isNotEmpty) ...[
-            const SizedBox(height: Space.x12),
-            ValueList(rows: rows),
-          ] else ...[
-            const SizedBox(height: Space.x8),
-            Text(
-              'The car reported the code but none of the readings.',
-              style: TorqueType.meta.copyWith(color: t.inkTertiary),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _Readiness extends StatelessWidget {
   const _Readiness({required this.report});
   final ReadinessReport report;

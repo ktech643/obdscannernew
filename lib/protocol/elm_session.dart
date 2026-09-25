@@ -78,7 +78,20 @@ class ElmSession {
     return sorted[((sorted.length - 1) * 0.95).floor()];
   }
 
+  /// Set by [dispose]. A disposed session writes nothing: the transport it
+  /// holds may already carry a *new* session's conversation — the
+  /// reconnect ladder reuses the same transport object — and a command
+  /// from the old one would be a second outstanding command on that link
+  /// (hard rule 2). A review found exactly that: a clear begun on a link
+  /// that dropped sent Mode 04 onto the reconnected one.
+  bool _disposed = false;
+
   Future<ElmResponse> send(String command, {Duration? timeout}) {
+    if (_disposed) {
+      return Future.value(
+        ElmResponse(command: command, raw: '', status: ElmStatus.timeout),
+      );
+    }
     final pending = _PendingCommand(command, timeout ?? defaultTimeout);
     _queue.add(pending);
     _pump();
@@ -189,6 +202,7 @@ class ElmSession {
   }
 
   Future<void> dispose() async {
+    _disposed = true;
     flush();
     await _sub.cancel();
   }

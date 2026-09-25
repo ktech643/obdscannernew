@@ -43,6 +43,7 @@ class GarageScreen extends StatefulWidget {
     required this.controller,
     required this.session,
     this.unit = DistanceUnit.km,
+    this.temperature = TemperatureUnit.celsius,
     this.isPro = false,
     this.links = const GarageLinks(),
     this.onConnect,
@@ -53,6 +54,9 @@ class GarageScreen extends StatefulWidget {
   final GarageController controller;
   final ObdSession session;
   final DistanceUnit unit;
+
+  /// For the freeze frames kept in diagnostic history.
+  final TemperatureUnit temperature;
 
   /// §7.2: one vehicle free, unlimited on Pro.
   final bool isPro;
@@ -274,7 +278,12 @@ class _GarageScreenState extends State<GarageScreen> {
           onTap: _c.dtcs == null
               ? null
               : () => _push(
-                  (_) => DtcHistoryScreen(vehicle: primary, dtcs: _c.dtcs!),
+                  (_) => DtcHistoryScreen(
+                    vehicle: primary,
+                    dtcs: _c.dtcs!,
+                    distance: widget.unit,
+                    temperature: widget.temperature,
+                  ),
                 ),
         ),
         if (widget.links.maintenance != null)

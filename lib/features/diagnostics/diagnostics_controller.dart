@@ -130,6 +130,12 @@ class DiagnosticsController extends ChangeNotifier {
   FreezeFrame? _freezeFrame;
   FreezeFrame? get freezeFrame => _freezeFrame;
 
+  /// Whether a scan and a clear here are written to the Garage — a
+  /// repository, and a vehicle to file them under. When false (no car in
+  /// the Garage yet, a §9.6 question open, Demo Mode) nothing is kept, and
+  /// no screen may say a copy of anything was saved.
+  bool get recording => dtcs != null && _vehicleId != null;
+
   HealthScore? _health;
   HealthScore? get health => _health;
 
@@ -259,10 +265,16 @@ class DiagnosticsController extends ChangeNotifier {
   /// drift apart.
   Future<void> _install(DtcReadResult result) async {
     _result = result;
-    // A frame belongs to the codes it sits beside. A reading with none —
-    // after a clear, after a reconcile — means the car has erased it, and
-    // showing the old one next to "No problems found" would be a lie.
-    if (result.all.isEmpty) _freezeFrame = null;
+    // A frame belongs to the code that stored it. Once that code is no
+    // longer stored or pending — a clear, a reconcile — the car has erased
+    // the frame, and a permanent code surviving Mode 04 (which is what
+    // permanent codes do) does not keep it alive. An earlier version kept
+    // the frame whenever *any* code remained.
+    final f = _freezeFrame;
+    if (f != null &&
+        ![...result.stored, ...result.pending].any((d) => d.code == f.dtc)) {
+      _freezeFrame = null;
+    }
     await _loadDefinitions(result.all);
 
     final live = <String, double?>{};

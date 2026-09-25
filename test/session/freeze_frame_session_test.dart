@@ -50,7 +50,11 @@ void main() {
       expect(f.values['0105'], 50, reason: 'warming up');
       expect(f.values['0104'], closeTo(25.1, 0.1));
       expect(f.values['0107'], closeTo(12.5, 0.01), reason: 'lean');
-      expect(f.values, hasLength(10));
+      // ★ From the second and third masks: an earlier version asked only
+      // the first, so fuel and module voltage were never read at all.
+      expect(f.values['012F'], closeTo(50.2, 0.1), reason: 'fuel, mask 20');
+      expect(f.values['0142'], closeTo(14.0, 0.001), reason: 'volts, mask 40');
+      expect(f.values, hasLength(12));
       await s.disconnect();
     });
 
@@ -122,6 +126,44 @@ void main() {
         written.lastIndexWhere((c) => RegExp(r'^02..00$').hasMatch(c)),
         lessThan(clearAt),
         reason: 'every frame PID read before 04',
+      );
+      await s.disconnect();
+    });
+
+    test('★ a link that drops during the pre-clear read sends no Mode 04 '
+        'anywhere, and writes no snapshot', () async {
+      // The review's reproduction: the drop lands mid-way through the
+      // freeze-frame read; the ladder reconnects on the same transport.
+      final transport = transportFor('clear_ok');
+      final s = ObdSession(timeScale: 0.05, dtcs: dtcs);
+      addTearDown(s.dispose);
+      expect(await s.connect(transport), isTrue);
+      s.setVisible({});
+
+      final clearing = s.clearDtcs(vehicleId: vehicleId);
+      for (var i = 0; i < 400 && !transport.written.contains('020C00'); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 2));
+      }
+      expect(transport.written, contains('020C00'), reason: 'mid frame read');
+      await transport.disconnect();
+
+      expect(await clearing, ClearResult.interrupted);
+      // Let the reconnect ladder run its handshake on the same transport.
+      for (var i = 0; i < 400 && !s.isLive; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(
+        transport.written.where((c) => ObdTrace.normalise(c) == '04'),
+        isEmpty,
+        reason: 'not on the old link, not on the new one',
+      );
+      expect(
+        (await dtcs.history(vehicleId)).where(
+          (r) => r.purpose == SnapshotPurpose.beforeClear,
+        ),
+        isEmpty,
+        reason: 'nothing was cleared, so nothing is pending',
       );
       await s.disconnect();
     });

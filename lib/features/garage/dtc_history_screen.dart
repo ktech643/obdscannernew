@@ -4,6 +4,8 @@ import 'package:flutter/widgets.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/dtc_repository.dart';
 import '../../design_system/design_system.dart';
+import '../../models/enums.dart' show DistanceUnit, TemperatureUnit;
+import '../diagnostics/freeze_frame_view.dart';
 
 /// The diagnostic snapshots recorded for one vehicle — every scan, and
 /// every clear as the pair it was: what was there before, what the re-read
@@ -16,10 +18,16 @@ class DtcHistoryScreen extends StatelessWidget {
     super.key,
     required this.vehicle,
     required this.dtcs,
+    this.distance = DistanceUnit.km,
+    this.temperature = TemperatureUnit.celsius,
   });
 
   final VehicleRow vehicle;
   final DtcRepository dtcs;
+
+  /// For a snapshot's freeze frame, shown in the user's units.
+  final DistanceUnit distance;
+  final TemperatureUnit temperature;
 
   @override
   Widget build(BuildContext context) => Backlit(
@@ -59,7 +67,15 @@ class DtcHistoryScreen extends StatelessWidget {
               }
               return ListView(
                 padding: const EdgeInsets.only(bottom: Space.x48),
-                children: [for (final r in rows) _SnapshotRow(row: r)],
+                children: [
+                  for (final r in rows)
+                    _SnapshotRow(
+                      row: r,
+                      onOpenFrame: r.freezeFrame == null
+                          ? null
+                          : () => _showFrame(context, r),
+                    ),
+                ],
               );
             },
           ),
@@ -67,11 +83,38 @@ class DtcHistoryScreen extends StatelessWidget {
       },
     ),
   );
+
+  /// The copy §B.22 says is kept: the frame the snapshot was written with,
+  /// in the same view the Diagnostics screen draws it in.
+  Future<void> _showFrame(BuildContext context, DtcSnapshotRow row) =>
+      showAdaptiveSheet<void>(
+        context,
+        builder: (_) => SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(
+              Space.gutter,
+              Space.x24,
+              Space.gutter,
+              Space.x24,
+            ),
+            child: FreezeFrameView(
+              frame: row.freezeFrame!,
+              note: FreezeFrameNote.snapshot,
+              distance: distance,
+              temperature: temperature,
+            ),
+          ),
+        ),
+      );
 }
 
 class _SnapshotRow extends StatelessWidget {
-  const _SnapshotRow({required this.row});
+  const _SnapshotRow({required this.row, this.onOpenFrame});
   final DtcSnapshotRow row;
+
+  /// Set when the snapshot carries a freeze frame; the row then opens it.
+  final VoidCallback? onOpenFrame;
 
   @override
   Widget build(BuildContext context) {
@@ -108,45 +151,58 @@ class _SnapshotRow extends StatelessWidget {
 
     return Semantics(
       label: '$stamp, $purpose, $summary',
+      button: onOpenFrame != null,
+      onTap: onOpenFrame,
       child: ExcludeSemantics(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: Space.gutter),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: Space.x12),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      stamp,
-                      style: TorqueType.label.copyWith(color: t.inkPrimary),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onOpenFrame,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Space.gutter),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: Space.x12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        stamp,
+                        style: TorqueType.label.copyWith(color: t.inkPrimary),
+                      ),
                     ),
-                  ),
-                  if (tone != Tell.none)
-                    TelltaleChip(tone: tone, label: purpose)
-                  else
-                    Text(
-                      purpose,
-                      style: TorqueType.meta.copyWith(color: t.inkSecondary),
-                    ),
-                ],
-              ),
-              const SizedBox(height: Space.x4),
-              Text(
-                summary,
-                style: TorqueType.body.copyWith(color: t.inkSecondary),
-              ),
-              if (codes.isNotEmpty) ...[
+                    if (tone != Tell.none)
+                      TelltaleChip(tone: tone, label: purpose)
+                    else
+                      Text(
+                        purpose,
+                        style: TorqueType.meta.copyWith(color: t.inkSecondary),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: Space.x4),
                 Text(
-                  codes.map((c) => c.code).toSet().join('  '),
-                  style: TorqueType.meta.copyWith(color: t.inkTertiary),
+                  summary,
+                  style: TorqueType.body.copyWith(color: t.inkSecondary),
                 ),
+                if (codes.isNotEmpty) ...[
+                  const SizedBox(height: Space.x4),
+                  Text(
+                    codes.map((c) => c.code).toSet().join('  '),
+                    style: TorqueType.meta.copyWith(color: t.inkTertiary),
+                  ),
+                ],
+                if (onOpenFrame != null) ...[
+                  const SizedBox(height: Space.x4),
+                  Text(
+                    'Show the freeze frame',
+                    style: TorqueType.label.copyWith(color: t.tellAmber),
+                  ),
+                ],
+                const SizedBox(height: Space.x12),
+                const Hairline(),
               ],
-              const SizedBox(height: Space.x12),
-              const Hairline(),
-            ],
+            ),
           ),
         ),
       ),

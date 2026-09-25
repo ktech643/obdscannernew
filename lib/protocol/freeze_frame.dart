@@ -13,11 +13,7 @@ import 'pid_registry.dart';
 /// own metric units, exactly like a live sample. [frame] is the ECU's
 /// frame number; frame 0 is the one every car keeps.
 class FreezeFrame {
-  const FreezeFrame({
-    required this.dtc,
-    this.frame = 0,
-    required this.values,
-  });
+  const FreezeFrame({required this.dtc, this.frame = 0, required this.values});
 
   /// The code the ECU says this frame belongs to, e.g. `P0301`.
   final String dtc;
@@ -127,18 +123,30 @@ class FreezeFrameDecoder {
     return null;
   }
 
-  /// `42 00 <frame> A B C D` → the Mode 01 ids (`0101`…`0120`) the ECU
-  /// says it can give for this frame. Empty when the reply is not a mask.
-  static Set<String> decodeSupportMask(List<int> payload, {int frame = 0}) {
+  /// The Mode 02 support masks, as the PID each is asked with: `00` covers
+  /// 01–20, `20` covers 21–40, `40` covers 41–60. The last bit of each
+  /// says whether the next one exists.
+  static const maskPids = [0x00, 0x20, 0x40];
+
+  /// `42 <base> <frame> A B C D` → the Mode 01 ids the ECU says it can give
+  /// for this frame in the 32 PIDs after [base] — `0101`…`0120` for base
+  /// `00`, `0121`…`0140` for `20`. Empty when the reply is not that mask.
+  /// An earlier version read only the first mask, so fuel level (`2F`)
+  /// and module voltage (`42`) were never asked of any car.
+  static Set<String> decodeSupportMask(
+    List<int> payload, {
+    int frame = 0,
+    int base = 0x00,
+  }) {
     for (var i = 0; i + 6 < payload.length; i++) {
-      if (payload[i] != 0x42 || payload[i + 1] != 0x00) continue;
+      if (payload[i] != 0x42 || payload[i + 1] != base) continue;
       if (payload[i + 2] != frame) continue;
       final out = <String>{};
       for (var byte = 0; byte < 4; byte++) {
         final bits = payload[i + 3 + byte];
         for (var bit = 0; bit < 8; bit++) {
           if (bits & (0x80 >> bit) != 0) {
-            final n = byte * 8 + bit + 1;
+            final n = base + byte * 8 + bit + 1;
             out.add('01${n.toRadixString(16).padLeft(2, '0').toUpperCase()}');
           }
         }
@@ -169,7 +177,7 @@ class FreezeFrameDecoder {
   /// ones the car offers; without one (a car that does not answer PID 00
   /// in Mode 02), the first eight preferred — each answered `NO DATA` costs
   /// one round trip and nothing else.
-  static List<String> pidsToRead(Set<String> supported, {int limit = 12}) {
+  static List<String> pidsToRead(Set<String> supported, {int limit = 14}) {
     final source = supported.isEmpty
         ? preferredPids.take(8)
         : preferredPids.where(supported.contains);
