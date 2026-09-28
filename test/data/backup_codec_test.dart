@@ -199,6 +199,110 @@ void main() {
     expect(BackupCodec.version, 1, reason: 'the section is additive');
   });
 
+  group('trips from schema v4 on', () {
+    /// This device's trip being recorded right now.
+    Future<TripSessionRow> recording(String vehicleId, {String? id}) async {
+      final rid = id ?? 'c' * 32;
+      await db
+          .into(db.tripSessions)
+          .insert(
+            TripSessionsCompanion.insert(
+              id: rid,
+              vehicleId: vehicleId,
+              startedAt: at(60),
+              lastOpenedAt: at(60),
+              samplesFilePath: TripFiles.pathForId(rid),
+              fileBytes: const Value(30),
+            ),
+          );
+      return (await (db.select(
+        db.tripSessions,
+      )..where((s) => s.id.equals(rid))).getSingle());
+    }
+
+    test('★ a v3 backup\'s trips still import', () async {
+      // A backup written before v4 has no fuelUsedL, recordedMs or
+      // endReason keys. Were any of them non-nullable, fromJson would throw
+      // and every trip in every old backup would be skipped.
+      await populate();
+      final doc = roundTrip(await codec.export());
+      final trip = (doc['tripSessions'] as List).single as Map;
+      for (final key in ['fuelUsedL', 'recordedMs', 'endReason']) {
+        expect(trip.remove(key), isNull, reason: key);
+      }
+      doc['schemaVersion'] = 3;
+      await db.wipe();
+      final report = await codec.import(doc);
+      expect(report.tripSessions, 1);
+      expect(report.skipped, 0);
+      final back = (await db.select(db.tripSessions).get()).single;
+      expect(back.id, tripId);
+      expect(back.fuelUsedL, isNull);
+      expect(back.recordedMs, isNull);
+      expect(back.endReason, isNull);
+      expect(back.fileBytes, 123);
+    });
+
+    test('an end reason this app does not know costs that row', () async {
+      await populate();
+      final doc = roundTrip(await codec.export());
+      ((doc['tripSessions'] as List).single as Map)['endReason'] = 'exploded';
+      await db.wipe();
+      final report = await codec.import(doc);
+      expect(report.tripSessions, 0);
+      expect(report.skipped, 1);
+      expect(report.vehicles, 1, reason: 'the rest of the restore went on');
+    });
+
+    test('★ an open trip in a backup arrives closed', () async {
+      // A backup taken mid-recording. Nothing records that row here: open,
+      // it would be a phantom recording, and it would block every Record
+      // (idx_trip_one_open). Against this device's own recording it would
+      // clash on that index, and `_upsert` rethrows a UNIQUE clash — the
+      // whole import would abort.
+      final v = await populate();
+      final then = await recording(v.id);
+      final doc = roundTrip(await codec.export());
+      // Since the backup, that trip was deleted here and another is
+      // recording now.
+      await (db.delete(
+        db.tripSessions,
+      )..where((s) => s.id.equals(then.id))).go();
+      final here = await recording(v.id, id: 'd' * 32);
+
+      final report = await codec.import(doc);
+      expect(report.tripSessions, 2);
+      final imported = (await (db.select(
+        db.tripSessions,
+      )..where((s) => s.id.equals('c' * 32))).getSingle());
+      expect(imported.endedAt, imported.startedAt);
+      expect(imported.interrupted, isTrue);
+      expect(imported.endReason, TripEnd.appKilled);
+      final still = await (db.select(
+        db.tripSessions,
+      )..where((s) => s.endedAt.isNull())).get();
+      expect(still.map((r) => r.id), [here.id], reason: 'ours records on');
+    });
+
+    test('★ a merge never overwrites the trip being recorded here', () async {
+      // Exported while recording, then merged back while still recording:
+      // the backup's copy of this very trip arrives closed, and writing it
+      // would close the live row from under the recorder.
+      final v = await populate();
+      final live = await recording(v.id);
+      final doc = roundTrip(await codec.export());
+
+      final report = await codec.import(doc);
+      final after = (await (db.select(
+        db.tripSessions,
+      )..where((s) => s.id.equals(live.id))).getSingle());
+      expect(after, live);
+      expect(after.endedAt, isNull);
+      expect(report.skipped, 1);
+      expect(report.tripSessions, 1, reason: 'the closed trip merged');
+    });
+  });
+
   test('importing the same backup twice changes nothing', () async {
     await populate();
     final doc = roundTrip(await codec.export());

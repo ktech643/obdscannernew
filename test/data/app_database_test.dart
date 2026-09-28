@@ -15,7 +15,7 @@ void main() {
   tearDown(() => db.close());
 
   test('opens at the current schema version with every table empty', () async {
-    expect(db.schemaVersion, 3);
+    expect(db.schemaVersion, 4);
     expect(await db.select(db.vehicles).get(), isEmpty);
     expect(await db.select(db.serviceRecords).get(), isEmpty);
     expect(await db.select(db.reminders).get(), isEmpty);

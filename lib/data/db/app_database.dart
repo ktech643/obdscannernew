@@ -33,7 +33,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   /// v1 (2026-09-05): the six tables. v2 (2026-09-24): the freeze frame on
   /// `DtcSnapshots` — one nullable column, so a plain `addColumn` is the
@@ -43,7 +43,12 @@ class AppDatabase extends _$AppDatabase {
   /// `drift_dev schema steps` + `stepByStep`, which references the old
   /// schema instead of the current table. v3 (2026-09-26): the Dashboard's
   /// layouts, one new table and its index — `createTable` writes no index,
-  /// so the step creates it too.
+  /// so the step creates it too. v4 (2026-09-28): trip recording —
+  /// fuelUsedL, recordedMs, endReason, and at most one open trip. The
+  /// UPDATE closes every open row a v3 device left (as the launch pass
+  /// would, but without its file) *before* the unique index is created:
+  /// two open rows would make `createIndex` abort, and the database would
+  /// never open again. It makes the step total.
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
@@ -54,6 +59,16 @@ class AppDatabase extends _$AppDatabase {
       if (from < 3) {
         await m.createTable(dashboardLayouts);
         await m.createIndex(idxLayoutVehicle);
+      }
+      if (from < 4) {
+        await m.addColumn(tripSessions, tripSessions.fuelUsedL);
+        await m.addColumn(tripSessions, tripSessions.recordedMs);
+        await m.addColumn(tripSessions, tripSessions.endReason);
+        await customStatement(
+          'UPDATE trip_sessions SET ended_at = started_at, interrupted = 1, '
+          "end_reason = 'appKilled' WHERE ended_at IS NULL",
+        );
+        await m.createIndex(idxTripOneOpen);
       }
     },
     beforeOpen: (details) async {

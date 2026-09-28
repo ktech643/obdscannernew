@@ -154,6 +154,41 @@ enum SnapshotPurpose { scan, beforeClear, afterClear }
 /// on relaunch means the app died between Mode 04 and the re-read.
 enum ClearOutcome { pending, cleared, codesReturned, refused, unknown }
 
+/// Why a trip ended. Stored by name: append, never reorder.
+///
+/// `endedAt IS NULL` stays the only "still recording" marker — retention
+/// and the one-open index key on it — so this is null while recording, and
+/// on rows written before schema v4.
+enum TripEnd {
+  stopped,
+  notification,
+  disconnected,
+  freeCap,
+  linkLost,
+  ignitionOff,
+  otherVehicle,
+  heldTooLong,
+  storageFull,
+  writeFailed,
+  appKilled,
+}
+
+extension TripEndX on TripEnd {
+  /// The trip did not end the way anyone chose: the app died, the link gave
+  /// up, or the file could not be written. Stored as `interrupted` too, so
+  /// rows from before v4 and rows after it read the same way.
+  bool get interrupted => const {
+    TripEnd.linkLost,
+    TripEnd.storageFull,
+    TripEnd.writeFailed,
+    TripEnd.appKilled,
+  }.contains(this);
+
+  /// Ends "Resume trip?" may continue (§9.2): the app was killed, or the
+  /// link was lost. A storage or write failure would only fail again.
+  bool get resumable => this == TripEnd.appKilled || this == TripEnd.linkLost;
+}
+
 @DataClassName('DtcSnapshotRow')
 @TableIndex(name: 'idx_snapshot_vehicle_taken', columns: {#vehicleId, #takenAt})
 class DtcSnapshots extends Table {
@@ -188,6 +223,13 @@ class DtcSnapshots extends Table {
 
 @DataClassName('TripSessionRow')
 @TableIndex(name: 'idx_trip_vehicle_started', columns: {#vehicleId, #startedAt})
+// SQLite treats NULLs as distinct in a unique index, so a plain UNIQUE on
+// ended_at would allow any number of open trips. The indexed expression is
+// the same value (1) for every open row, and the WHERE keeps closed rows out.
+@TableIndex.sql(
+  'CREATE UNIQUE INDEX idx_trip_one_open ON trip_sessions '
+  '((ended_at IS NULL)) WHERE ended_at IS NULL',
+)
 class TripSessions extends Table {
   TextColumn get id => text()();
   TextColumn get vehicleId =>
@@ -211,6 +253,23 @@ class TripSessions extends Table {
 
   /// The app died (or the link dropped) before the trip was ended cleanly.
   BoolColumn get interrupted => boolean().withDefault(const Constant(false))();
+
+  // Schema v4. Declared last because ALTER TABLE appends: a v3 device that
+  // migrates gets these columns in this order. Nullable, so a v1–v3 backup
+  // (no such keys) still imports — a missing key reads as null.
+
+  /// ∫ fuel rate (015E) dt, in litres — an estimate, and shown as one. Null
+  /// when the car sent no fuel rate, never 0 (hard rule 5).
+  RealColumn get fuelUsedL => real().nullable()();
+
+  /// Recorded time: the file's end `t`, on the monotonic clock. It holds
+  /// inside a segment; the gap before a Resume does not count. A trip's
+  /// length is this, never `endedAt − startedAt`, except on pre-v4 rows.
+  IntColumn get recordedMs => integer().nullable()();
+
+  /// Null while recording and on pre-v4 rows. [interrupted] is always
+  /// written as `endReason.interrupted`.
+  TextColumn get endReason => textEnum<TripEnd>().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

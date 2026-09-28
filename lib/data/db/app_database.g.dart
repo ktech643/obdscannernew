@@ -4062,6 +4062,37 @@ class $TripSessionsTable extends TripSessions
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _fuelUsedLMeta = const VerificationMeta(
+    'fuelUsedL',
+  );
+  @override
+  late final GeneratedColumn<double> fuelUsedL = GeneratedColumn<double>(
+    'fuel_used_l',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _recordedMsMeta = const VerificationMeta(
+    'recordedMs',
+  );
+  @override
+  late final GeneratedColumn<int> recordedMs = GeneratedColumn<int>(
+    'recorded_ms',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<TripEnd?, String> endReason =
+      GeneratedColumn<String>(
+        'end_reason',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<TripEnd?>($TripSessionsTable.$converterendReasonn);
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4077,6 +4108,9 @@ class $TripSessionsTable extends TripSessions
     samplesFilePath,
     fileBytes,
     interrupted,
+    fuelUsedL,
+    recordedMs,
+    endReason,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4193,6 +4227,18 @@ class $TripSessionsTable extends TripSessions
         ),
       );
     }
+    if (data.containsKey('fuel_used_l')) {
+      context.handle(
+        _fuelUsedLMeta,
+        fuelUsedL.isAcceptableOrUnknown(data['fuel_used_l']!, _fuelUsedLMeta),
+      );
+    }
+    if (data.containsKey('recorded_ms')) {
+      context.handle(
+        _recordedMsMeta,
+        recordedMs.isAcceptableOrUnknown(data['recorded_ms']!, _recordedMsMeta),
+      );
+    }
     return context;
   }
 
@@ -4254,6 +4300,20 @@ class $TripSessionsTable extends TripSessions
         DriftSqlType.bool,
         data['${effectivePrefix}interrupted'],
       )!,
+      fuelUsedL: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}fuel_used_l'],
+      ),
+      recordedMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}recorded_ms'],
+      ),
+      endReason: $TripSessionsTable.$converterendReasonn.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}end_reason'],
+        ),
+      ),
     );
   }
 
@@ -4261,6 +4321,11 @@ class $TripSessionsTable extends TripSessions
   $TripSessionsTable createAlias(String alias) {
     return $TripSessionsTable(attachedDatabase, alias);
   }
+
+  static JsonTypeConverter2<TripEnd, String, String> $converterendReason =
+      const EnumNameConverter<TripEnd>(TripEnd.values);
+  static JsonTypeConverter2<TripEnd?, String?, String?> $converterendReasonn =
+      JsonTypeConverter2.asNullable($converterendReason);
 }
 
 class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
@@ -4285,6 +4350,19 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
 
   /// The app died (or the link dropped) before the trip was ended cleanly.
   final bool interrupted;
+
+  /// ∫ fuel rate (015E) dt, in litres — an estimate, and shown as one. Null
+  /// when the car sent no fuel rate, never 0 (hard rule 5).
+  final double? fuelUsedL;
+
+  /// Recorded time: the file's end `t`, on the monotonic clock. It holds
+  /// inside a segment; the gap before a Resume does not count. A trip's
+  /// length is this, never `endedAt − startedAt`, except on pre-v4 rows.
+  final int? recordedMs;
+
+  /// Null while recording and on pre-v4 rows. [interrupted] is always
+  /// written as `endReason.interrupted`.
+  final TripEnd? endReason;
   const TripSessionRow({
     required this.id,
     required this.vehicleId,
@@ -4299,6 +4377,9 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
     required this.samplesFilePath,
     required this.fileBytes,
     required this.interrupted,
+    this.fuelUsedL,
+    this.recordedMs,
+    this.endReason,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4326,6 +4407,17 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
     map['samples_file_path'] = Variable<String>(samplesFilePath);
     map['file_bytes'] = Variable<int>(fileBytes);
     map['interrupted'] = Variable<bool>(interrupted);
+    if (!nullToAbsent || fuelUsedL != null) {
+      map['fuel_used_l'] = Variable<double>(fuelUsedL);
+    }
+    if (!nullToAbsent || recordedMs != null) {
+      map['recorded_ms'] = Variable<int>(recordedMs);
+    }
+    if (!nullToAbsent || endReason != null) {
+      map['end_reason'] = Variable<String>(
+        $TripSessionsTable.$converterendReasonn.toSql(endReason),
+      );
+    }
     return map;
   }
 
@@ -4352,6 +4444,15 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
       samplesFilePath: Value(samplesFilePath),
       fileBytes: Value(fileBytes),
       interrupted: Value(interrupted),
+      fuelUsedL: fuelUsedL == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fuelUsedL),
+      recordedMs: recordedMs == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recordedMs),
+      endReason: endReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endReason),
     );
   }
 
@@ -4374,6 +4475,11 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
       samplesFilePath: serializer.fromJson<String>(json['samplesFilePath']),
       fileBytes: serializer.fromJson<int>(json['fileBytes']),
       interrupted: serializer.fromJson<bool>(json['interrupted']),
+      fuelUsedL: serializer.fromJson<double?>(json['fuelUsedL']),
+      recordedMs: serializer.fromJson<int?>(json['recordedMs']),
+      endReason: $TripSessionsTable.$converterendReasonn.fromJson(
+        serializer.fromJson<String?>(json['endReason']),
+      ),
     );
   }
   @override
@@ -4393,6 +4499,11 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
       'samplesFilePath': serializer.toJson<String>(samplesFilePath),
       'fileBytes': serializer.toJson<int>(fileBytes),
       'interrupted': serializer.toJson<bool>(interrupted),
+      'fuelUsedL': serializer.toJson<double?>(fuelUsedL),
+      'recordedMs': serializer.toJson<int?>(recordedMs),
+      'endReason': serializer.toJson<String?>(
+        $TripSessionsTable.$converterendReasonn.toJson(endReason),
+      ),
     };
   }
 
@@ -4410,6 +4521,9 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
     String? samplesFilePath,
     int? fileBytes,
     bool? interrupted,
+    Value<double?> fuelUsedL = const Value.absent(),
+    Value<int?> recordedMs = const Value.absent(),
+    Value<TripEnd?> endReason = const Value.absent(),
   }) => TripSessionRow(
     id: id ?? this.id,
     vehicleId: vehicleId ?? this.vehicleId,
@@ -4424,6 +4538,9 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
     samplesFilePath: samplesFilePath ?? this.samplesFilePath,
     fileBytes: fileBytes ?? this.fileBytes,
     interrupted: interrupted ?? this.interrupted,
+    fuelUsedL: fuelUsedL.present ? fuelUsedL.value : this.fuelUsedL,
+    recordedMs: recordedMs.present ? recordedMs.value : this.recordedMs,
+    endReason: endReason.present ? endReason.value : this.endReason,
   );
   TripSessionRow copyWithCompanion(TripSessionsCompanion data) {
     return TripSessionRow(
@@ -4454,6 +4571,11 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
       interrupted: data.interrupted.present
           ? data.interrupted.value
           : this.interrupted,
+      fuelUsedL: data.fuelUsedL.present ? data.fuelUsedL.value : this.fuelUsedL,
+      recordedMs: data.recordedMs.present
+          ? data.recordedMs.value
+          : this.recordedMs,
+      endReason: data.endReason.present ? data.endReason.value : this.endReason,
     );
   }
 
@@ -4472,7 +4594,10 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
           ..write('sampleCount: $sampleCount, ')
           ..write('samplesFilePath: $samplesFilePath, ')
           ..write('fileBytes: $fileBytes, ')
-          ..write('interrupted: $interrupted')
+          ..write('interrupted: $interrupted, ')
+          ..write('fuelUsedL: $fuelUsedL, ')
+          ..write('recordedMs: $recordedMs, ')
+          ..write('endReason: $endReason')
           ..write(')'))
         .toString();
   }
@@ -4492,6 +4617,9 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
     samplesFilePath,
     fileBytes,
     interrupted,
+    fuelUsedL,
+    recordedMs,
+    endReason,
   );
   @override
   bool operator ==(Object other) =>
@@ -4509,7 +4637,10 @@ class TripSessionRow extends DataClass implements Insertable<TripSessionRow> {
           other.sampleCount == this.sampleCount &&
           other.samplesFilePath == this.samplesFilePath &&
           other.fileBytes == this.fileBytes &&
-          other.interrupted == this.interrupted);
+          other.interrupted == this.interrupted &&
+          other.fuelUsedL == this.fuelUsedL &&
+          other.recordedMs == this.recordedMs &&
+          other.endReason == this.endReason);
 }
 
 class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
@@ -4526,6 +4657,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
   final Value<String> samplesFilePath;
   final Value<int> fileBytes;
   final Value<bool> interrupted;
+  final Value<double?> fuelUsedL;
+  final Value<int?> recordedMs;
+  final Value<TripEnd?> endReason;
   final Value<int> rowid;
   const TripSessionsCompanion({
     this.id = const Value.absent(),
@@ -4541,6 +4675,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
     this.samplesFilePath = const Value.absent(),
     this.fileBytes = const Value.absent(),
     this.interrupted = const Value.absent(),
+    this.fuelUsedL = const Value.absent(),
+    this.recordedMs = const Value.absent(),
+    this.endReason = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TripSessionsCompanion.insert({
@@ -4557,6 +4694,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
     required String samplesFilePath,
     this.fileBytes = const Value.absent(),
     this.interrupted = const Value.absent(),
+    this.fuelUsedL = const Value.absent(),
+    this.recordedMs = const Value.absent(),
+    this.endReason = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        vehicleId = Value(vehicleId),
@@ -4577,6 +4717,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
     Expression<String>? samplesFilePath,
     Expression<int>? fileBytes,
     Expression<bool>? interrupted,
+    Expression<double>? fuelUsedL,
+    Expression<int>? recordedMs,
+    Expression<String>? endReason,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4593,6 +4736,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
       if (samplesFilePath != null) 'samples_file_path': samplesFilePath,
       if (fileBytes != null) 'file_bytes': fileBytes,
       if (interrupted != null) 'interrupted': interrupted,
+      if (fuelUsedL != null) 'fuel_used_l': fuelUsedL,
+      if (recordedMs != null) 'recorded_ms': recordedMs,
+      if (endReason != null) 'end_reason': endReason,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4611,6 +4757,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
     Value<String>? samplesFilePath,
     Value<int>? fileBytes,
     Value<bool>? interrupted,
+    Value<double?>? fuelUsedL,
+    Value<int?>? recordedMs,
+    Value<TripEnd?>? endReason,
     Value<int>? rowid,
   }) {
     return TripSessionsCompanion(
@@ -4627,6 +4776,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
       samplesFilePath: samplesFilePath ?? this.samplesFilePath,
       fileBytes: fileBytes ?? this.fileBytes,
       interrupted: interrupted ?? this.interrupted,
+      fuelUsedL: fuelUsedL ?? this.fuelUsedL,
+      recordedMs: recordedMs ?? this.recordedMs,
+      endReason: endReason ?? this.endReason,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4673,6 +4825,17 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
     if (interrupted.present) {
       map['interrupted'] = Variable<bool>(interrupted.value);
     }
+    if (fuelUsedL.present) {
+      map['fuel_used_l'] = Variable<double>(fuelUsedL.value);
+    }
+    if (recordedMs.present) {
+      map['recorded_ms'] = Variable<int>(recordedMs.value);
+    }
+    if (endReason.present) {
+      map['end_reason'] = Variable<String>(
+        $TripSessionsTable.$converterendReasonn.toSql(endReason.value),
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4695,6 +4858,9 @@ class TripSessionsCompanion extends UpdateCompanion<TripSessionRow> {
           ..write('samplesFilePath: $samplesFilePath, ')
           ..write('fileBytes: $fileBytes, ')
           ..write('interrupted: $interrupted, ')
+          ..write('fuelUsedL: $fuelUsedL, ')
+          ..write('recordedMs: $recordedMs, ')
+          ..write('endReason: $endReason, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5157,6 +5323,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     'idx_trip_vehicle_started',
     'CREATE INDEX idx_trip_vehicle_started ON trip_sessions (vehicle_id, started_at)',
   );
+  late final Index idxTripOneOpen = Index(
+    'idx_trip_one_open',
+    'CREATE UNIQUE INDEX idx_trip_one_open ON trip_sessions ((ended_at IS NULL)) WHERE ended_at IS NULL',
+  );
   late final Index idxLayoutVehicle = Index(
     'idx_layout_vehicle',
     'CREATE INDEX idx_layout_vehicle ON dashboard_layouts (vehicle_id)',
@@ -5178,6 +5348,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     idxFuelVehicleDate,
     idxSnapshotVehicleTaken,
     idxTripVehicleStarted,
+    idxTripOneOpen,
     idxLayoutVehicle,
   ];
   @override
@@ -8073,6 +8244,9 @@ typedef $$TripSessionsTableCreateCompanionBuilder =
       required String samplesFilePath,
       Value<int> fileBytes,
       Value<bool> interrupted,
+      Value<double?> fuelUsedL,
+      Value<int?> recordedMs,
+      Value<TripEnd?> endReason,
       Value<int> rowid,
     });
 typedef $$TripSessionsTableUpdateCompanionBuilder =
@@ -8090,6 +8264,9 @@ typedef $$TripSessionsTableUpdateCompanionBuilder =
       Value<String> samplesFilePath,
       Value<int> fileBytes,
       Value<bool> interrupted,
+      Value<double?> fuelUsedL,
+      Value<int?> recordedMs,
+      Value<TripEnd?> endReason,
       Value<int> rowid,
     });
 
@@ -8184,6 +8361,22 @@ class $$TripSessionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<double> get fuelUsedL => $composableBuilder(
+    column: $table.fuelUsedL,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get recordedMs => $composableBuilder(
+    column: $table.recordedMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<TripEnd?, TripEnd, String> get endReason =>
+      $composableBuilder(
+        column: $table.endReason,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
   $$VehiclesTableFilterComposer get vehicleId {
     final $$VehiclesTableFilterComposer composer = $composerBuilder(
       composer: this,
@@ -8277,6 +8470,21 @@ class $$TripSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get fuelUsedL => $composableBuilder(
+    column: $table.fuelUsedL,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get recordedMs => $composableBuilder(
+    column: $table.recordedMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endReason => $composableBuilder(
+    column: $table.endReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$VehiclesTableOrderingComposer get vehicleId {
     final $$VehiclesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -8360,6 +8568,17 @@ class $$TripSessionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<double> get fuelUsedL =>
+      $composableBuilder(column: $table.fuelUsedL, builder: (column) => column);
+
+  GeneratedColumn<int> get recordedMs => $composableBuilder(
+    column: $table.recordedMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<TripEnd?, String> get endReason =>
+      $composableBuilder(column: $table.endReason, builder: (column) => column);
+
   $$VehiclesTableAnnotationComposer get vehicleId {
     final $$VehiclesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -8425,6 +8644,9 @@ class $$TripSessionsTableTableManager
                 Value<String> samplesFilePath = const Value.absent(),
                 Value<int> fileBytes = const Value.absent(),
                 Value<bool> interrupted = const Value.absent(),
+                Value<double?> fuelUsedL = const Value.absent(),
+                Value<int?> recordedMs = const Value.absent(),
+                Value<TripEnd?> endReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TripSessionsCompanion(
                 id: id,
@@ -8440,6 +8662,9 @@ class $$TripSessionsTableTableManager
                 samplesFilePath: samplesFilePath,
                 fileBytes: fileBytes,
                 interrupted: interrupted,
+                fuelUsedL: fuelUsedL,
+                recordedMs: recordedMs,
+                endReason: endReason,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8457,6 +8682,9 @@ class $$TripSessionsTableTableManager
                 required String samplesFilePath,
                 Value<int> fileBytes = const Value.absent(),
                 Value<bool> interrupted = const Value.absent(),
+                Value<double?> fuelUsedL = const Value.absent(),
+                Value<int?> recordedMs = const Value.absent(),
+                Value<TripEnd?> endReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TripSessionsCompanion.insert(
                 id: id,
@@ -8472,6 +8700,9 @@ class $$TripSessionsTableTableManager
                 samplesFilePath: samplesFilePath,
                 fileBytes: fileBytes,
                 interrupted: interrupted,
+                fuelUsedL: fuelUsedL,
+                recordedMs: recordedMs,
+                endReason: endReason,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

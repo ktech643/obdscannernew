@@ -77,6 +77,12 @@ class BackupCodec {
   /// only accepted with the one path the app itself produces for its id.
   /// The one-primary-vehicle invariant is restored at the end; on a merge
   /// the device's own primary wins.
+  ///
+  /// Trips: a backup from before schema v4 reads the new columns as null;
+  /// an open trip arrives closed, as [TripEnd.appKilled]; and the trip being
+  /// recorded on this device is never overwritten. Replace wipes that one
+  /// with everything else — when Restore gets a UI, it must stop the
+  /// recorder first.
   Future<ImportReport> import(
     Map<String, Object?> doc, {
     bool replace = false,
@@ -150,6 +156,15 @@ class BackupCodec {
           report.dtcSnapshots++;
         }
       }
+      // The trip being recorded here, if any. At most one row may be open
+      // (idx_trip_one_open), and `_upsert` rethrows a UNIQUE clash, which
+      // would abort the whole import.
+      final recording = {
+        for (final r in await (_db.select(
+          _db.tripSessions,
+        )..where((s) => s.endedAt.isNull())).get())
+          r.id,
+      };
       for (final r in _rows(
         doc['tripSessions'],
         TripSessionRow.fromJson,
@@ -162,7 +177,23 @@ class BackupCodec {
           report.skipped++;
           continue;
         }
-        if (await _upsert(_db.tripSessions, r.toCompanion(false), report)) {
+        // A merge never overwrites the trip being recorded: the recorder
+        // holds its file and will finish that row itself.
+        if (recording.contains(r.id)) {
+          report.skipped++;
+          continue;
+        }
+        // A backup taken mid-recording holds an open row. Nothing records
+        // it here, so it arrives closed, the way the launch pass closes a
+        // trip the app was killed during — never as a phantom recording.
+        final row = r.endedAt != null
+            ? r
+            : r.copyWith(
+                endedAt: Value(r.startedAt),
+                interrupted: true,
+                endReason: const Value(TripEnd.appKilled),
+              );
+        if (await _upsert(_db.tripSessions, row.toCompanion(false), report)) {
           report.tripSessions++;
         }
       }
