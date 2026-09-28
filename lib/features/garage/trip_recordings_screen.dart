@@ -260,7 +260,8 @@ class _TripSheet extends StatelessWidget {
   static String exact(int ms) {
     final s = ms <= 0 ? 0 : ms ~/ 1000;
     if (s < 60) return '$s s';
-    if (s < 3600) return '${s ~/ 60} min ${s % 60} s';
+    final min = '${s ~/ 60} min';
+    if (s < 3600) return s % 60 == 0 ? min : '$min ${s % 60} s';
     return '${s ~/ 3600} h ${(s % 3600 ~/ 60).toString().padLeft(2, '0')} min';
   }
 
@@ -270,6 +271,36 @@ class _TripSheet extends StatelessWidget {
     final open = row.endedAt == null;
     final ms = _TripRecordingsScreenState.recordedMsOf(row);
     final note = TorqueType.meta.copyWith(color: t.inkSecondary);
+    final title = _TripRecordingsScreenState.title(row, fmt);
+    String? or(double? v, String Function(double) f) => v == null ? null : f(v);
+    String? why(Object? v) => v == null ? _unreported : null;
+    final rows = held
+        ? [ValueRow('Started', title)]
+        : [
+            ValueRow('Recorded', ms == null || open ? null : exact(ms)),
+            ValueRow(
+              'Distance',
+              or(row.distanceKm, fmt.distance),
+              reason: why(row.distanceKm),
+            ),
+            ValueRow(
+              'Average speed',
+              or(row.avgSpeedKph, fmt.speed),
+              reason: why(row.avgSpeedKph),
+            ),
+            ValueRow(
+              'Top speed',
+              or(row.maxSpeedKph, fmt.speed),
+              reason: why(row.maxSpeedKph),
+            ),
+            ValueRow(
+              'Fuel used (estimated)',
+              or(row.fuelUsedL, fmt.litres),
+              reason: why(row.fuelUsedL),
+            ),
+            ValueRow('Samples', '${row.sampleCount}'),
+            ValueRow('Ended', open ? 'Recording now' : ended(row.endReason)),
+          ];
     return SafeArea(
       top: false,
       child: ListView(
@@ -277,51 +308,26 @@ class _TripSheet extends StatelessWidget {
         physics: adaptiveScrollPhysics(context),
         padding: const EdgeInsets.only(bottom: Space.x16),
         children: [
-          ListSection(title: _TripRecordingsScreenState.title(row, fmt)),
-          if (held) ...[
-            ValueList(
-              rows: [
-                ValueRow('Started', _TripRecordingsScreenState.title(row, fmt)),
-              ],
-            ),
+          ListSection(title: title),
+          // Inside the gutter, as every other ValueList sits in its card:
+          // flush to the sheet's edge, the values were cut off.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Space.gutter),
+            child: ValueList(rows: rows),
+          ),
+          if (held)
             Padding(
-              padding: const EdgeInsets.all(Space.gutter),
+              padding: const EdgeInsets.fromLTRB(
+                Space.gutter,
+                Space.x16,
+                Space.gutter,
+                0,
+              ),
               child: Text(
                 'The free plan shows the last ${TripPlan.freeTrips} trips '
                 'for each car. This one is kept, not deleted.',
                 style: note,
               ),
-            ),
-          ] else
-            ValueList(
-              rows: [
-                ValueRow('Recorded', ms == null || open ? null : exact(ms)),
-                ValueRow(
-                  'Distance',
-                  row.distanceKm == null ? null : fmt.distance(row.distanceKm!),
-                  reason: row.distanceKm == null ? _unreported : null,
-                ),
-                ValueRow(
-                  'Average speed',
-                  row.avgSpeedKph == null ? null : fmt.speed(row.avgSpeedKph!),
-                  reason: row.avgSpeedKph == null ? _unreported : null,
-                ),
-                ValueRow(
-                  'Top speed',
-                  row.maxSpeedKph == null ? null : fmt.speed(row.maxSpeedKph!),
-                  reason: row.maxSpeedKph == null ? _unreported : null,
-                ),
-                ValueRow(
-                  'Fuel used (estimated)',
-                  row.fuelUsedL == null ? null : fmt.litres(row.fuelUsedL!),
-                  reason: row.fuelUsedL == null ? _unreported : null,
-                ),
-                ValueRow('Samples', '${row.sampleCount}'),
-                ValueRow(
-                  'Ended',
-                  open ? 'Recording now' : ended(row.endReason),
-                ),
-              ],
             ),
           Padding(
             padding: const EdgeInsets.all(Space.gutter),

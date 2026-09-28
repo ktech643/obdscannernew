@@ -299,6 +299,69 @@ void main() {
     });
   });
 
+  group('★ stale means late for the reading\'s own pace', () {
+    // Seen on the simulator: beside a trip recording's extra PIDs, and on
+    // any slow adapter, a reading arrives every half second or so. Judged
+    // against the spec's 125 ms it dimmed and undimmed — a clock and
+    // "0 s ago" — on every sample, and the Dashboard jerked.
+    Future<void> at(WidgetTester tester, int ms, {bool sample = false}) async {
+      final when = t0.add(Duration(milliseconds: ms));
+      if (sample) live.value = PidSample(pid: '05', value: 89, at: when);
+      clock.tick(when);
+      await tester.pump();
+    }
+
+    bool staleNow() => find.byIcon(Icons.schedule).evaluate().isNotEmpty;
+
+    testWidgets('★ a steady reading every 600 ms never reads as stale', (
+      tester,
+    ) async {
+      await pumpDs(tester, tile(), reducedMotion: true);
+      var stale = 0;
+      for (var ms = 0; ms <= 6000; ms += 100) {
+        await at(tester, ms, sample: ms % 600 == 0);
+        // Once two readings have shown the pace.
+        if (ms >= 1200 && staleNow()) stale++;
+      }
+      expect(stale, 0, reason: 'dimmed between on-time readings');
+    });
+
+    testWidgets('★ a reading that stops is stale at twice its pace, then '
+        'No data', (tester) async {
+      await pumpDs(tester, tile(), reducedMotion: true);
+      for (var ms = 0; ms <= 1800; ms += 600) {
+        await at(tester, ms, sample: true);
+      }
+      await at(tester, 1800 + 1100);
+      expect(staleNow(), isFalse, reason: 'not yet late');
+      await at(tester, 1800 + 1300);
+      expect(staleNow(), isTrue);
+      await at(tester, 1800 + 5100);
+      expect(find.text('No data'), findsOneWidget);
+    });
+
+    testWidgets('★ an outage is not the pace', (tester) async {
+      await pumpDs(tester, tile(), reducedMotion: true);
+      for (final ms in [0, 600, 1200, 8200, 8800]) {
+        await at(tester, ms, sample: true);
+      }
+      // Folded into the pace, the 7 s outage let a stopped reading look
+      // live for three and a half seconds.
+      await at(tester, 8800 + 1300);
+      expect(staleNow(), isTrue);
+    });
+
+    testWidgets('★ a late reading is never "0 s ago"', (tester) async {
+      final handle = tester.ensureSemantics();
+      live.value = sample(89, age: const Duration(milliseconds: 400));
+      await pumpDs(tester, tile(), reducedMotion: true);
+      expect(find.text('0 s ago'), findsNothing);
+      expect(find.text('1 s ago'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('1 second ago')), findsOneWidget);
+      handle.dispose();
+    });
+  });
+
   group('★ hard rule 4 — staleness is a state', () {
     testWidgets('decays through the shared clock with no new sample', (
       tester,
