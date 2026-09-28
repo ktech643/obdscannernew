@@ -2348,7 +2348,12 @@ counted only once the service was seen running. Manifest and Kotlin: the
 Bluetooth grant), `stopWithTask`, a refused `startForeground` that stops
 instead of crashing, the start error reported to Dart, and the service
 stopped with the engine. `flutter build apk --debug` succeeds — the first
-build since `ScreenWakePlugin.kt` went in (§B.20).
+build since `ScreenWakePlugin.kt` went in (§B.20) — and on an Android 14
+emulator (API 34) against the trace server, with no Bluetooth permission
+granted: Record asked for notifications once, the service came up as
+`connectedDevice` (`types=0x10`) when the answer returned, a backgrounded trip
+kept writing Speed and Fuel rate, the notification's Stop was heard as
+"Stopped from the notification", and nothing crashed (AC-12).
 
 **The plan (§7.2, §7.3, §7.5, §9.4).**
 - Free records 2:00 of recorded time — holds count — then saves and stops:
