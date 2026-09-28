@@ -52,8 +52,18 @@ class ObdForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        isRunning = true
-        startForeground(NOTIFICATION_ID, buildNotification())
+        // Running only once startForeground has succeeded. Android refuses it
+        // from the background (API 31+, ForegroundServiceStartNotAllowed) and
+        // without a connectedDevice prerequisite (API 34+, SecurityException).
+        // A refusal is not a crash: the service stops, and Dart's isRunning
+        // check reads it as refused and pauses in the background instead.
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification())
+            isRunning = true
+        } catch (e: Exception) {
+            isRunning = false
+            stopSelf()
+        }
         // START_NOT_STICKY: if the OS kills us we do not want to be relaunched
         // into a recording the user has already stopped.
         return START_NOT_STICKY

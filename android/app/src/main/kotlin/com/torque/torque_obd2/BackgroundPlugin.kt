@@ -14,7 +14,8 @@ import io.flutter.plugin.common.MethodChannel
  * Foreground service + OEM battery-optimisation control. SPEC §9.3 / §9.4.
  *
  *   MethodChannel "ktc.torque/fgs"
- *     startRecording()                -> null   (starts the connectedDevice FGS)
+ *     startRecording()                -> null   (starts the connectedDevice FGS;
+ *                                                error fgs_start if refused)
  *     stopRecording()                 -> null
  *     isForegroundServiceRunning()    -> Boolean
  *     hasNotificationPermission()     -> Boolean (API 33+ gate)
@@ -52,8 +53,15 @@ class BackgroundPlugin(
         when (call.method) {
             "startRecording" -> {
                 val intent = Intent(appContext, ObdForegroundService::class.java)
-                appContext.startForegroundService(intent)
-                result.success(null)
+                // ForegroundServiceStartNotAllowedException (a start from the
+                // background, API 31+) and SecurityException reach Dart as
+                // fgs_start, where startRecording() answers false.
+                try {
+                    appContext.startForegroundService(intent)
+                    result.success(null)
+                } catch (e: Exception) {
+                    result.error("fgs_start", e.message, null)
+                }
             }
             "stopRecording" -> {
                 val intent = Intent(appContext, ObdForegroundService::class.java)

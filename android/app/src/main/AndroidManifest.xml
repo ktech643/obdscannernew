@@ -25,6 +25,11 @@
          MissingForegroundServiceTypeException. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- API 34 refuses a connectedDevice service unless the app holds one of
+         its prerequisite permissions. BLUETOOTH_CONNECT is one, but a Wi-Fi
+         adapter user may never have granted it; this one is granted at
+         install, so a Wi-Fi recording can still start its service (AC-12). -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <application
         android:label="torque_obd2"
         android:name="${applicationName}"
@@ -58,10 +63,14 @@
             android:value="2" />
 
         <!-- Holds the adapter connection while a trip recording runs with the
-             screen off. Typed connectedDevice for Android 14+. -->
+             screen off. Typed connectedDevice for Android 14+. stopWithTask:
+             the recorder lives in the Activity's engine, so swiping the task
+             away ends the recording; without it a 'Recording trip'
+             notification stays up with nothing behind it. -->
         <service
             android:name=".ObdForegroundService"
             android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="true"
             android:exported="false" />
     </application>
     <!-- Required to query activities that can process text, see:

@@ -47,18 +47,102 @@ void main() {
       channel: channel,
       platform: const FakePlatform(isAndroid: true),
     );
-    await svc.startRecording();
+    expect(await svc.startRecording(), isTrue);
     await svc.stopRecording();
     expect(calls.map((c) => c.method), ['startRecording', 'stopRecording']);
   });
 
-  test('recording is a no-op on iOS — no channel calls', () async {
+  test(
+    'recording is a no-op on iOS — no channel calls, nothing refused',
+    () async {
+      final svc = BackgroundService(
+        channel: channel,
+        platform: const FakePlatform(isAndroid: false),
+      );
+      // True: iOS holds the link under bluetooth-central, so there is no
+      // service to be refused and nothing to pause for.
+      expect(await svc.startRecording(), isTrue);
+      await svc.stopRecording();
+      expect(calls, isEmpty);
+    },
+  );
+
+  test(
+    '★ startRecording says false when Android refuses the service',
+    () async {
+      // What BackgroundPlugin sends when startForegroundService throws —
+      // a start from the background on API 31+, or a missing connectedDevice
+      // prerequisite on API 34+. Reading it as started, the recorder would
+      // claim a background recording that nothing holds.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            throw PlatformException(
+              code: 'fgs_start',
+              message:
+                  'startForegroundService() not allowed due to '
+                  'mAllowStartForeground false',
+            );
+          });
+      final svc = BackgroundService(
+        channel: channel,
+        platform: const FakePlatform(isAndroid: true),
+      );
+      expect(await svc.startRecording(), isFalse);
+      expect(calls.map((c) => c.method), ['startRecording']);
+    },
+  );
+
+  test(
+    '★ no native side: every method answers as a refusal, none throws',
+    () async {
+      // No handler at all — a test, or an engine MainActivity never
+      // configured — raises MissingPluginException, which is not a
+      // PlatformException. It must not reach the recorder.
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      final svc = BackgroundService(
+        channel: channel,
+        platform: const FakePlatform(isAndroid: true),
+      );
+      expect(await svc.startRecording(), isFalse, reason: 'no service started');
+      await expectLater(svc.stopRecording(), completes);
+      expect(await svc.isRunning(), isFalse);
+      expect(await svc.hasNotificationPermission(), isTrue);
+      expect(await svc.requestNotificationPermission(), isTrue);
+      expect(await svc.batteryOptimization(), isNull);
+      expect(await svc.openBatterySettings(), isFalse);
+    },
+  );
+
+  test('the platform refusing answers as before', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          throw PlatformException(code: 'refused');
+        });
+    final svc = BackgroundService(
+      channel: channel,
+      platform: const FakePlatform(isAndroid: true),
+    );
+    await expectLater(svc.stopRecording(), completes);
+    expect(await svc.isRunning(), isFalse);
+    expect(await svc.hasNotificationPermission(), isTrue);
+    expect(await svc.requestNotificationPermission(), isTrue);
+    expect(await svc.batteryOptimization(), isNull);
+    expect(await svc.openBatterySettings(), isFalse);
+    expect(calls, hasLength(6));
+  });
+
+  test('off Android nothing reaches the channel', () async {
     final svc = BackgroundService(
       channel: channel,
       platform: const FakePlatform(isAndroid: false),
     );
-    await svc.startRecording();
-    await svc.stopRecording();
+    expect(await svc.isRunning(), isFalse);
+    expect(await svc.hasNotificationPermission(), isTrue);
+    expect(await svc.requestNotificationPermission(), isTrue);
+    expect(await svc.openBatterySettings(), isFalse);
     expect(calls, isEmpty);
   });
 

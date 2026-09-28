@@ -16,6 +16,30 @@ abstract interface class PlatformInfo {
   /// yes; iOS negotiates it silently and rejects the call.
   bool get supportsMtuNegotiation;
 
+  /// The slowest a trip recording may poll while the app is in the
+  /// background: one cycle per interval, or null for no floor. iOS keeps a
+  /// BLE link under `bluetooth-central` but kills an app that polls it at
+  /// 10 Hz (§9.3), so it gets [iosBackgroundPollInterval]: 0.5 Hz, active
+  /// recordings only (§5.3). Android's foreground service has no rate in
+  /// the SPEC and keeps the adaptive one.
+  Duration? get backgroundPollInterval;
+
+  /// Whether recording past the screen needs a foreground service — and
+  /// so a notification, and on API 33+ the permission to post one. Android
+  /// yes (`connectedDevice`, §9.3); iOS holds the link without one.
+  bool get backgroundNeedsService;
+
+  /// Whether a Wi-Fi adapter's socket survives the app going to the
+  /// background. iOS suspends it with the app — `bluetooth-central` covers
+  /// Bluetooth only — so a recording over Wi-Fi pauses there instead of
+  /// polling a dead socket. `TransportCapabilities.wifi` claims
+  /// `supportsBackgroundHold` on every platform, which is why this exists.
+  bool get holdsWifiInBackground;
+
+  /// 0.5 Hz: one poll cycle every 2 s (§5.3, §9.3). Shared so the fake
+  /// cannot drift from the device.
+  static const iosBackgroundPollInterval = Duration(seconds: 2);
+
   static const PlatformInfo current = _RealPlatform();
 }
 
@@ -33,6 +57,16 @@ class _RealPlatform implements PlatformInfo {
 
   @override
   bool get supportsMtuNegotiation => Platform.isAndroid;
+
+  @override
+  Duration? get backgroundPollInterval =>
+      Platform.isIOS ? PlatformInfo.iosBackgroundPollInterval : null;
+
+  @override
+  bool get backgroundNeedsService => Platform.isAndroid;
+
+  @override
+  bool get holdsWifiInBackground => !Platform.isIOS;
 }
 
 /// For tests and for previewing the other platform's UI.
@@ -50,4 +84,14 @@ class FakePlatform implements PlatformInfo {
 
   @override
   bool get supportsMtuNegotiation => isAndroid;
+
+  @override
+  Duration? get backgroundPollInterval =>
+      isAndroid ? null : PlatformInfo.iosBackgroundPollInterval;
+
+  @override
+  bool get backgroundNeedsService => isAndroid;
+
+  @override
+  bool get holdsWifiInBackground => isAndroid;
 }

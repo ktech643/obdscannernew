@@ -1,5 +1,6 @@
 package com.torque.torque_obd2
 
+import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
@@ -21,6 +22,12 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        // The engine, and the trip recorder in it, dies with this Activity
+        // (§3.4.1). A foreground service left up would hold a 'Recording
+        // trip' notification over nothing; the next launch closes the trip.
+        applicationContext.stopService(
+            Intent(applicationContext, ObdForegroundService::class.java),
+        )
         spp?.dispose()
         spp = null
         background?.dispose()
