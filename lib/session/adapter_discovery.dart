@@ -243,10 +243,29 @@ class RealAdapterDiscovery implements AdapterDiscovery {
     }
   }
 
+  /// Development only: `--dart-define=TORQUE_DEV_WIFI=127.0.0.1:35000`
+  /// offers one more endpoint — `tool/trace_server.dart` replaying a
+  /// recorded car — so the real connect and recording paths can run on the
+  /// iOS simulator. Never offered by a release build, define or not.
+  static const _devWifi = String.fromEnvironment('TORQUE_DEV_WIFI');
+
   /// Wi-Fi adapters do not advertise. The well-known endpoints are offered
   /// unconditionally and proved by connecting — a "Test" that only opens a
   /// socket would be a second, differently-behaving connect path.
   void _addWifi() {
+    final dev = _devWifi.lastIndexOf(':');
+    if (!kReleaseMode && dev > 0) {
+      final host = _devWifi.substring(0, dev);
+      final port = _devWifi.substring(dev + 1);
+      _put(
+        Adapter(
+          id: 'wifi:$host:$port',
+          name: 'Trace server (development)',
+          kind: AdapterKind.wifi,
+          detail: '$host:$port',
+        ),
+      );
+    }
     for (final e in WifiTransport.alternates) {
       _put(
         Adapter(

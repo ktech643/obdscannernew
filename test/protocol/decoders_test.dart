@@ -390,8 +390,24 @@ void main() {
         ..setSupported(layout)
         ..setVisible(layout);
       final cycle = s.nextCycle(maxPids: 1);
-      expect(cycle, isNotEmpty);
-      expect(cycle.every((p) => p == '010C' || p == '010D'), isTrue);
+      expect(cycle, containsAll(['010C', '010D']));
+    });
+
+    test('★ criticals that fill the budget still leave the rest a turn', () {
+      // RPM and Speed on a 45 ms adapter are a budget of two. Returning
+      // the criticals alone starved every other tile for good — "No data"
+      // on a car that answers them, found by recording a trip, which asks
+      // for Speed beside RPM.
+      for (final budget in [1, 2]) {
+        final s = PidScheduler()
+          ..setSupported(layout)
+          ..setVisible(layout);
+        final served = <String>{};
+        for (var i = 0; i < 24; i++) {
+          served.addAll(s.nextCycle(maxPids: budget));
+        }
+        expect(served, containsAll(layout), reason: 'budget $budget');
+      }
     });
 
     test('the budget is still respected when it can be', () {

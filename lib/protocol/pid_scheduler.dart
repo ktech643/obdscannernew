@@ -107,14 +107,19 @@ class PidScheduler {
         rest.add(pid);
       }
     }
-    if (criticals.length >= limit) return criticals;
-
     // The rotation advances once per *truncated* cycle, not per cycle: a
     // high-priority PID is only due every other cycle, so a counter keyed
     // on the cycle number lands on the same offset every time and rotates
     // nothing.
-    final slots = limit - criticals.length;
-    final start = rest.isEmpty ? 0 : _rotation % rest.length;
+    //
+    // And the rest always get one turn, even when the criticals alone fill
+    // the budget: RPM and Speed on a 45 ms adapter are a budget of two, and
+    // every other tile read "No data" for good — found by recording a trip,
+    // which asks for Speed beside RPM. The cycle runs one command long
+    // instead: slower, and every tile still live.
+    final slots = limit > criticals.length ? limit - criticals.length : 1;
+    if (rest.isEmpty) return criticals;
+    final start = _rotation % rest.length;
     _rotation += slots;
     return [
       ...criticals,
