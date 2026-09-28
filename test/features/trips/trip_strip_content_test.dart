@@ -247,6 +247,18 @@ void main() {
       lines: [gauges],
       actions: ['Record'],
     );
+    // ★ A car that reports no Speed is not promised distance and speed
+    // before Record, then told after it that it gets neither.
+    expectStrip(
+      content(view(isPro: true, speedMissing: true)),
+      word: 'Not recording',
+      ink: StripInk.secondary,
+      lines: [
+        "This car doesn't report speed, so trips record the gauges on "
+            'screen without distance.',
+      ],
+      actions: ['Record'],
+    );
     for (final (caveat, line) in [
       (TripCaveat.wifiInBackground, wifi),
       (TripCaveat.notificationsOff, notificationsOff),
@@ -397,7 +409,10 @@ void main() {
       (TripHold.link, 'Waiting for the car to reconnect.'),
       (
         TripHold.ignitionOff,
-        'The ignition is off. The trip ends if it stays off for 10 minutes.',
+        // One 10-minute limit for every pause, from when the pause began:
+        // "if it stays off for 10 minutes" was not true of a pause that
+        // began as a lost link.
+        'The ignition is off. The trip ends after 10 minutes paused.',
       ),
       (TripHold.identity, 'Checking which car this is before recording more.'),
       (TripHold.background, 'Paused while Torque is in the background.'),
@@ -588,14 +603,15 @@ void main() {
         capDoor: end == TripEnd.freeCap,
         actions: ['Record'],
       );
-      // Not live: still said, with no control.
+      // Not live: still said, with no control — and on Pro no door: the
+      // §7.3 door stayed open after Pro was bought through it.
       expectStrip(
         content(view(result: r, live: false, isPro: true)),
         glyph: amber ? Icons.warning_amber_outlined : null,
         tone: amber ? Tell.amber : Tell.none,
         word: sentence,
         lines: [figures, if (garage) inGarage],
-        capDoor: end == TripEnd.freeCap,
+        capDoor: false,
       );
     }
 

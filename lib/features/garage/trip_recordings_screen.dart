@@ -27,6 +27,7 @@ class TripRecordingsScreen extends StatefulWidget {
     this.isPro = false,
     this.delete,
     this.touch,
+    this.isRecording,
   });
 
   final TripRepository trips;
@@ -39,6 +40,11 @@ class TripRecordingsScreen extends StatefulWidget {
   /// Seams, so a widget test does no file I/O under the fake clock.
   final Future<bool> Function(String id)? delete;
   final Future<void> Function(String id)? touch;
+
+  /// Whether [id] is the trip the recorder is writing now. An open row that
+  /// is not is a trip whose save failed; it is closed from its file on the
+  /// next Record or launch, and is not "Recording".
+  final bool Function(String id)? isRecording;
 
   @override
   State<TripRecordingsScreen> createState() => _TripRecordingsScreenState();
@@ -162,17 +168,26 @@ class _TripRecordingsScreenState extends State<TripRecordingsScreen> {
   static int? recordedMsOf(TripSessionRow r) =>
       r.recordedMs ?? r.endedAt?.difference(r.startedAt).inMilliseconds;
 
+  bool _recording(TripSessionRow r) =>
+      r.endedAt == null && (widget.isRecording?.call(r.id) ?? true);
+
   Widget _shownRow(BuildContext context, TripSessionRow r, TripFormat fmt) {
     final open = r.endedAt == null;
     final ms = recordedMsOf(r);
-    final parts = [
-      if (r.distanceKm case final km?) fmt.distance(km),
-      if (ms != null && !open) fmt.duration(ms),
-      if (r.avgSpeedKph case final v?) 'avg ${fmt.speed(v)}',
-      if (r.fuelUsedL case final l?) '${fmt.litres(l)} used (estimated)',
-    ];
+    // An open row's figures are from before it was resumed, or none: the
+    // live ones are on the Dashboard. Beside "Recording" they were stale.
+    final parts = open
+        ? const <String>[]
+        : [
+            if (r.distanceKm case final km?) fmt.distance(km),
+            if (ms != null) fmt.duration(ms),
+            if (r.avgSpeedKph case final v?) 'avg ${fmt.speed(v)}',
+            if (r.fuelUsedL case final l?) '${fmt.litres(l)} used (estimated)',
+          ];
     final (value, tone) = open
-        ? ('Recording', Tell.blue)
+        ? (_recording(r)
+              ? ('Recording', Tell.blue)
+              : ('Not finished', Tell.none))
         : switch (r.endReason) {
             TripEnd.appKilled ||
             TripEnd.linkLost ||
@@ -213,6 +228,7 @@ class _TripRecordingsScreenState extends State<TripRecordingsScreen> {
         row: r,
         fmt: fmt,
         held: held,
+        recording: _recording(r),
         onDelete: () async {
           await (widget.delete ?? (id) => widget.trips.delete(id))(r.id);
           if (!sheet.mounted) return;
@@ -231,15 +247,24 @@ class _TripSheet extends StatelessWidget {
     required this.row,
     required this.fmt,
     required this.held,
+    required this.recording,
     required this.onDelete,
   });
 
   final TripSessionRow row;
   final TripFormat fmt;
   final bool held;
+  final bool recording;
   final Future<void> Function() onDelete;
 
-  static const _unreported = 'Not reported by this car';
+  /// Why a figure is missing — never "Not reported by this car" for a car
+  /// that sent Speed on a trip too short to average.
+  static String? speedReason(TripSessionRow r, Object? v, String tooShort) =>
+      v != null
+      ? null
+      : r.maxSpeedKph == null
+      ? 'Not reported by this car'
+      : tooShort;
 
   static String ended(TripEnd? e) => switch (e) {
     TripEnd.stopped => 'You stopped it',
@@ -273,33 +298,35 @@ class _TripSheet extends StatelessWidget {
     final note = TorqueType.meta.copyWith(color: t.inkSecondary);
     final title = _TripRecordingsScreenState.title(row, fmt);
     String? or(double? v, String Function(double) f) => v == null ? null : f(v);
-    String? why(Object? v) => v == null ? _unreported : null;
-    final rows = held
+    // An open row has no figures yet — they are written when it is saved.
+    final rows = held || open
         ? [ValueRow('Started', title)]
         : [
-            ValueRow('Recorded', ms == null || open ? null : exact(ms)),
+            ValueRow('Recorded', ms == null ? null : exact(ms)),
             ValueRow(
               'Distance',
               or(row.distanceKm, fmt.distance),
-              reason: why(row.distanceKm),
+              reason: speedReason(row, row.distanceKm, 'Too short to measure'),
             ),
             ValueRow(
               'Average speed',
               or(row.avgSpeedKph, fmt.speed),
-              reason: why(row.avgSpeedKph),
+              reason: speedReason(row, row.avgSpeedKph, 'Too short to average'),
             ),
             ValueRow(
               'Top speed',
               or(row.maxSpeedKph, fmt.speed),
-              reason: why(row.maxSpeedKph),
+              reason: speedReason(row, row.maxSpeedKph, ''),
             ),
             ValueRow(
               'Fuel used (estimated)',
               or(row.fuelUsedL, fmt.litres),
-              reason: why(row.fuelUsedL),
+              reason: row.fuelUsedL == null
+                  ? 'Not recorded on this trip'
+                  : null,
             ),
             ValueRow('Samples', '${row.sampleCount}'),
-            ValueRow('Ended', open ? 'Recording now' : ended(row.endReason)),
+            ValueRow('Ended', ended(row.endReason)),
           ];
     return SafeArea(
       top: false,
@@ -333,7 +360,10 @@ class _TripSheet extends StatelessWidget {
             padding: const EdgeInsets.all(Space.gutter),
             child: open
                 ? Text(
-                    'Recording now. Stop it on the Dashboard to delete it.',
+                    recording
+                        ? 'Recording now. Stop it on the Dashboard to delete it.'
+                        : "This trip wasn't finished. It is saved the next time "
+                              'Torque records or opens.',
                     style: note,
                   )
                 : DestructiveButton(

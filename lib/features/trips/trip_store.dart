@@ -72,6 +72,12 @@ class DbTripStore implements TripStore {
     required String vehicleId,
     required DateTime startedAt,
   }) async {
+    // Nothing of the recorder's own is open when it starts; a row that is
+    // open is a trip whose save failed earlier this run. Closed from its
+    // file now — left open, every Record failed until the next launch.
+    if (await trips.openTrip() != null) {
+      await trips.closeInterrupted(summarize: summarize);
+    }
     final row = await trips.start(vehicleId: vehicleId, now: startedAt);
     final TripSink sink;
     try {

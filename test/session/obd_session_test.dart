@@ -907,6 +907,20 @@ void main() {
         SessionState.degraded,
         reason: 'a tile gone missing is a weak link',
       );
+
+      // ★ The recording ends: Fuel rate is neither quiet nor asked for any
+      // more. Counted still, it raised "Weak link" for the rest of the
+      // connection over nothing on screen.
+      recorded
+        ..setQuiet(const {})
+        ..setVisible({'010D'});
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(recorded.scheduler.droppedPids, contains('015E'));
+      expect(
+        recorded.state,
+        SessionState.connected,
+        reason: 'what is not asked for cannot be missing',
+      );
     });
   });
 

@@ -393,6 +393,34 @@ void main() {
       expect(cycle, containsAll(['010C', '010D']));
     });
 
+    test(
+      '★ a low tile beside criticals that fill the budget is still asked',
+      () {
+        // §4.5: low is due every 20th cycle. With one slot for the rest, a
+        // counter rotating over the due list landed on the same high PID on
+        // every cycle the low one was due — Ambient read "No data" for good,
+        // on the 45 ms adapter the slice said it had fixed.
+        const visible = {
+          '010C', '010D', '0105', '0104', '0111', '0142', '0146', //
+        };
+        final s = PidScheduler()
+          ..setSupported(visible)
+          ..setVisible(visible)
+          ..recordP95Rtt(45);
+        expect(s.maxPidsPerCycle, 2);
+        final served = <String, int>{};
+        for (var i = 0; i < 2000; i++) {
+          for (final p in s.nextCycle()) {
+            served[p] = (served[p] ?? 0) + 1;
+          }
+        }
+        for (final p in visible) {
+          expect(served[p] ?? 0, greaterThan(0), reason: p);
+        }
+        expect(served['010C'], 2000, reason: 'criticals every cycle');
+      },
+    );
+
     test('★ criticals that fill the budget still leave the rest a turn', () {
       // RPM and Speed on a 45 ms adapter are a budget of two. Returning
       // the criticals alone starved every other tile for good — "No data"

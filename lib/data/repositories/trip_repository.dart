@@ -347,11 +347,28 @@ class TripRepository {
         await delete(row.id, evenIfOpen: true);
         continue;
       }
-      final summary = await summarize(
-        f.path,
-        startedAtMs: row.startedAt.millisecondsSinceEpoch,
-        nowMs: nowMs,
-      );
+      final TripFileSummary summary;
+      try {
+        summary = await summarize(
+          f.path,
+          startedAtMs: row.startedAt.millisecondsSinceEpoch,
+          nowMs: nowMs,
+        );
+      } catch (_) {
+        // A file that cannot be read is closed all the same, with no
+        // figures: left open, it refused every Record until the next launch
+        // (one open trip at a time), and the list called it "Recording".
+        await (_db.update(_t)..where((s) => s.id.equals(row.id))).write(
+          TripSessionsCompanion(
+            endedAt: Value(row.startedAt),
+            interrupted: const Value(true),
+            endReason: const Value(TripEnd.appKilled),
+          ),
+        );
+        final done = await byId(row.id);
+        if (done != null) closed.add(done);
+        continue;
+      }
       if (summary.rows == 0) {
         await delete(row.id, evenIfOpen: true);
         continue;

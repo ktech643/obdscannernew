@@ -388,6 +388,8 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(recorder.view.phase, RecorderPhase.recording);
+    // A trip with a reading is saved; one with none is simply dropped.
+    rig.link.publish('010D', 30);
 
     store.finishGate = Completer<void>();
     await tapText(tester, 'Stop');

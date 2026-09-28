@@ -72,6 +72,7 @@ void main() {
     ValueListenable<bool>? moving,
     ValueNotifier<int>? tab,
     LayoutRepository? repository,
+    Widget? tripStrip,
   }) async {
     final c = DashboardLayoutController(
       repository: repository,
@@ -89,6 +90,7 @@ void main() {
       layouts: c,
       onUpgrade: onUpgrade,
       onAddVehicle: onAddVehicle,
+      tripStrip: tripStrip,
     );
     final Widget screen = tab == null
         ? dashboard
@@ -864,6 +866,22 @@ void main() {
       await settle(tester);
       // Save was refused as stale, and the sheet closed without a word.
       expect(find.byType(TextField), findsNothing);
+    });
+
+    testWidgets('★ the trip strip keeps its place in edit mode', (
+      tester,
+    ) async {
+      // The strip decides for itself — status and Stop while a trip
+      // records, nothing otherwise; the Dashboard used to drop it in edit
+      // mode, and a trip being recorded lost its Stop there.
+      await pumpScreen(
+        tester,
+        newSession(),
+        tripStrip: const SizedBox(key: ValueKey('strip'), height: 48),
+      );
+      expect(find.byKey(const ValueKey('strip')), findsOneWidget);
+      await enterEdit(tester);
+      expect(find.byKey(const ValueKey('strip')), findsOneWidget);
     });
 
     testWidgets('★ no car, no layout button — even on Pro', (tester) async {

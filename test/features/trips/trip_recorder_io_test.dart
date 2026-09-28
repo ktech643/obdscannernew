@@ -95,6 +95,48 @@ void main() {
     }
   }
 
+  test('★ a trip whose save failed does not block the next Record', () async {
+    // The summary could not be read (the database full, the isolate
+    // failing), so the row was left open for the launch pass — and one open
+    // trip at a time made every Record fail with "Try again" until the app
+    // was relaunched. The next start closes it from its file.
+    var failOnce = true;
+    Future<TripFileSummary> flaky(
+      String path, {
+      required int startedAtMs,
+      required int nowMs,
+    }) {
+      if (failOnce) {
+        failOnce = false;
+        throw const FileSystemException('Input/output error');
+      }
+      return summarizeTripFile(path, startedAtMs: startedAtMs, nowMs: nowMs);
+    }
+
+    final clock = ManualTripClock(start: DateTime.utc(2026, 9, 28, 12));
+    final link = liveLink();
+    final r = recorderOver(DbTripStore(repo, summarize: flaky), link, clock);
+    await r.start();
+    for (var i = 0; i < 3; i++) {
+      link.publish('010D', 36);
+      clock.advance(const Duration(seconds: 1));
+      r.debugTick();
+    }
+    await r.stop();
+    expect(r.view.result?.kind, TripResultKind.summaryPending);
+    final first = (await repo.openTrip())!.id;
+
+    await r.start();
+    await until(
+      () => r.view.phase == RecorderPhase.recording,
+      reason: 'Record',
+    );
+    final closed = (await repo.byId(first))!;
+    expect(closed.endedAt, isNotNull, reason: 'closed from its file');
+    expect(closed.sampleCount, 3);
+    expect((await repo.openTrip())!.id, isNot(first));
+  });
+
   test('★ Resume never writes onto a torn line, even one the launch pass '
       'could not cut', () async {
     // The launch pass cuts a killed trip's torn tail, and Resume opens the

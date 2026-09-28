@@ -736,7 +736,13 @@ class ObdSession extends ChangeNotifier {
   void _refreshDegraded() {
     final degraded =
         _scheduler.isDegraded ||
-        _scheduler.droppedPids.difference(_quiet).isNotEmpty;
+        // Only what is still asked for: a recording's Fuel rate, dropped
+        // while quiet, raised "Weak link" for the rest of the connection
+        // once the trip ended and it was quiet no longer.
+        _scheduler.droppedPids
+            .intersection(_visible)
+            .difference(_quiet)
+            .isNotEmpty;
     final next = degraded ? SessionState.degraded : SessionState.connected;
     if (_state == SessionState.connected || _state == SessionState.degraded) {
       if (_state != next) _set(next);

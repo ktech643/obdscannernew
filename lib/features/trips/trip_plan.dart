@@ -28,9 +28,10 @@ abstract final class TripPlan {
   /// for distance and average, Fuel rate for §4.3's estimated fuel used.
   static const channels = {'010D', '015E'};
 
-  /// A trip stops at 2:00 only if it was free when it started (or resumed)
-  /// and is free now: Pro bought mid-trip lifts the cap at once, and a
-  /// lapse or a refund never cuts a trip already running.
+  /// A trip stops at 2:00 only if it has been free the whole time —
+  /// [proAtStart] is Pro when it started (or resumed) or at any moment
+  /// since — and is free now: Pro bought mid-trip lifts the cap for good,
+  /// and a lapse or a refund never cuts a trip already running.
   static bool capped(
     int tMs, {
     required bool proAtStart,

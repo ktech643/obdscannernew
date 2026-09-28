@@ -123,6 +123,7 @@ void main() {
     VehicleRow? vehicle,
     bool isPro = false,
     Future<void> Function(String id)? touch,
+    bool Function(String id)? isRecording,
   }) async {
     deleted = [];
     tester.view.physicalSize = const Size(390, 2000);
@@ -140,6 +141,7 @@ void main() {
             isPro: isPro,
             delete: deleteRow,
             touch: touch,
+            isRecording: isRecording,
           ),
         ),
       ),
@@ -387,7 +389,8 @@ void main() {
       await tester.tap(find.textContaining('1.1 km'));
       await settle(tester);
       expect(find.text('Fuel used (estimated)'), findsOneWidget);
-      expect(find.text('Not reported by this car'), findsOneWidget);
+      // Not "not reported by this car": the trip may simply have missed it.
+      expect(find.text('Not recorded on this trip'), findsOneWidget);
       await drain(tester);
     });
 
@@ -480,6 +483,80 @@ void main() {
       await pumpList(tester, isPro: true);
       expect(find.text(retention), findsOneWidget, reason: 'Pro too');
       expect(find.text(freeFootnote), findsNothing);
+      await drain(tester);
+    });
+  });
+
+  group('★ the review of slice 17: what an open or short trip says', () {
+    /// A trip the recorder has reopened: Resume keeps the figures the file
+    /// proved before the kill until the trip is saved again.
+    Future<TripSessionRow> resumed() async {
+      final r = await addTrip(golf, DateTime.utc(2026, 9, 28, 9), km: 3.2);
+      await (db.update(db.tripSessions)..where((t) => t.id.equals(r.id))).write(
+        const TripSessionsCompanion(endedAt: Value(null)),
+      );
+      return (await trips.byId(r.id))!;
+    }
+
+    testWidgets('★ the trip being recorded shows no figures from before', (
+      tester,
+    ) async {
+      await seed();
+      await resumed();
+      await pumpList(tester, isRecording: (_) => true);
+      // Beside "Recording", the pre-kill 3.2 km read as the live distance.
+      expect(find.text('Recording'), findsOneWidget);
+      expect(find.textContaining('3.2 km'), findsNothing);
+      await tester.tap(find.text('Recording'));
+      await settle(tester);
+      // "Not reported by this car" under every figure, and "Samples 0".
+      expect(find.text('Not reported by this car'), findsNothing);
+      expect(find.text('Samples'), findsNothing);
+      expect(find.text('Started'), findsOneWidget);
+      await drain(tester);
+    });
+
+    testWidgets('★ an open row nobody is recording is not "Recording"', (
+      tester,
+    ) async {
+      // A trip whose save failed stays open until the next Record or
+      // launch; the list called it "Recording" with nothing to Stop.
+      await seed();
+      await addTrip(golf, DateTime.utc(2026, 9, 28, 9), open: true);
+      await pumpList(tester, isRecording: (_) => false);
+      expect(find.text('Recording'), findsNothing);
+      expect(find.text('Not finished'), findsOneWidget);
+      await tester.tap(find.text('Not finished'));
+      await settle(tester);
+      expect(
+        find.text(
+          "This trip wasn't finished. It is saved the next time Torque "
+          'records or opens.',
+        ),
+        findsOneWidget,
+      );
+      await drain(tester);
+    });
+
+    testWidgets('★ a short trip is too short to average, not unreported', (
+      tester,
+    ) async {
+      // Speed came, but under the 10 s an average needs.
+      await seed();
+      final r = await addTrip(
+        golf,
+        DateTime.utc(2026, 9, 28, 9),
+        km: 0.08,
+        recordedMs: 8000,
+      );
+      await (db.update(db.tripSessions)..where((t) => t.id.equals(r.id))).write(
+        const TripSessionsCompanion(avgSpeedKph: Value(null)),
+      );
+      await pumpList(tester);
+      await tester.tap(find.textContaining('0.1 km'));
+      await settle(tester);
+      expect(find.text('Too short to average'), findsOneWidget);
+      expect(find.text('Not reported by this car'), findsNothing);
       await drain(tester);
     });
   });

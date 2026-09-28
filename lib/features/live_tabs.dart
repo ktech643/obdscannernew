@@ -485,7 +485,7 @@ class LiveGarageTab extends StatelessWidget {
         onConnect: onConnect,
         adapterName: live.isDemo ? DemoMode.adapter.name : null,
         onUpgrade: () => openProPaywall(context),
-        links: _links(garage),
+        links: _links(garage, live.recorder),
       ),
     );
   }
@@ -497,41 +497,43 @@ class LiveGarageTab extends StatelessWidget {
   /// same screen — read once here, it did not until the log was reopened.
   /// A form opened from a log keeps the unit it opened with; what is typed
   /// in it is in that unit.
-  GarageLinks _links(GarageController garage) => GarageLinks(
-    maintenance: (ctx, vehicle) {
-      final settings = ctx.watch<SettingsProvider>();
-      return MaintenanceScreen(
-        garage: garage,
-        vehicle: vehicle,
-        unit: settings.distance,
-        currencyCode: Money.codeOf(settings.currency),
-        isPro: ctx.watch<EntitlementProvider>().isPro,
-        onUpgrade: () => openProPaywall(ctx),
-      );
-    },
-    reminders: (ctx, vehicle) => RemindersScreen(
-      garage: garage,
-      vehicle: vehicle,
-      unit: ctx.watch<SettingsProvider>().distance,
-    ),
-    fuel: (ctx, vehicle) {
-      final settings = ctx.watch<SettingsProvider>();
-      return FuelLogScreen(
-        garage: garage,
-        vehicle: vehicle,
-        unit: settings.distance,
-        currencyCode: Money.codeOf(settings.currency),
-      );
-    },
-    trips: garage.trips == null
-        ? null
-        : (ctx, vehicle) => TripRecordingsScreen(
-            trips: garage.trips!,
+  GarageLinks _links(GarageController garage, TripRecorder? recorder) =>
+      GarageLinks(
+        maintenance: (ctx, vehicle) {
+          final settings = ctx.watch<SettingsProvider>();
+          return MaintenanceScreen(
+            garage: garage,
             vehicle: vehicle,
-            unit: ctx.watch<SettingsProvider>().distance,
+            unit: settings.distance,
+            currencyCode: Money.codeOf(settings.currency),
             isPro: ctx.watch<EntitlementProvider>().isPro,
-          ),
-  );
+            onUpgrade: () => openProPaywall(ctx),
+          );
+        },
+        reminders: (ctx, vehicle) => RemindersScreen(
+          garage: garage,
+          vehicle: vehicle,
+          unit: ctx.watch<SettingsProvider>().distance,
+        ),
+        fuel: (ctx, vehicle) {
+          final settings = ctx.watch<SettingsProvider>();
+          return FuelLogScreen(
+            garage: garage,
+            vehicle: vehicle,
+            unit: settings.distance,
+            currencyCode: Money.codeOf(settings.currency),
+          );
+        },
+        trips: garage.trips == null
+            ? null
+            : (ctx, vehicle) => TripRecordingsScreen(
+                trips: garage.trips!,
+                vehicle: vehicle,
+                isRecording: (id) => recorder?.recordingTripId == id,
+                unit: ctx.watch<SettingsProvider>().distance,
+                isPro: ctx.watch<EntitlementProvider>().isPro,
+              ),
+      );
 }
 
 /// The Settings tab, on the live session.

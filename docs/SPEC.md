@@ -1257,6 +1257,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ slice 16 done 2026-09-26 — Dashboard grid editing and layouts per vehicle, see §B.29
          ◐ review of slice 16, 2026-09-26 — 19 confirmed, all fixed, see §B.30
          ◐ slice 17 done 2026-09-28 — the trip strip, trip recording and Garage › Trip recordings, see §B.31
+         ◐ review of slice 17, 2026-09-28 — 16 confirmed, all fixed, see §B.32
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -2443,6 +2444,84 @@ tail (every 15 s for 2 minutes).
 to older trips (held, as built); whether Pro is exempt from 30-day retention;
 Record and Stop at speed (allowed — §8.4 gates tile editing only); Demo Mode
 recording (never, as built); Android's background rate (adaptive, as built).
+
+## B.32 Adversarial review of slice 17 (2026-09-28)
+
+Seven lenses (the recorder, durability, session and polling, the strip and the
+list, the plan, platform and tooling, test quality), three refuters each, over
+`4801d4d..493c9cb`: 33 findings, 16 survived all three — nine distinct defects
+after duplicates, all fixed. Four of the refuted were true as described and are
+fixed too, and the refuted test-coverage findings got the tests they asked for.
+Every ★ test was seen failing with its fix removed (25 reverts), under a harness
+that now proves more itself (below).
+
+- **An end during the Android service's start.** Both waits for
+  `startRecording` checked only that the trip was the same object, which it is
+  until an end has finished saving. A trip that ended in that round trip — Stop,
+  2:00, a give-up — had `setRecording(true)` sent after the end funnel had run,
+  so the car was polled in the background with nothing recording (hard rule 9),
+  or the service was left up, or a 1 s timer started that nothing would cancel.
+  Both waits now require the trip still recording, and stop a service started
+  for a trip that has gone.
+- **"Resume trip?" outlived its window.** The 30 minutes were checked once per
+  connect: left on the strip, the offer was taken hours later and joined two
+  drives in one trip, and a connect with nothing to offer left the old offer up.
+  The offer is now judged against the clock whenever the strip is drawn, cleared
+  when a re-query finds nothing, and re-checked with the store when Resume is
+  tapped — a trip deleted from the Garage says "That trip can no longer be
+  resumed." rather than "It stays saved as it was".
+- **A Pro lapse cut a trip bought up mid-way.** The cap asked only "free at the
+  start and free now": a trip started free, upgraded, then refunded at 5:00 was
+  cut there as a "2-minute" stop, with an `#end,120000` written behind rows up
+  to 300000 that the reader rejects. A trip that was ever Pro is never capped.
+- **A failed save blocked every Record.** The row it leaves open for the launch
+  pass made every start refuse ("Try again") until a relaunch — and a launch
+  pass that could not read a file left it open for good. The next start closes
+  such a row from its file first; the launch pass closes an unreadable trip with
+  no figures rather than leaving it open. The test fake now keeps the
+  one-open-trip rule too: it had hidden the dead Record.
+- **The scheduler.** Rotating an index over the due list still never reached a
+  low tile (Ambient, every 20th cycle) beside RPM and Speed on a 45 ms adapter:
+  the turns between its due cycles were a multiple of the list's length. The
+  rest are now served longest-waiting first.
+- **"Weak link" after a recording.** A recording PID dropped while quiet counted
+  again once the trip ended and it was quiet no longer. Only PIDs still asked
+  for can make the link weak.
+- **The trip list.** The row being recorded showed figures from before a
+  resume beside "Recording", and its sheet put "Not reported by this car" under
+  every figure and "Samples 0"; a short trip's missing average read the same. An
+  open row now shows no figures (they are on the Dashboard), an open row the
+  recorder is not writing — a save that failed — reads "Not finished", and a
+  missing figure says why: not reported, too short to average, not recorded.
+- **The §7.3 door stayed open after Pro was bought**, through that very door.
+- **Numerals.** On Arabic, Persian, Bengali or Marathi phones the figures came
+  out in the locale's own digits beside the meter's and the gauges' ASCII. The
+  digits stay 0–9; only the separators follow the locale.
+
+**Refuted, and done anyway.** A pause that changed kind — eight minutes waiting
+for the link, then the ignition off — ended two minutes later as "the ignition
+was off for 10 minutes": it now ends as a pause, and the ignition line says "The
+trip ends after 10 minutes paused." A car that reports no Speed was promised
+distance before Record. Record then Stop with no reading saved a 0 s trip that
+took a free "last 3" slot; nothing is kept, as the launch pass already did. The
+harness: `tool/prove.py` exited 0 on an unproven case, never ran a test
+untouched first (a test failing anyway "proved" any revert), and killed every
+`flutter_tester` on the machine on a timeout; it now fails the run, runs a
+baseline, rejects a no-op edit, and kills only its own run. The wiring the tests
+lens named — the plan reaching the recorder, the identity gate through
+`LiveSession`, `beforeDelete`, the Android resume, the launch future, the strip
+kept in edit mode — each has its test now.
+
+**Refuted, not changed.** A notification Stop in the first five seconds reads
+as the service refused (named in §B.31's design as the cost of polling
+`isRunning` instead of a native callback). A ladder rung already waiting when
+the app leaves makes its one dial (the session layer parks at the top of a rung,
+and a second check would hide the first from its proof). The meter counts
+pauses as recorded time, as §B.31 says. A resumed trip that ends before any new
+row maps its end to the resume moment — a narrow race with no user-visible harm.
+
+1,070 tests, analyzer clean; the recording, the cap, the list and the relaunch
+checked again on the simulator against the trace server.
 
 ## HARD RULES
 

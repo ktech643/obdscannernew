@@ -64,6 +64,9 @@ class StripContent {
 }
 
 const _gauges = 'Records distance, speed and the gauges on screen.';
+const _noSpeed =
+    "This car doesn't report speed, so trips record the gauges on screen "
+    'without distance.';
 const _freeLine = 'The free plan records 2 minutes per trip.';
 const _inGarage = "It's in the Garage under Trip recordings.";
 
@@ -110,7 +113,8 @@ StripContent? stripContentFor(
       r != null && (r.end == TripEnd.otherVehicle || r.vehicleId == ownerId)
       ? r
       : null;
-  final door = canUpgrade && !electric;
+  // Never for a plan that already has it — bought through this very door.
+  final door = canUpgrade && !electric && !v.isPro;
 
   switch (owner) {
     case OwnerLoading():
@@ -189,8 +193,9 @@ StripContent _recording(TripView v, TripReading? r, TripFormat fmt) {
 StripContent _paused(TripView v, TripReading? r, TripFormat fmt) {
   final reason = switch (v.hold!) {
     TripHold.link => 'Waiting for the car to reconnect.',
+    // Every pause shares one 10-minute limit, from when the pause began.
     TripHold.ignitionOff =>
-      'The ignition is off. The trip ends if it stays off for 10 minutes.',
+      'The ignition is off. The trip ends after 10 minutes paused.',
     TripHold.identity => 'Checking which car this is before recording more.',
     TripHold.background => 'Paused while Torque is in the background.',
   };
@@ -233,7 +238,8 @@ StripContent _idle(
   if (result == null) {
     word = 'Not recording';
     ink = StripInk.secondary;
-    lines.add(const StripLine(_gauges));
+    // Not a promise of distance and speed to a car that reports no Speed.
+    lines.add(StripLine(v.speedMissing ? _noSpeed : _gauges));
   } else {
     word = resultSentence(result, fmt);
     if (_failed(result)) {
@@ -342,6 +348,10 @@ String resultSentence(TripResult r, TripFormat fmt) {
           : "Couldn't start recording. Try again.";
     case TripResultKind.resumeFailed:
       return "Couldn't resume the trip. It stays saved as it was.";
+    case TripResultKind.resumeGone:
+      return 'That trip can no longer be resumed.';
+    case TripResultKind.nothingRecorded:
+      return 'Nothing was recorded, so no trip was saved.';
     case TripResultKind.summaryPending:
       return 'The trip is on this phone. Its summary is saved the next time '
           'Torque opens.';

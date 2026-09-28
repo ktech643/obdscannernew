@@ -56,8 +56,9 @@ class PidScheduler {
 
   int _cycle = 0;
 
-  /// Where the round-robin over non-critical PIDs has got to.
-  int _rotation = 0;
+  /// The cycle each non-critical PID was last asked in. When the budget
+  /// is short, the one that has waited longest goes next.
+  final Map<String, int> _lastServed = {};
 
   Set<String> get droppedPids => Set.unmodifiable(_dropped);
 
@@ -91,7 +92,12 @@ class PidScheduler {
 
     _cycle++;
     final limit = maxPids ?? _maxPidsPerCycle;
-    if (due.length <= limit) return due;
+    if (due.length <= limit) {
+      for (final pid in due) {
+        _lastServed[pid] = _cycle;
+      }
+      return due;
+    }
 
     // Truncating a stably-sorted list starves its tail: the same lowest
     // priority PIDs fall off every single cycle and are never asked for at
@@ -107,25 +113,29 @@ class PidScheduler {
         rest.add(pid);
       }
     }
-    // The rotation advances once per *truncated* cycle, not per cycle: a
-    // high-priority PID is only due every other cycle, so a counter keyed
-    // on the cycle number lands on the same offset every time and rotates
-    // nothing.
-    //
-    // And the rest always get one turn, even when the criticals alone fill
+    // The rest always get one turn, even when the criticals alone fill
     // the budget: RPM and Speed on a 45 ms adapter are a budget of two, and
     // every other tile read "No data" for good — found by recording a trip,
     // which asks for Speed beside RPM. The cycle runs one command long
     // instead: slower, and every tile still live.
     final slots = limit > criticals.length ? limit - criticals.length : 1;
     if (rest.isEmpty) return criticals;
-    final start = _rotation % rest.length;
-    _rotation += slots;
-    return [
-      ...criticals,
-      for (var i = 0; i < slots && i < rest.length; i++)
-        rest[(start + i) % rest.length],
-    ];
+    // Longest-waiting first. A counter rotating over the due list landed
+    // on the same offset whenever the list's length divided the turns
+    // between two due cycles: a low tile, due every 20th cycle, was never
+    // asked at all.
+    rest.sort((a, b) {
+      final wait = (_lastServed[a] ?? -1).compareTo(_lastServed[b] ?? -1);
+      if (wait != 0) return wait;
+      final pa = PidRegistry.lookup(a)!.priority.index;
+      final pb = PidRegistry.lookup(b)!.priority.index;
+      return pa != pb ? pa.compareTo(pb) : a.compareTo(b);
+    });
+    final picked = rest.take(slots).toList();
+    for (final pid in picked) {
+      _lastServed[pid] = _cycle;
+    }
+    return [...criticals, ...picked];
   }
 
   static int _interval(PidPriority p) => switch (p) {
@@ -191,7 +201,7 @@ class PidScheduler {
 
   void reset() {
     _cycle = 0;
-    _rotation = 0;
+    _lastServed.clear();
     _noDataStreak.clear();
     _dropped.clear();
     _targetHz = _capped(10); // the ceiling is the user's, and survives

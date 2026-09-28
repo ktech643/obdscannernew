@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:torque_obd2/core/platform/platform_info.dart';
@@ -168,6 +170,14 @@ class FakeTripStore implements TripStore {
       failStart = null;
       throw f;
     }
+    // As DbTripStore: one open trip at a time, and a row left open by a
+    // failed save is closed from its file before the next one starts.
+    for (final open in [
+      for (final r in rows.values)
+        if (r.endedAt == null) r.id,
+    ]) {
+      closeAsKilled(open, now: startedAt);
+    }
     final id = newId();
     rows[id] = TripSessionRow(
       id: id,
@@ -291,9 +301,15 @@ class FakeBackgroundService implements BackgroundService {
   bool startOk = true;
   final calls = <String>[];
 
+  /// Holds startRecording until completed — the platform round trip in
+  /// which a trip can end.
+  Completer<void>? startGate;
+
   @override
   Future<bool> startRecording() async {
     calls.add('startRecording');
+    final gate = startGate;
+    if (gate != null) await gate.future;
     if (startOk) running = true;
     return startOk;
   }

@@ -133,7 +133,13 @@ void main() {
       summarize: summarize,
     );
 
-    expect(report.closed, isEmpty, reason: 'nothing could be read');
+    // Closed all the same, with no figures: left open, it refused every
+    // Record until a launch could read it.
+    expect(report.closed.map((r) => r.id), [unreadable.id]);
+    final closed = (await repo.byId(unreadable.id))!;
+    expect(closed.endedAt, isNotNull);
+    expect(closed.interrupted, isTrue);
+    expect(closed.distanceKm, isNull);
     // Reconcile ran...
     expect(report.orphanFiles, 1);
     expect(await orphan.exists(), isFalse);
@@ -141,7 +147,7 @@ void main() {
     expect(report.removed, [old.id]);
     expect(await repo.byId(old.id), isNull);
     // What could not be read is not destroyed: the row and every byte of
-    // its file are still there for a later launch to read.
+    // its file are still there.
     expect(await repo.byId(unreadable.id), isNotNull);
     expect(await repo.fileOf(unreadable).readAsString(), content);
     expect((await repo.files.listAll()).keys, [unreadable.samplesFilePath]);

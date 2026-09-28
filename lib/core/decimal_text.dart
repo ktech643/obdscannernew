@@ -13,12 +13,24 @@ import 'package:intl/intl.dart';
 /// French and Spanish phone to `en`: `12.4`. [Intl.verifiedLocale] walks
 /// intl's own fallbacks (`de_DE` → `de`); only a locale with none at all
 /// reads as `en`, where `NumberFormat` alone would throw.
-String decimalText(double v, {required int digits, required String locale}) =>
-    NumberFormat.decimalPatternDigits(
-      locale: Intl.verifiedLocale(
-        locale,
-        NumberFormat.localeExists,
-        onFailure: (_) => 'en',
-      ),
-      decimalDigits: digits,
-    ).format(v);
+///
+/// The digits themselves stay 0–9: an Egyptian or Persian locale's own
+/// numerals beside the meter's, the clock's and every gauge's ASCII read as
+/// two number systems in one line. Only the separators follow the locale.
+String decimalText(double v, {required int digits, required String locale}) {
+  final f = NumberFormat.decimalPatternDigits(
+    locale: Intl.verifiedLocale(
+      locale,
+      NumberFormat.localeExists,
+      onFailure: (_) => 'en',
+    ),
+    decimalDigits: digits,
+  );
+  final text = f.format(v);
+  final zero = f.symbols.ZERO_DIGIT.codeUnitAt(0);
+  if (zero == 0x30) return text;
+  return String.fromCharCodes([
+    for (final c in text.codeUnits)
+      c >= zero && c <= zero + 9 ? 0x30 + c - zero : c,
+  ]);
+}

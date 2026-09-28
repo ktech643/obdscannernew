@@ -132,7 +132,19 @@ class TripReading {
   );
 }
 
-enum TripResultKind { saved, startFailed, resumeFailed, summaryPending }
+enum TripResultKind {
+  saved,
+  startFailed,
+  resumeFailed,
+
+  /// The offered trip was no longer there to resume.
+  resumeGone,
+
+  /// Stopped before a single reading: nothing kept, no trip saved — as the
+  /// launch pass does with an empty file.
+  nothingRecorded,
+  summaryPending,
+}
 
 /// How the last recording went, kept until the next one.
 @immutable
@@ -411,6 +423,7 @@ class TripRecorder extends ChangeNotifier {
         o is OwnerVehicle &&
         o.vehicleId == offer.vehicleId &&
         !_declined.contains(offer.tripId) &&
+        _fresh(offer) &&
         TripPlan.canResume(offer.recordedMs, isPro: _isPro);
     return TripView(
       launched: _launched,
@@ -423,9 +436,26 @@ class TripRecorder extends ChangeNotifier {
       result: _result,
       offer: showOffer ? offer : null,
       isPro: _isPro,
-      speedMissing: _trip != null && _speedMissing,
+      speedMissing: _trip != null ? _speedMissing : _reportsNoSpeed(),
       tripVehicleId: _trip?.vehicleId,
     );
+  }
+
+  /// The car on the wire has said what it reports, and Speed is not in it.
+  bool _reportsNoSpeed() {
+    final supported = _link.supportedPids;
+    return _isLive && supported.isNotEmpty && !supported.contains('010D');
+  }
+
+  /// The trip being recorded, for the Garage list: an open row that is not
+  /// this one is a trip whose save is waiting for the next launch.
+  String? get recordingTripId => _trip?.id;
+
+  /// Within §9.2's window now — not only when it was first offered: left on
+  /// the strip, an offer taken hours later joined two drives in one trip.
+  bool _fresh(ResumeOffer offer) {
+    final age = _clock.nowUtc().difference(offer.endedAt);
+    return !age.isNegative && age <= TripPlan.resumeWithin;
   }
 
   /// Said before a recording starts, so no one learns it from a trip that
@@ -468,6 +498,7 @@ class TripRecorder extends ChangeNotifier {
   set isPro(bool value) {
     if (value == _isPro) return;
     _isPro = value;
+    if (value && _trip != null) _proSeen = true;
     _publishView();
   }
 
@@ -493,7 +524,13 @@ class TripRecorder extends ChangeNotifier {
     final trip = _trip;
     if (trip != null && _phase == RecorderPhase.recording) {
       if (ok && !_fgsRequested) {
-        if (await _background.startRecording() && identical(trip, _trip)) {
+        final started = await _background.startRecording();
+        if (!_stillRecording(trip)) {
+          // Ended while the service came up: the end funnel has run, and a
+          // background flag or a service set now would outlive the trip
+          // (hard rule 9).
+          if (started) unawaited(_background.stopRecording());
+        } else if (started) {
           _fgsRequested = true;
           _fgsSeen = false;
           _fgsChecked = false;
@@ -530,7 +567,10 @@ class TripRecorder extends ChangeNotifier {
   int _lastRowT = 0;
   int _ticks = 0;
   bool _capReached = false;
-  bool _proAtStart = false;
+
+  /// Pro when the trip began or at any moment since: bought mid-trip, the
+  /// cap lifts for good — a lapse or refund later never cuts it.
+  bool _proSeen = false;
   bool _speedMissing = false;
   bool _backgroundAllowed = true;
   bool _fgsRequested = false;
@@ -548,7 +588,7 @@ class TripRecorder extends ChangeNotifier {
   /// Recorded time: monotonic, continuing from the file across a resume.
   int get _t => _baseT + _clock.elapsedMs() - _segStartMs;
 
-  bool get _capOn => !_proAtStart && !_isPro;
+  bool get _capOn => !_proSeen && !_isPro;
 
   // -------------------------------------------------------------- actions
 
@@ -612,6 +652,26 @@ class TripRecorder extends ChangeNotifier {
     _publishView();
     final notifOk = await _askNotifications();
     if (gen != _gen) return _abandon(null);
+    // Still the trip to resume? Deleted from the Garage, overtaken by a
+    // newer trip, or past the window since it was offered, it is not — and
+    // "It stays saved as it was" would not be true of a deleted one.
+    TripSessionRow? still;
+    try {
+      still = await _store.resumable(offer.vehicleId, now: _clock.nowUtc());
+    } catch (_) {
+      still = null;
+    }
+    if (gen != _gen) return _abandon(null);
+    if (still?.id != offer.tripId) {
+      _phase = RecorderPhase.idle;
+      _result = TripResult(
+        kind: TripResultKind.resumeGone,
+        vehicleId: offer.vehicleId,
+      );
+      _event(TripEvent(TripEventKind.resumeFailed, result: _result));
+      _publishView();
+      return;
+    }
     OpenTrip? trip;
     try {
       trip = await _store.resume(offer.tripId, now: _clock.nowUtc());
@@ -675,7 +735,7 @@ class TripRecorder extends ChangeNotifier {
     _buffer
       ..clear()
       ..write(TripCsv.segment(trip.baseT, utc));
-    _proAtStart = _isPro;
+    _proSeen = _isPro;
 
     final supported = _link.supportedPids;
     final channels = supported.isEmpty
@@ -704,15 +764,20 @@ class TripRecorder extends ChangeNotifier {
       _fgsRequested = true;
       // Started here, from a tap in the foreground: API 31+ refuses a
       // foreground service started from the background.
-      if (!await _background.startRecording() && identical(trip, _trip)) {
+      final started = await _background.startRecording();
+      // Ended, discarded or torn down while the service came up: the end
+      // funnel has run, so no timer, no event and no service may follow.
+      // Torn down, the row stays open for the next launch pass.
+      if (!_stillRecording(trip)) {
+        if (started) unawaited(_background.stopRecording());
+        return;
+      }
+      if (!started) {
         _fgsRequested = false;
         _caveat = TripCaveat.serviceRefused;
         _backgroundAllowed = false;
         _link.setRecording(false);
       }
-      // Torn down while the service started: no timer, no event — the row
-      // stays open for the next launch pass.
-      if (!identical(trip, _trip) || _detached) return;
     }
     if (_tickEvery case final every?) {
       _timer = Timer.periodic(every, (_) => debugTick());
@@ -722,6 +787,11 @@ class TripRecorder extends ChangeNotifier {
     _updateReading();
     _recompute();
   }
+
+  /// [trip] is still the one being recorded — not ending, not replaced,
+  /// and the recorder not torn down.
+  bool _stillRecording(OpenTrip trip) =>
+      _phase == RecorderPhase.recording && identical(trip, _trip) && !_detached;
 
   Future<void> stop() {
     if (_phase != RecorderPhase.recording) return Future.value();
@@ -744,7 +814,7 @@ class TripRecorder extends ChangeNotifier {
     }
     if (!TripCsv.isPid(s.pid)) return;
     final t = _t;
-    if (TripPlan.capped(t, proAtStart: _proAtStart, proNow: _isPro)) {
+    if (TripPlan.capped(t, proAtStart: _proSeen, proNow: _isPro)) {
       // Nothing past 2:00 is written, and the end never runs inside the
       // poll loop's call.
       _capReached = true;
@@ -762,7 +832,7 @@ class TripRecorder extends ChangeNotifier {
     if (_phase != RecorderPhase.recording) return;
     final t = _t;
     if (!_capReached &&
-        TripPlan.capped(t, proAtStart: _proAtStart, proNow: _isPro)) {
+        TripPlan.capped(t, proAtStart: _proSeen, proNow: _isPro)) {
       _capReached = true;
       unawaited(_end(TripEnd.freeCap, endT: TripPlan.freeMs));
       return;
@@ -864,7 +934,10 @@ class TripRecorder extends ChangeNotifier {
             _event(const TripEvent(TripEventKind.continued));
           }
         }
-        // A pause that changes kind keeps its start: one limit for all.
+        // A pause that changes kind keeps its start: one limit for all —
+        // and is then ended as a pause, not as its last kind.
+        if (_hold != null && hold != null) _holdMixed = true;
+        if (_hold == null) _holdMixed = false;
         _hold = hold;
       }
     }
@@ -872,14 +945,21 @@ class TripRecorder extends ChangeNotifier {
     _publishView();
   }
 
+  /// The current pause began as another kind.
+  bool _holdMixed = false;
+
   bool _heldTooLong() =>
       _clock.elapsedMs() - _holdSinceMs >= TripPlan.maxHold.inMilliseconds;
 
-  static TripEnd _endForHold(TripHold hold) => switch (hold) {
-    TripHold.link => TripEnd.linkLost,
-    TripHold.ignitionOff => TripEnd.ignitionOff,
-    TripHold.identity || TripHold.background => TripEnd.heldTooLong,
-  };
+  /// Eight minutes waiting for the link and two with the ignition off is
+  /// ten minutes paused, not "the ignition was off for 10 minutes".
+  TripEnd _endForHold(TripHold hold) => _holdMixed
+      ? TripEnd.heldTooLong
+      : switch (hold) {
+          TripHold.link => TripEnd.linkLost,
+          TripHold.ignitionOff => TripEnd.ignitionOff,
+          TripHold.identity || TripHold.background => TripEnd.heldTooLong,
+        };
 
   TripEnd? _endFor() {
     final s = _link.state;
@@ -958,11 +1038,24 @@ class TripRecorder extends ChangeNotifier {
 
     TripSessionRow? row;
     var pending = false;
-    try {
-      row = await _store.finish(trip, why, now: _clock.nowUtc());
-    } catch (_) {
-      // The row stays open; the next launch pass closes it from the file.
-      pending = true;
+    // Record then Stop with not one reading: kept, it would take one of the
+    // free plan's last three for a 0 s trip, where the launch pass deletes
+    // the same empty file. A resumed trip always has its first segment.
+    final empty = _stats.totals.rows == 0;
+    if (empty) {
+      try {
+        await _store.discard(trip);
+      } catch (_) {
+        // Left for the launch pass, which deletes an empty trip.
+      }
+    } else {
+      try {
+        row = await _store.finish(trip, why, now: _clock.nowUtc());
+      } catch (_) {
+        // The row stays open; the next Record or launch closes it from the
+        // file.
+        pending = true;
+      }
     }
     final last = reading.value;
     _trip = null;
@@ -973,7 +1066,13 @@ class TripRecorder extends ChangeNotifier {
     // Torn down while saving: the notifiers are gone, and nothing is said.
     if (_detached) return;
     reading.value = null;
-    _result = pending
+    _result = empty
+        ? TripResult(
+            kind: TripResultKind.nothingRecorded,
+            vehicleId: trip.vehicleId,
+            end: why,
+          )
+        : pending
         ? TripResult(
             kind: TripResultKind.summaryPending,
             vehicleId: trip.vehicleId,
@@ -1044,8 +1143,11 @@ class TripRecorder extends ChangeNotifier {
     _store
         .resumable(o.vehicleId, now: _clock.nowUtc())
         .then((row) {
-          if (gen != _gen || _detached || row == null) return;
-          _offer = ResumeOffer.of(row);
+          if (gen != _gen || _detached) return;
+          // Nothing to offer now means the last offer is stale too.
+          _offer = row == null
+              ? (_offer?.vehicleId == o.vehicleId ? null : _offer)
+              : ResumeOffer.of(row);
           _publishView();
         })
         .catchError((Object _) {});

@@ -41,6 +41,16 @@ void main() {
       expect(decimalText(12.46, digits: 1, locale: 'en_US'), '12.5');
     });
 
+    test('★ the digits stay 0–9; only the separators follow the locale', () {
+      // An Egyptian or Persian phone's own numerals beside the meter's and
+      // every gauge's ASCII read as two number systems in one line.
+      for (final locale in ['ar_EG', 'fa_IR', 'bn_BD', 'mr_IN']) {
+        final text = decimalText(12.4, digits: 1, locale: locale);
+        expect(text, matches(RegExp(r'^12\D4$')), reason: locale);
+      }
+      expect(decimalText(1234.5, digits: 1, locale: 'de_DE'), '1.234,5');
+    });
+
     test('whole numbers have no decimal mark', () {
       expect(decimalText(41.4, digits: 0, locale: 'en_US'), '41');
       expect(decimalText(41.6, digits: 0, locale: 'de_DE'), '42');
