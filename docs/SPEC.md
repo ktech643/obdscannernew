@@ -1256,6 +1256,7 @@ Phase 6  Screens: Connect, Dashboard, Diagnostics, Garage, Settings, Onboarding.
          ◐ review of slice 15, 2026-09-25 — 25 confirmed, all fixed, see §B.28
          ◐ slice 16 done 2026-09-26 — Dashboard grid editing and layouts per vehicle, see §B.29
          ◐ review of slice 16, 2026-09-26 — 19 confirmed, all fixed, see §B.30
+         ◐ slice 17 done 2026-09-28 — the trip strip, trip recording and Garage › Trip recordings, see §B.31
 Phase 7  Android FGS, OEM battery helper, permission matrix.   ✅ built before Phase 6, on the Provider stack
 Phase 8  Monetisation — RevenueCat, all §7.5 cases.   ✅ built before Phase 6, on the Provider stack
 Phase 9  Demo Mode. Required for store review, not optional.   ✅ rebuilt on the real session in slice 4 (§11.1, §B.14)
@@ -2276,6 +2277,167 @@ free plan's `select`, the electric-by-support rule) describe tests that could
 miss a future bug in code that is right.
 
 865 tests, analyzer clean.
+
+## B.31 The trip strip and trip recording (Phase 6, slice 17 — 2026-09-28)
+
+§5.3's trip strip and Record, §7.2–7.3's free recording and its door, hard
+rule 9 in the running app, and Garage › Trip recordings. Mapped first by six
+readers and a critic (the map found that nothing had ever called
+`setBackgrounded` — hard rule 9 and AC-11 held only in a unit test), designed
+by a panel of four designs and three judges (durability-first won; twenty
+fatal flaws the judges named were fixed in the synthesis), built as three
+foundation layers in parallel and integrated, then tested by six writers who
+reported defects instead of patching around them.
+
+**The recording.**
+- `TripRecorder` (lib/features/trips/) is owned by `LiveSession`, beside the
+  layout controller. It hears every published sample through one synchronous
+  `PidBus.tap`, writes nothing inside it, and buffers rows that a 1 s tick
+  appends and every fifth tick fsyncs: an app kill loses about a second
+  (AC-09, proven on the real disk). It notifies only when what the strip
+  draws changes; the meter goes out once a second on `reading` (hard rule 3).
+- **The CSV is written on the root isolate — a departure from §1.4/§5.3's
+  "background isolate".** A kill ends every isolate in the process, so a
+  writer isolate adds no durability, only a copy hop per batch; open files
+  cannot cross isolates; plugins cannot be called there. `Isolate.run` is used
+  for the pure summary only.
+- **Grammar v1** (`lib/data/trips/trip_csv.dart`): ASCII, LF, a
+  `#torque-trip,1` line and `t_ms,pid,value`; t is monotonic recorded time
+  (a `Stopwatch`, §9.7), mapped to wall time by `#segment`, `#sync` and
+  `#end` anchors in UTC; a null or non-finite value is an empty field, never 0
+  (hard rule 5); values are locale-free. Rows never decrease; an anchor need
+  only not precede the last row (a hold's `#sync` runs ahead of the rows, and
+  `#end` and a resumed `#segment` then sit at the last row). A torn last line
+  is not a sample.
+- **The file is the truth.** Every finish, the launch pass and Resume read
+  the figures back from the file with the same `TripStats` the strip used
+  live, so what is saved is what the file can prove. Distance and fuel are
+  trapezoids over consecutive readings no more than 15 s apart: a null breaks
+  the chain, a Doze gap is not bridged, a resumed segment is not joined to the
+  one before. Fuel used is null until the car sends a fuel rate (015E), and
+  always "(estimated)" (§4.3); there is no MAF path yet.
+- **Schema v4**: `TripSessions` gains `fuelUsedL`, `recordedMs` and
+  `endReason` (a `TripEnd` stored by name), and a partial unique index allows
+  at most one open trip. The step closes any open rows first, so the index can
+  be built; older backups import with the new keys null, and an open row in a
+  backup arrives closed.
+- **What is polled.** Speed and Fuel rate while a trip records, through
+  `DashboardLayoutController.recordingPids`: the controller stays the only
+  caller of `setVisible` (§B.29) and becomes the only caller of `setQuiet` —
+  a recording PID no tile shows can drop without raising "Weak link". §4.5 is
+  restated: only PIDs whose tile is visible, plus what an active recording
+  needs; in the background, only the latter.
+
+**The lifecycle, and hard rule 9 at last.** `LiveSession` owns an
+`AppLifecycleListener`: hidden, paused and detached are the background (§9.7);
+inactive is not (Control Center, a call, split screen). In the background
+with nothing recording nothing is polled, and a reconnect ladder parks at its
+next rung until the app returns (AC-11, end to end). Keep-awake gained its
+foreground term (§5.3). A recording in the background polls one cycle every
+2 s on iOS (§5.3 "0.5 Hz" — a cycle, since every critical PID is in each), and
+at the adaptive rate under the Android service. Over Wi-Fi on iOS, and on
+Android without notification permission, a recording pauses in the
+background, and the strip says so before and during it.
+
+**The Android service.** The `connectedDevice` service starts when Record is
+tapped — in the foreground, since API 31 refuses a start from the background
+— and stops on every end, discard and teardown; a stale one is stopped at
+launch. Its notification's Stop is heard within 5 s by polling `isRunning`,
+counted only once the service was seen running. Manifest and Kotlin: the
+`CHANGE_NETWORK_STATE` prerequisite (API 34, for a Wi-Fi user with no
+Bluetooth grant), `stopWithTask`, a refused `startForeground` that stops
+instead of crashing, the start error reported to Dart, and the service
+stopped with the engine. `flutter build apk --debug` succeeds — the first
+build since `ScreenWakePlugin.kt` went in (§B.20).
+
+**The plan (§7.2, §7.3, §7.5, §9.4).**
+- Free records 2:00 of recorded time — holds count — then saves and stops:
+  no row past 2:00 is written, and the stop comes with no modal. The line that
+  says so opens the §7.3 door only when tapped; an electric car gets the
+  statement and no door. A trip is capped only if it was free when it started
+  and is free now: Pro bought mid-trip lifts the cap, a lapse never cuts a
+  running trip.
+- "Last 3 trips" is per car (the open per-vehicle question stands): on Free
+  the fourth and older are held — listed by date, figures kept back, still
+  deletable, never deleted, no door.
+- Retention (Part 6: 30 days, then 200 MB least-recently-opened) applies on
+  both plans, and the list says so; opening a trip is what moves it in the
+  LRU queue. Whether Pro should be exempt is the user's call.
+- Demo Mode never records: a trip needs a real car, and §B.29's demo never
+  writes against the real garage.
+
+**Relaunch (§9.2).** `main()` starts a launch pass, not awaited: stop a stale
+service, close every open trip from its own file (at its last durable sample,
+its figures recomputed, the torn tail cut, `appKilled`), reconcile orphan
+files, then retention — in that order, because retention skips open trips.
+Record waits for it. "Resume trip?" is offered inline in the strip — never a
+modal — for the same identified car's newest trip, ended by a kill or a lost
+link, within 30 minutes and with free time left; Resume continues the same row
+and file from the file's last row. Resume also cuts the file to its last whole
+line itself: the launch pass's cut is best effort.
+
+**Identity, teardown, edges.** Nothing is written until the car on the wire
+has been judged to be the trip's car (§9.6: `GarageController.identitySettled`,
+stricter than no question pending); another car answering ends the trip at its
+last row, never re-files it. A lost link holds the trip through the ladder; the
+give-up ends it as `linkLost`, resumable; a user Disconnect is a clean stop.
+Every pause — link, ignition off, identity, background — ends the trip after
+10 minutes, checked on the tick and when a pause lifts (a suspended app has no
+tick). Delete all data first shuts the recorder (discarding the open trip) and
+waits for the launch pass; deleting a car releases its trip first. Storage full
+rolls the file back to its last whole line and ends the trip with what was
+saved. A car that reports no Speed records no distance, and says so.
+
+**The strip and the list.** The strip sits in §B.29's slot, stays in edit mode
+only while a trip is open, and is hidden where the Dashboard's own states say
+enough. One semantics node for its status, one per control, each event
+announced once; recording is a blue dot and the word (never red, B.3); no
+motion; statements, never a dimmed button (§B.26); it stacks at large text.
+Figures follow the phone's locale — `12,4 km` — through `decimalText`, which
+walks intl's fallbacks (`de_DE` → `de`; the design's `localeExists` would have
+sent every German phone to `12.4`); clock times follow the 24-hour setting
+(`DateFormat` pinned to `en_US`, the only date data compiled in).
+
+**Found by running it on the simulator** (against `tool/trace_server.dart`, a
+recorded car on a local socket — debug builds given
+`--dart-define=TORQUE_DEV_WIFI=127.0.0.1:35000` offer it on Connect; parked by
+default, `--drive` for a drive):
+- The scheduler starved every non-critical tile once RPM and Speed filled a
+  two-PID budget — any 45 ms adapter, the default layout included. The rest
+  now always get a turn.
+- Tiles judged staleness against a fixed 125 ms and flickered to "0 s ago"
+  several times a second at any slower pace. A tile now learns its reading's
+  own pace (outages left out) and is stale when late for it; the age is never
+  "0 s ago".
+- The trip sheet's figures ran flush to the edge.
+
+**Found by the tests** (reported, then fixed): an end or a start that outlived
+the app's teardown; the pause limit lost across a suspension; four things the
+strip showed and never said. **Tooling:** `tool/prove.py`, the revert-proof
+harness, now lives in the repo (it had lived in a scratchpad that is cleared
+between sessions).
+
+**Tests.** test/data/trips/*, test/data/{trip_repository,schema_migration,
+backup_codec}_test.dart, test/features/trips/*, test/features/garage/
+trip_recordings_screen_test.dart, test/features/live_lifecycle_test.dart, the
+session, scheduler, bus, layout-controller, tile, platform, erase and garage
+additions. About 210 reverts, each seen failing for its own reason. Two rules
+live in two places on purpose and each is proven alone: the launch pass's and
+Resume's cut of a torn tail, and an open trip's Delete (hidden on the screen,
+refused by the repository). 1,048 tests, analyzer clean.
+
+**Deferred, named.** Trip detail — a speed trace, rename, per-trip CSV export
+(§7.2 PDF/CSV is Pro), "codes seen during this trip"; the full graph (§B.29);
+Android background hardening — the OEM battery card, the Bluetooth-off enable
+prompt, an Application-scoped link so a recording outlives the Activity;
+iOS background on hardware (0.5 Hz under suspension, Wi-Fi, AC-15 memory) —
+none of it is provable on a simulator; the MAF fuel path; the §9.2 ladder
+tail (every 15 s for 2 minutes).
+
+**For the user.** Per vehicle or in total (§B.28); what "last 3 trips" does
+to older trips (held, as built); whether Pro is exempt from 30-day retention;
+Record and Stop at speed (allowed — §8.4 gates tile editing only); Demo Mode
+recording (never, as built); Android's background rate (adaptive, as built).
 
 ## HARD RULES
 
