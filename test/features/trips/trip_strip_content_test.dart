@@ -413,8 +413,11 @@ void main() {
         lines: [reason, sofar],
         dimmed: [sofar],
         actions: ['Stop'],
+        // A reason that says "Paused" already is not prefixed with it
+        // again: VoiceOver read "Paused, paused while Torque is in the
+        // background."
         spoken:
-            'Paused, ${reason[0].toLowerCase()}${reason.substring(1)} 18 '
+            '${reason.startsWith('Paused') ? reason : 'Paused, ${reason[0].toLowerCase()}${reason.substring(1)}'} 18 '
             'minutes 4 seconds recorded. 12.4 kilometres, average 41 '
             'kilometres per hour.',
       );

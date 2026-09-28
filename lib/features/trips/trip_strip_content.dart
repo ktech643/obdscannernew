@@ -178,6 +178,8 @@ StripContent _recording(TripView v, TripReading? r, TripFormat fmt) {
     actions: const [_stop],
     spoken: [
       'Recording, ${_spokenElapsed(r, fmt)}.',
+      if (v.speedMissing)
+        "This car doesn't report speed, so distance isn't recorded.",
       ?_spokenFigures(r, fmt),
       ?_caveat(v.caveat)?.text,
     ].join(' '),
@@ -204,9 +206,11 @@ StripContent _paused(TripView v, TripReading? r, TripFormat fmt) {
     ],
     actions: const [_stop],
     spoken: [
-      'Paused, ${_lower(reason)}',
+      // "Paused while Torque is in the background." says it already.
+      reason.startsWith('Paused') ? reason : 'Paused, ${_lower(reason)}',
       if (r != null) '${fmt.spokenDuration(r.elapsedMs)} recorded.',
       ?_spokenFigures(r, fmt),
+      ?_caveat(v.caveat)?.text,
     ].join(' '),
   );
 }
@@ -389,7 +393,6 @@ String? announcementFor(TripEvent e, TripFormat fmt, {required bool freePlan}) {
         return "Recording stopped at 2 minutes, the free plan's limit. "
             'Trip saved.';
       }
-      if (r.kind != TripResultKind.saved) return resultSentence(r, fmt);
       return 'Recording stopped. ${resultSentence(r, fmt)}';
     case TripEventKind.startFailed:
     case TripEventKind.resumeFailed:

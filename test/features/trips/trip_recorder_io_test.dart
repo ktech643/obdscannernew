@@ -95,6 +95,48 @@ void main() {
     }
   }
 
+  test('★ Resume never writes onto a torn line, even one the launch pass '
+      'could not cut', () async {
+    // The launch pass cuts a killed trip's torn tail, and Resume opens the
+    // file cut to its last whole line too: the pass's cut is best effort,
+    // and a segment appended to half a row reads as garbage. One rule in
+    // two places, each for its own failure — so each is proven alone.
+    final started = DateTime.utc(2026, 9, 28, 12);
+    final row = await repo.start(vehicleId: car.id, now: started);
+    final file = repo.fileOf(row);
+    final drive = driveCsv(started, toMs: 20000);
+    await file.writeAsString(
+      '${drive.substring(TripCsv.header.length)}20400,010D,4',
+      mode: FileMode.append,
+    );
+    // Closed as killed, but the tail left in place.
+    await repo.finish(
+      row.id,
+      end: TripEnd.appKilled,
+      summary: TripCsv.summarizeFileSync(
+        file.path,
+        startedAtMs: started.millisecondsSinceEpoch,
+        nowMs: started.add(const Duration(minutes: 1)).millisecondsSinceEpoch,
+      ),
+    );
+
+    final now = started.add(const Duration(minutes: 5));
+    final trip = await DbTripStore(repo).resume(row.id, now: now);
+    expect(trip, isNotNull);
+    await trip!.sink.append(TripCsv.segment(trip.baseT, now));
+    await trip.sink.append(TripCsv.row(trip.baseT + 500, '010D', 30));
+    await trip.sink.close();
+
+    final content = await file.readAsString();
+    expect(content, isNot(contains('20400,010D,4')));
+    final summary = TripCsv.summarize(
+      content,
+      startedAtMs: started.millisecondsSinceEpoch,
+      nowMs: now.millisecondsSinceEpoch,
+    );
+    expect(summary.malformed, 0);
+  });
+
   test('★ AC-09 a kill loses at most the last second', () async {
     // Rows go from the buffer to the file every 1 s tick; every fifth also
     // fsyncs. Killed at 14.9 s — no stop, no close — the file must hold

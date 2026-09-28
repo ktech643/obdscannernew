@@ -319,6 +319,25 @@ void main() {
       await drain(tester);
     });
 
+    testWidgets('★ the sheet\'s figures sit inside its margins', (
+      tester,
+    ) async {
+      // Flush to the sheet's edge, "2 min 0 s" and "34 km/h" were cut off
+      // on the simulator: every other ValueList sits in a padded card.
+      await seed();
+      await fiveAndThree();
+      await pumpList(tester);
+      await tester.tap(find.textContaining('1.5 km'));
+      await settle(tester);
+      final sheet = tester.getRect(find.byType(BottomSheet));
+      final figures = tester.getRect(find.byType(ValueList));
+      expect(figures.left, sheet.left + Space.gutter);
+      expect(figures.right, sheet.right - Space.gutter);
+      Navigator.of(tester.element(find.text('Delete trip'))).pop();
+      await settle(tester);
+      await drain(tester);
+    });
+
     testWidgets('the row is touched before its sheet opens', (tester) async {
       await seed();
       final mine = await fiveAndThree();
@@ -401,8 +420,8 @@ void main() {
       await tester.tap(find.text('2-minute limit'));
       await settle(tester);
       expect(find.text("The free plan's 2-minute limit"), findsOneWidget);
-      expect(find.text('2 min 0 s'), findsOneWidget);
-      Navigator.of(tester.element(find.text('2 min 0 s'))).pop();
+      expect(find.text('2 min'), findsOneWidget);
+      Navigator.of(tester.element(find.text('2 min'))).pop();
       await settle(tester);
 
       await tester.tap(find.text('Interrupted').first);

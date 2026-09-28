@@ -710,7 +710,9 @@ class TripRecorder extends ChangeNotifier {
         _backgroundAllowed = false;
         _link.setRecording(false);
       }
-      if (!identical(trip, _trip)) return;
+      // Torn down while the service started: no timer, no event — the row
+      // stays open for the next launch pass.
+      if (!identical(trip, _trip) || _detached) return;
     }
     if (_tickEvery case final every?) {
       _timer = Timer.periodic(every, (_) => debugTick());
@@ -766,15 +768,8 @@ class TripRecorder extends ChangeNotifier {
       return;
     }
     final hold = _hold;
-    if (hold != null &&
-        _clock.elapsedMs() - _holdSinceMs >= TripPlan.maxHold.inMilliseconds) {
-      unawaited(
-        _end(switch (hold) {
-          TripHold.link => TripEnd.linkLost,
-          TripHold.ignitionOff => TripEnd.ignitionOff,
-          TripHold.identity || TripHold.background => TripEnd.heldTooLong,
-        }),
-      );
+    if (hold != null && _heldTooLong()) {
+      unawaited(_end(_endForHold(hold)));
       return;
     }
     _ticks++;
@@ -851,6 +846,12 @@ class TripRecorder extends ChangeNotifier {
         return;
       }
       final hold = _holdFor();
+      // The limit is checked on the tick, and a suspended app has none: back
+      // from twenty minutes away, the hold must not simply lift.
+      if (_hold != null && _heldTooLong()) {
+        unawaited(_end(_endForHold(_hold!)));
+        return;
+      }
       if (hold != _hold) {
         if (_hold == null) {
           _holdSinceMs = _clock.elapsedMs();
@@ -870,6 +871,15 @@ class TripRecorder extends ChangeNotifier {
     _queryOffer();
     _publishView();
   }
+
+  bool _heldTooLong() =>
+      _clock.elapsedMs() - _holdSinceMs >= TripPlan.maxHold.inMilliseconds;
+
+  static TripEnd _endForHold(TripHold hold) => switch (hold) {
+    TripHold.link => TripEnd.linkLost,
+    TripHold.ignitionOff => TripEnd.ignitionOff,
+    TripHold.identity || TripHold.background => TripEnd.heldTooLong,
+  };
 
   TripEnd? _endFor() {
     final s = _link.state;
@@ -959,9 +969,10 @@ class TripRecorder extends ChangeNotifier {
     _ending = null;
     _hold = null;
     _capReached = false;
-    reading.value = null;
     _phase = RecorderPhase.idle;
+    // Torn down while saving: the notifiers are gone, and nothing is said.
     if (_detached) return;
+    reading.value = null;
     _result = pending
         ? TripResult(
             kind: TripResultKind.summaryPending,
