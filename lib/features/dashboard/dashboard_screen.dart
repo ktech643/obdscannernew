@@ -1,8 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 import '../../design_system/design_system.dart';
-import '../../models/enums.dart'
-    show DistanceUnit, TemperatureUnit, VehicleFuel;
+import '../../models/enums.dart' show DistanceUnit, TemperatureUnit;
 import '../../session/gauge_catalog.dart';
 import '../../session/obd_session.dart';
 import '../session_banner.dart';
@@ -177,11 +176,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   /// SPEC §9.4 — never sell more gauges to a car that has none to give.
-  bool get _electric {
-    final t = _c.target;
-    return (t is VehicleTarget && t.fuelType == VehicleFuel.electric) ||
-        GaugeCatalog.looksFullyElectric(_support.pids);
-  }
+  bool get _electric => looksElectric(_c.target, widget.session.supportedPids);
 
   void _enterEdit() {
     switch (_c.beginEditing()) {
@@ -301,7 +296,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       onLayouts: _openLayouts,
                       onRetry: _c.settle,
                     ),
-            if (!_c.editing && widget.tripStrip != null) widget.tripStrip!,
+            // Shown in edit mode too: the strip hides itself there unless a
+            // trip is being recorded, which keeps its status and its Stop.
+            if (widget.tripStrip != null) widget.tripStrip!,
             Expanded(child: _body(context, session)),
           ],
         ),

@@ -69,6 +69,32 @@ class TripFormat {
   String clock(DateTime at) =>
       DateFormat(use24h ? 'HH:mm' : 'h:mm a', 'en_US').format(at.toLocal());
 
+  /// What a screen reader should say for [distance], [speed], [litres]
+  /// and a span: the words, not the abbreviations — "km/h" is read out
+  /// letter by letter on some voices.
+  String spokenDistance(double km) =>
+      '${_decimal(Distance.fromKm(km, unit), 1)} '
+      '${unit == DistanceUnit.km ? 'kilometres' : 'miles'}';
+
+  String spokenSpeed(double kph) =>
+      '${_decimal(Distance.fromKm(kph, unit), 0)} '
+      '${unit == DistanceUnit.km ? 'kilometres per hour' : 'miles per hour'}';
+
+  String spokenLitres(double l) => '${_decimal(l, 1)} litres';
+
+  /// `1 minute 42 seconds`, `2 minutes`, `1 hour 5 minutes 10 seconds`;
+  /// rounded down, as the meter is.
+  String spokenDuration(int ms) {
+    final s = _seconds(ms);
+    String part(int n, String unit) => n == 1 ? '1 $unit' : '$n ${unit}s';
+    final parts = [
+      if (s >= 3600) part(s ~/ 3600, 'hour'),
+      if (s % 3600 >= 60) part(s % 3600 ~/ 60, 'minute'),
+      if (s % 60 > 0 || s == 0) part(s % 60, 'second'),
+    ];
+    return parts.join(' ');
+  }
+
   String _decimal(double v, int digits) =>
       decimalText(v, digits: digits, locale: numberLocale);
 

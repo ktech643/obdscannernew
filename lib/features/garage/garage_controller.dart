@@ -177,8 +177,14 @@ class GarageController extends ChangeNotifier {
     await vehicles.updateOdometer(id, km, now: at);
   }
 
+  /// Called before a vehicle is deleted — the trip recorder lets go of a
+  /// trip being recorded for it, so no write lands on a file the delete is
+  /// about to remove, or a row the cascade already took.
+  Future<void> Function(String vehicleId)? beforeDelete;
+
   /// Files first, then the row; the cascade takes every record with it.
   Future<void> delete(String id) async {
+    await beforeDelete?.call(id);
     await trips?.deleteAllFor(id);
     await vehicles.delete(id);
   }
@@ -221,6 +227,13 @@ class GarageController extends ChangeNotifier {
   /// A verdict the user has to answer before anything is recorded. Null
   /// when the car on the wire is the primary, or when it answered no VIN.
   IdentityVerdict? get pendingIdentity => _pending;
+
+  /// True once the car on the wire has been judged and nothing is left to
+  /// ask: the VIN read for this connection is done and no §9.6 question is
+  /// open. Stricter than `pendingIdentity == null`, which also holds while
+  /// the VIN is still being read — a recording must not start, or write,
+  /// in that window.
+  bool get identitySettled => _readThisConnection && _pending == null;
 
   /// The verdict of the last connect, prompt or no prompt, for the garage
   /// card to show what the car said.

@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/platform/platform_info.dart';
 import '../data/db/app_database.dart' show VehicleRow;
 import '../data/repositories/dtc_repository.dart';
 import '../data/repositories/service_repository.dart';
 import '../data/repositories/trip_repository.dart';
 import '../data/repositories/vehicle_repository.dart';
 import '../design_system/design_system.dart';
+import '../platform/background_service.dart';
 import '../platform/screen_wake.dart';
 import '../protocol/protocol_log.dart';
 import '../providers/app_providers.dart';
@@ -26,6 +28,7 @@ import 'garage/identity_prompt.dart';
 import 'garage/maintenance_screen.dart';
 import 'garage/reminders_screen.dart';
 import 'garage/service_intervals.dart' show Money;
+import 'garage/trip_recordings_screen.dart';
 import 'pro/paywall_screen.dart';
 import '../data/repositories/layout_repository.dart';
 import 'dashboard/dashboard_layout.dart';
@@ -33,6 +36,11 @@ import 'dashboard/layout_controller.dart';
 import 'dashboard/speed_gate.dart';
 import 'garage/vehicle_form_screen.dart';
 import 'settings/settings_screen.dart';
+import 'trips/trip_clock.dart';
+import 'trips/trip_link.dart';
+import 'trips/trip_recorder.dart';
+import 'trips/trip_store.dart';
+import 'trips/trip_strip.dart';
 
 /// Holds the one live [ObdSession] and the discovery feeding it, so the
 /// Connect and Dashboard tabs are looking at the same connection.
@@ -50,9 +58,16 @@ class LiveSession extends ChangeNotifier {
     TripRepository? trips,
     LayoutRepository? layouts,
     ScreenWake? screenWake,
+    WidgetsBinding? binding,
+    PlatformInfo? platform,
+    BackgroundService? background,
+    Future<void>? tripLaunch,
+    TripStore? tripStore,
+    TripClock? tripClock,
   }) : log = ProtocolLog(),
        screenWake = screenWake ?? ScreenWake(),
        _discovery = discovery ?? RealAdapterDiscovery() {
+    final plat = platform ?? PlatformInfo.current;
     // Built in the body, not the initializer list, so it can pass this
     // session's own `log` — a field can't see a sibling field yet while
     // the initializer list is still running.
@@ -79,12 +94,85 @@ class LiveSession extends ChangeNotifier {
     dashboard = DashboardLayoutController(
       repository: layouts,
       publish: this.session.setVisible,
+      publishQuiet: this.session.setQuiet,
       moving: speedGate.moving,
     );
+    // §5.3 "iOS bluetooth-central at 0.5 Hz for active recordings only":
+    // how slowly a recording polls while the app is in the background.
+    this.session.backgroundInterval = plat.backgroundPollInterval;
+    final g = garage;
+    final store = tripStore ?? (trips == null ? null : DbTripStore(trips));
+    recorder = g == null || store == null
+        ? null
+        : TripRecorder(
+            link: SessionTripLink(this.session),
+            store: store,
+            dashboard: dashboard,
+            background: background ?? BackgroundService(platform: plat),
+            platform: plat,
+            launch: tripLaunch,
+            clock: tripClock,
+          );
+    final r = recorder;
+    if (g != null && r != null) g.beforeDelete = r.releaseVehicle;
     _syncLayoutTarget();
+    r?.follow(_tripOwner());
     garage?.addListener(_syncVehicle);
     _wasLive = this.session.isLive;
     this.session.addListener(_onSession);
+    // Hard rule 9 and AC-11 in the running app: the lifecycle is heard
+    // here, where the session is, rather than by a screen that may not be
+    // built. Not seeded from the binding's current state — that leaks
+    // between tests, and the app is in front when this is first built.
+    _lifecycle = AppLifecycleListener(
+      binding: binding ?? WidgetsBinding.instance,
+      onStateChange: _onLifecycle,
+      onResume: () => unawaited(recorder?.onResumed()),
+    );
+  }
+
+  /// SPEC §5.3 "Record" — null only in tests that give no garage or trips.
+  late final TripRecorder? recorder;
+
+  late final AppLifecycleListener _lifecycle;
+  bool _foreground = true;
+
+  /// §9.7 "AppLifecycleState.hidden treated as paused". Inactive is still
+  /// on screen — Control Center, a call, the notification shade, split
+  /// screen — and keeps the gauges live.
+  static bool isForeground(AppLifecycleState state) => switch (state) {
+    AppLifecycleState.resumed || AppLifecycleState.inactive => true,
+    AppLifecycleState.hidden ||
+    AppLifecycleState.paused ||
+    AppLifecycleState.detached => false,
+  };
+
+  void _onLifecycle(AppLifecycleState state) {
+    final fg = isForeground(state);
+    if (fg == _foreground) return;
+    _foreground = fg;
+    // The recorder first, so what it holds is on disk before iOS may
+    // suspend the app; then what is asked of the car; then whether it is
+    // asked at all (§4.5 "App backgrounded with no active recording → stop
+    // polling entirely").
+    recorder?.setForeground(fg);
+    dashboard.foreground = fg;
+    session.setBackgrounded(!fg);
+    _syncWake();
+  }
+
+  /// Whose trip a recording would be. Nothing is recorded under a car
+  /// until the car on the wire has been judged to be it (§9.6).
+  TripOwner _tripOwner() {
+    if (_demo) return const OwnerDemo();
+    final g = garage;
+    if (g == null) return const OwnerNone();
+    if (!g.loaded) return const OwnerLoading();
+    final p = g.primary;
+    if (p == null) return const OwnerNone();
+    return g.identitySettled
+        ? OwnerVehicle(p.id, p.nickname)
+        : OwnerPending(p.id);
   }
 
   /// SPEC §5.3 — the Dashboard's layouts, for whichever car is primary:
@@ -137,8 +225,9 @@ class LiveSession extends ChangeNotifier {
   /// is on *and* the link is live.
   bool get keepScreenOn => _keepScreenOn;
 
+  /// §5.3 "Keep awake while foreground and connected".
   void _syncWake() =>
-      unawaited(screenWake.set(_keepScreenOn && session.isLive));
+      unawaited(screenWake.set(_keepScreenOn && session.isLive && _foreground));
 
   bool _wasLive = false;
 
@@ -151,6 +240,7 @@ class LiveSession extends ChangeNotifier {
   /// as if it had happened to it.
   void _syncVehicle() {
     _syncLayoutTarget();
+    recorder?.follow(_tripOwner());
     final g = garage;
     if (g == null) return;
     diagnostics.vehicleId = _demo || g.pendingIdentity != null
@@ -200,7 +290,10 @@ class LiveSession extends ChangeNotifier {
     bool keepScreenOn = true,
     bool? isPro,
   }) {
-    if (isPro != null) dashboard.isPro = isPro;
+    if (isPro != null) {
+      dashboard.isPro = isPro;
+      recorder?.isPro = isPro;
+    }
     session.autoReconnect = autoReconnect;
     session.scheduler.maxHz = maxPollingHz;
     AdaptiveHaptics.enabled = haptics;
@@ -220,6 +313,8 @@ class LiveSession extends ChangeNotifier {
   /// so the whole flow — scan, pick, handshake, live gauges — runs exactly
   /// as it does with hardware.
   Future<void> startDemo() async {
+    // A real trip is saved before any demo sample exists.
+    await recorder?.stop();
     await session.disconnect();
     _discovery = await DemoMode.discovery();
     _demo = true;
@@ -239,6 +334,11 @@ class LiveSession extends ChangeNotifier {
 
   @override
   void dispose() {
+    // The listener first: a lifecycle change after this must not restart
+    // polling on a session being torn down.
+    _lifecycle.dispose();
+    recorder?.detach();
+    recorder?.dispose();
     unawaited(screenWake.set(false));
     session.removeListener(_onSession);
     garage?.removeListener(_syncVehicle);
@@ -300,6 +400,19 @@ class LiveDashboardTab extends StatelessWidget {
     // tab, so a change in Settings rebuilds the specs and nothing else.
     final settings = context.watch<SettingsProvider>();
     final garage = live.garage;
+    // Layouts and trips are kept per car; with none yet, the form that
+    // adds one.
+    final VoidCallback? addVehicle = garage == null
+        ? null
+        : () => Navigator.of(context).push(
+            PageRouteBuilder<void>(
+              pageBuilder: (_, _, _) => VehicleFormScreen(
+                controller: garage,
+                unit: settings.distance,
+              ),
+            ),
+          );
+    final recorder = live.recorder;
     return _Backlit(
       child: DashboardScreen(
         session: live.session,
@@ -309,16 +422,20 @@ class LiveDashboardTab extends StatelessWidget {
         distance: settings.distance,
         temperature: settings.temperature,
         onUpgrade: () => openProPaywall(context),
-        // Layouts are kept per car; with none yet, the form that adds one.
-        onAddVehicle: garage == null
+        onAddVehicle: addVehicle,
+        // The plan reaches the strip through the recorder, not a watch.
+        tripStrip: recorder == null
             ? null
-            : () => Navigator.of(context).push(
-                PageRouteBuilder<void>(
-                  pageBuilder: (_, _, _) => VehicleFormScreen(
-                    controller: garage,
-                    unit: settings.distance,
-                  ),
+            : TripStrip(
+                recorder: recorder,
+                layouts: live.dashboard,
+                distance: settings.distance,
+                electric: () => looksElectric(
+                  live.dashboard.target,
+                  live.session.supportedPids,
                 ),
+                onUpgrade: () => openProPaywall(context),
+                onAddVehicle: addVehicle,
               ),
       ),
     );
@@ -406,6 +523,14 @@ class LiveGarageTab extends StatelessWidget {
         currencyCode: Money.codeOf(settings.currency),
       );
     },
+    trips: garage.trips == null
+        ? null
+        : (ctx, vehicle) => TripRecordingsScreen(
+            trips: garage.trips!,
+            vehicle: vehicle,
+            unit: ctx.watch<SettingsProvider>().distance,
+            isPro: ctx.watch<EntitlementProvider>().isPro,
+          ),
   );
 }
 

@@ -4,7 +4,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'app.dart';
 import 'data/db/open.dart';
+import 'data/repositories/trip_repository.dart';
+import 'features/trips/trip_launch.dart';
 import 'monetization/revenuecat_service.dart';
+import 'platform/background_service.dart';
 import 'providers/persistence.dart';
 
 Future<void> main() async {
@@ -25,6 +28,13 @@ Future<void> main() async {
   // Trip files and, later, attachments go on disk under the app's own
   // documents directory — never as blobs in the database (Part 6).
   final docsDir = await getApplicationDocumentsDirectory();
+  // What a previous run left open is closed from its own file, before
+  // anything can record — started now, not awaited: the first frame does
+  // not wait for it, and Record does.
+  final tripLaunch = runTripLaunchPass(
+    TripRepository(db, TripFiles(docsDir)),
+    background: BackgroundService(),
+  );
   // Shares are staged under the temporary directory and swept from it by
   // "Delete all data"; opened here so the erase never needs a plugin call.
   final tempDir = await getTemporaryDirectory();
@@ -40,6 +50,7 @@ Future<void> main() async {
       db: db,
       docsDir: docsDir,
       tempDir: tempDir,
+      tripLaunch: tripLaunch,
     ),
   );
 }

@@ -33,6 +33,7 @@ class TorqueApp extends StatefulWidget {
     required this.db,
     required this.docsDir,
     required this.tempDir,
+    this.tripLaunch,
   });
 
   /// Opened before the first frame so every provider can restore its state in
@@ -52,6 +53,11 @@ class TorqueApp extends StatefulWidget {
 
   /// Where shares are staged; swept by "Delete all data".
   final Directory tempDir;
+
+  /// The trip launch pass `main()` started. Null in tests, which then do
+  /// no file I/O under the fake clock; every rebuild after "Delete all
+  /// data" gets the same, already completed, future.
+  final Future<void>? tripLaunch;
 
   @override
   State<TorqueApp> createState() => _TorqueAppState();
@@ -102,6 +108,7 @@ class _TorqueAppState extends State<TorqueApp> {
           services: c.read<ServiceRepository>(),
           trips: c.read<TripRepository>(),
           layouts: LayoutRepository(db),
+          tripLaunch: widget.tripLaunch,
         ),
       ),
       Provider<EraseEverything>(

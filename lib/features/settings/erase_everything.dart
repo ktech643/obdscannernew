@@ -16,6 +16,10 @@ import '../live_tabs.dart';
 ///
 /// In order, and each step only after the one before it has finished:
 ///
+/// 0. A trip being recorded is let go of — no start may begin, a start or
+///    end in flight finishes, the open trip's row and file are discarded —
+///    and the launch pass is waited for, so no file is written, truncated
+///    or finished after the wipe (§9.7 storage, and "erased" meaning it).
 /// 1. The link to the car is closed, so no scan or identity check can write
 ///    a row after the wipe.
 /// 2. Every row of every table ([AppDatabase.wipe], one transaction).
@@ -62,26 +66,36 @@ class EraseEverything {
   static const kept = [Keys.entitlementTier, Keys.entitlementVerifiedAt];
 
   Future<void> call() async {
-    await live.stopDemo();
-    await live.session.disconnect();
-    // Ends edit mode and waits for every queued layout write: one still
-    // queued after the wipe would name a car that is gone.
-    await live.dashboard.settle();
+    final recorder = live.recorder;
+    try {
+      await recorder?.shutdown();
+      await recorder?.launched;
 
-    await db.wipe();
-    await trips.deleteAllFiles();
+      await live.stopDemo();
+      await live.session.disconnect();
+      // Ends edit mode and waits for every queued layout write: one still
+      // queued after the wipe would name a car that is gone.
+      await live.dashboard.settle();
 
-    final tier = store.getString(Keys.entitlementTier);
-    final verifiedAt = store.getInt(Keys.entitlementVerifiedAt);
-    await store.clear();
-    if (tier != null) store.setString(Keys.entitlementTier, tier);
-    if (verifiedAt != null) {
-      store.setInt(Keys.entitlementVerifiedAt, verifiedAt);
+      await db.wipe();
+      await trips.deleteAllFiles();
+
+      final tier = store.getString(Keys.entitlementTier);
+      final verifiedAt = store.getInt(Keys.entitlementVerifiedAt);
+      await store.clear();
+      if (tier != null) store.setString(Keys.entitlementTier, tier);
+      if (verifiedAt != null) {
+        store.setInt(Keys.entitlementVerifiedAt, verifiedAt);
+      }
+
+      live.log.clear();
+      await ShareFile.deleteAll(temp: tempDir);
+      AdaptiveHaptics.enabled = true;
+    } catch (_) {
+      // Nothing was erased, or not all of it: Record works again.
+      recorder?.unlatch();
+      rethrow;
     }
-
-    live.log.clear();
-    await ShareFile.deleteAll(temp: tempDir);
-    AdaptiveHaptics.enabled = true;
     onErased();
   }
 }

@@ -214,6 +214,23 @@ final class VehicleTarget extends LayoutTarget {
   String get key => 'v:${row.id}';
 }
 
+/// SPEC §9.4 "Full EV: block the paywall" — a car recorded as electric, or
+/// one whose reported readings say it has no engine to measure. [live] is
+/// this connection's answer; with none yet, what the car said last time.
+/// Shared by the grid's doors and the trip strip's, so the two can never
+/// disagree about the same car.
+bool looksElectric(LayoutTarget target, Set<String> live) {
+  if (target is VehicleTarget && target.fuelType == VehicleFuel.electric) {
+    return true;
+  }
+  final pids = live.isNotEmpty
+      ? live
+      : target is VehicleTarget
+      ? target.cachedSupport
+      : const <String>{};
+  return GaugeCatalog.looksFullyElectric(pids);
+}
+
 /// Captured when a sheet or a gesture begins; an operation carrying one
 /// from before a change of car or layout is refused as stale.
 @immutable
