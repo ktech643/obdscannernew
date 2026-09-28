@@ -535,6 +535,78 @@ void main() {
     );
   });
 
+  group('★ what a recording needs polled — §4.5, §B.31', () {
+    test('★ a recording is asked for without its tiles, and alone in the '
+        'background', () async {
+      await storeLayout(['010C']);
+      final c = await forGolf();
+      var notified = 0;
+      c.addListener(() => notified++);
+      expect(published.last, {'010C'});
+
+      // Speed and Fuel rate with no tile for either: the recorder hands
+      // them here rather than calling setVisible itself, where the next
+      // edit's publish would silently drop them from the trip.
+      c.recordingPids = {'010D', '015E'};
+      expect(published.last, {'010C', '010D', '015E'});
+
+      c.foreground = false;
+      expect(published.last, {'010D', '015E'}, reason: 'only the trip');
+
+      c.recordingPids = const {};
+      expect(published.last, {'010C'}, reason: 'the tiles, once it ends');
+      expect(notified, 0, reason: 'what is polled is not what is shown');
+    });
+
+    test('★ backgrounded with no recording publishes nothing new, never an '
+        'empty set', () async {
+      await storeLayout(['010C']);
+      final c = await forGolf();
+      final before = published.length;
+
+      c.foreground = false;
+
+      // The loop is stopped anyway. An empty set would bring back the
+      // session's default six on the next connect, under a layout of one.
+      expect(published.length, before);
+      c.foreground = true;
+      expect(published.length, before);
+      expect(published.every((s) => s.isNotEmpty), isTrue);
+    });
+
+    test('★ quiet is the recording PIDs no tile shows', () async {
+      await storeLayout(['010D', '0105']);
+      final quiet = <Set<String>>[];
+      final c = DashboardLayoutController(
+        repository: repo,
+        publish: published.add,
+        publishQuiet: quiet.add,
+        moving: moving,
+      );
+      addTearDown(c.dispose);
+      c.setTarget(VehicleTarget(golf));
+      await Future<void>.delayed(Duration.zero);
+      expect(quiet, isEmpty, reason: 'nothing recording, nothing quiet');
+
+      c.recordingPids = {'010D', '015E'};
+      // Speed has a tile: its drop is a gauge gone missing, and the
+      // banner should say so. Fuel rate has none.
+      expect(quiet.last, {'015E'});
+
+      c.beginEditing();
+      c.remove(c.ref, '010D');
+      expect(quiet.last, {'010D', '015E'}, reason: 'no Speed tile now');
+
+      final n = quiet.length;
+      c.foreground = false;
+      c.foreground = true;
+      expect(quiet.length, n, reason: 'the same set is not sent twice');
+
+      c.recordingPids = const {};
+      expect(quiet.last, isEmpty);
+    });
+  });
+
   group('decodeTiles never throws', () {
     test('bad input gives nothing, and what is readable is kept', () {
       expect(decodeTiles('not json'), isEmpty);

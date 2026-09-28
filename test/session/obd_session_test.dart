@@ -677,6 +677,268 @@ void main() {
       },
     );
   });
+
+  // ------------------------------------------------------------------
+  // Slice 17: the session under a trip recording, and in the background.
+  // ------------------------------------------------------------------
+
+  /// Longer than the whole §9.2 ladder: 0.5 + 1 + 2 + 4 + 8 s is 775 ms at
+  /// 0.05, and every rung's own connect on top.
+  const pastTheLadder = Duration(milliseconds: 1200);
+
+  group('★ hard rule 9 — the ladder parks in the background', () {
+    test('★ backgrounded with no recording, a lost link parks the ladder '
+        '(AC-11)', () async {
+      final session = await sessionFor('clean_can');
+      final inner = await transportFor('clean_can');
+      final transport = _FlakyTransport(inner);
+      await session.connect(transport);
+      await waitFor(() => session.bus.of('010C').value != null);
+      session.setBackgrounded(true);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final before = inner.written.length;
+
+      transport.drop();
+      await Future<void>.delayed(pastTheLadder);
+
+      // Not even a handshake: an adapter dialled from a pocket all the way
+      // down the ladder, and a phone that never sleeps.
+      expect(inner.written.skip(before), isEmpty);
+      expect(session.state, SessionState.lost);
+      expect(session.reconnecting, isTrue, reason: 'the ladder owns it');
+
+      session.setBackgrounded(false);
+      await waitFor(
+        () => session.state == SessionState.connected,
+        reason: 'the parked ladder to pick up where it stopped',
+      );
+      expect(inner.written.skip(before), contains('ATZ'));
+    });
+
+    test('★ a ladder already running parks at its next rung when '
+        'backgrounded', () async {
+      final session = await sessionFor('clean_can');
+      final transport = _FlakyTransport(await transportFor('clean_can'));
+      await session.connect(transport);
+      transport.failConnects = 1000;
+      transport.drop();
+      await waitFor(
+        () => session.reconnectAttempt >= 2,
+        reason: 'the ladder under way in the foreground',
+      );
+
+      session.setBackgrounded(true);
+      final dialled = transport.connects;
+      await Future<void>.delayed(pastTheLadder);
+
+      // The rung already waiting may dial once more; none after it. Parked
+      // only where the link was lost, the rest of the ladder ran here.
+      expect(transport.connects, lessThanOrEqualTo(dialled + 1));
+      expect(session.lastError, isNot('Could not reconnect'));
+      expect(session.reconnecting, isTrue);
+
+      transport.failConnects = 0;
+      session.setBackgrounded(false);
+      await waitFor(
+        () => session.state == SessionState.connected,
+        reason: 'the rest of the ladder, run in the foreground',
+        timeout: const Duration(seconds: 10),
+      );
+    });
+
+    test('★ a user connect cancels a parked ladder', () async {
+      final session = await sessionFor('clean_can');
+      final lost = _FlakyTransport(await transportFor('clean_can'));
+      await session.connect(lost);
+      session.setBackgrounded(true);
+      lost.drop();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(session.reconnecting, isTrue, reason: 'parked');
+      final dialled = lost.connects;
+
+      final chosen = _FlakyTransport(await transportFor('clean_can'));
+      expect(await session.connect(chosen), isTrue);
+
+      // The user's link drops in turn. Left set from the park,
+      // `_reconnecting` turned this loss away: no ladder, and a dead link
+      // shown as connected.
+      chosen.drop();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(session.state, SessionState.lost);
+
+      session.setBackgrounded(false);
+      await waitFor(
+        () => session.state == SessionState.connected,
+        reason: "the fresh ladder, over the user's link",
+      );
+      expect(chosen.connects, 2);
+      expect(lost.connects, dialled, reason: 'the old link is never dialled');
+    });
+  });
+
+  group('★ §9.2 — how the end of a link is heard', () {
+    test('★ giving up is heard as over', () async {
+      final session = await sessionFor('clean_can');
+      final transport = _FlakyTransport(await transportFor('clean_can'));
+      await session.connect(transport);
+      transport.failConnects = 1000;
+      final heard = <({SessionState state, String? error, bool ladder})>[];
+      session.addListener(
+        () => heard.add((
+          state: session.state,
+          error: session.lastError,
+          ladder: session.reconnecting,
+        )),
+      );
+
+      transport.drop();
+      await waitFor(
+        () => session.lastError == 'Could not reconnect',
+        reason: 'the ladder to give up',
+        timeout: const Duration(seconds: 10),
+      );
+
+      // Heard with `reconnecting` still set, the end reads as one more
+      // failed rung, and a trip holds on a link that is not coming back.
+      final end = heard.firstWhere((h) => h.error == 'Could not reconnect');
+      expect(end.state, SessionState.disconnected);
+      expect(end.ladder, isFalse);
+      final rungs = heard.where(
+        (h) =>
+            h.state == SessionState.disconnected &&
+            h.error != 'Could not reconnect',
+      );
+      expect(rungs, isNotEmpty);
+      expect(rungs.every((h) => h.ladder), isTrue, reason: 'a failed rung');
+    });
+
+    test('★ auto-reconnect off: one notification, with its reason', () async {
+      final session = await sessionFor('clean_can');
+      session.autoReconnect = false;
+      final transport = await transportFor('clean_can');
+      await session.connect(transport);
+      await waitFor(() => session.bus.of('010C').value != null);
+      final heard = <(SessionState, String?)>[];
+      session.addListener(() => heard.add((session.state, session.lastError)));
+
+      // The adapter dies without a word: three timeouts, the watchdog.
+      transport.dropNext = 1 << 30;
+      await waitFor(
+        () => session.state == SessionState.disconnected,
+        reason: 'the watchdog',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      // Heard first with no error, the loss read as the user's own stop,
+      // and a trip it ended was filed as a clean one.
+      expect(heard.where((h) => h.$1 == SessionState.disconnected), [
+        (SessionState.disconnected, 'Connection lost'),
+      ]);
+    });
+  });
+
+  group('★ a trip recording in the background', () {
+    test('★ a backgrounded recording polls once per background interval '
+        '(§5.3, §9.3)', () async {
+      final session = await sessionFor('trip_drive_can');
+      session.backgroundInterval = const Duration(seconds: 2);
+      final transport = await transportFor('trip_drive_can');
+      await session.connect(transport);
+      session.setVisible({'010D', '015E'});
+      await waitFor(() => session.bus.of('010D').value != null);
+      final hz = session.scheduler.targetHz;
+
+      session.setBackgrounded(true);
+      session.setRecording(true);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final from = transport.written.length;
+      await Future<void>.delayed(const Duration(seconds: 1));
+
+      // 2 s at 0.05 is a 100 ms window: about ten cycles in the second,
+      // each asking Speed once. At the foreground rate, about two hundred.
+      final cycles = transport.written.skip(from).where((c) => c == '010D');
+      expect(cycles.length, inInclusiveRange(1, 12));
+      // A floor on the wait, not a rate: a rate of 0.5 Hz is "Weak link".
+      expect(session.state, SessionState.connected);
+      expect(session.scheduler.targetHz, hz);
+    });
+
+    test("★ a quiet PID's drop does not raise Weak link", () async {
+      // This car declares 5E in its 0140 mask and answers NO DATA to it —
+      // a real car can. Without its exchanges the mock says NO DATA.
+      final full = ObdTrace.parse(
+        await File('$traceDir/trip_drive_can.obdtrace').readAsString(),
+      );
+      final events = <TraceEvent>[];
+      for (var i = 0; i < full.events.length; i++) {
+        final e = full.events[i];
+        if (e.isRequest && ObdTrace.normalise(e.payload) == '015E') {
+          i++; // and its reply
+          continue;
+        }
+        events.add(e);
+      }
+      final trace = ObdTrace(events: events, adapter: full.adapter);
+      expect(trace.repliesByCommand.keys, isNot(contains('015E')));
+
+      Future<ObdSession> dropFuelRate({required Set<String> quiet}) async {
+        final session = await sessionFor('trip_drive_can');
+        session.setVisible({'010D', '015E'});
+        session.setQuiet(quiet);
+        expect(await session.connect(MockTransport(trace, speed: 100)), isTrue);
+        expect(session.supportedPids, contains('015E'), reason: 'declared');
+        await waitFor(
+          () => session.scheduler.droppedPids.contains('015E'),
+          reason: 'three NO DATA',
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        return session;
+      }
+
+      final recorded = await dropFuelRate(quiet: {'015E'});
+      expect(
+        recorded.state,
+        SessionState.connected,
+        reason: 'nothing on screen is missing',
+      );
+      final shown = await dropFuelRate(quiet: const {});
+      expect(
+        shown.state,
+        SessionState.degraded,
+        reason: 'a tile gone missing is a weak link',
+      );
+    });
+  });
+
+  group('the session after dispose, and what it runs over', () {
+    test('setBackgrounded and setRecording after dispose start nothing and '
+        'throw nothing', () async {
+      final session = ObdSession(timeScale: 0.05);
+      final transport = await transportFor('clean_can');
+      await session.connect(transport);
+      await waitFor(() => session.bus.of('010C').value != null);
+      session.setBackgrounded(true);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      session.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      final quiet = transport.written.length;
+
+      // A lifecycle event that lands after the owner is gone.
+      expect(() => session.setRecording(true), returnsNormally);
+      expect(() => session.setBackgrounded(false), returnsNormally);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(transport.written.length, quiet);
+    });
+
+    test('transportKind is set while connected', () async {
+      final session = await sessionFor('clean_can');
+      expect(session.transportKind, isNull);
+      await session.connect(await transportFor('clean_can'));
+      expect(session.transportKind, TransportKind.mock);
+      await session.disconnect();
+      expect(session.transportKind, isNull);
+    });
+  });
 }
 
 /// A transport whose `connect` throws, for the failure path.
@@ -715,6 +977,10 @@ class _FlakyTransport implements ObdTransport {
 
   int failConnects = 0;
 
+  /// Every `connect` asked of this link, failed ones included: how a test
+  /// sees a ladder rung dial.
+  int connects = 0;
+
   void drop() => _state.add(TransportState.disconnected);
 
   @override
@@ -734,6 +1000,7 @@ class _FlakyTransport implements ObdTransport {
 
   @override
   Future<void> connect({Duration timeout = const Duration(seconds: 5)}) async {
+    connects++;
     if (failConnects > 0) {
       failConnects--;
       throw Exception('still down');

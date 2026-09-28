@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart';
 class PidSample {
   const PidSample({required this.pid, required this.value, required this.at});
 
-  /// OBD2 PID hex, e.g. `0C`.
+  /// The [PidBus] key: mode and PID in hex, e.g. `010C` — never the bare
+  /// `0C`, which no notifier is keyed by and no trip file accepts.
   final String pid;
   final double? value;
 
@@ -190,7 +191,34 @@ class PidBus {
 
   Iterable<String> get pids => _notifiers.keys;
 
-  void publish(PidSample sample) => of(sample.pid).value = sample;
+  /// Hears every published sample once, after its notifier is set: the
+  /// trip recorder's one way in (SPEC §5.3), for the poll loop's samples
+  /// and `readPidOnce`'s alike. It runs inside the poll loop, so it must
+  /// neither await nor touch a file.
+  ///
+  /// [clear] never calls it: a disconnect's null is not a reading, and
+  /// through here it would be written to the trip as one.
+  void Function(PidSample sample)? tap;
+
+  void publish(PidSample sample) {
+    of(sample.pid).value = sample;
+    final t = tap;
+    if (t == null) return;
+    // Reported, never rethrown: a recorder bug that threw here would end
+    // the poll loop, and every gauge would freeze on its last value.
+    try {
+      t(sample);
+    } catch (e, s) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: e,
+          stack: s,
+          library: 'pid bus',
+          context: ErrorDescription('while a tap heard ${sample.pid}'),
+        ),
+      );
+    }
+  }
 
   /// On disconnect: every tile decays to `—` through its own clock rather
   /// than snapping, so nothing here forces a value.

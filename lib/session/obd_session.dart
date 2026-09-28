@@ -166,6 +166,16 @@ class ObdSession extends ChangeNotifier {
   int _reconnectToken = 0;
   bool _reconnecting = false;
 
+  /// Whether the §9.2 ladder owns the link: running, or parked. A listener
+  /// that hears `disconnected` reads this to tell a failed rung, which the
+  /// ladder will follow with another, from the end.
+  bool get reconnecting => _reconnecting;
+
+  /// A ladder stopped at a rung because the app went to the background
+  /// with nothing recording (hard rule 9, AC-11). It keeps the transport
+  /// because a failed rung's `connect` nulls [_transport].
+  ({ObdTransport transport, int rung})? _parked;
+
   SessionState _state = SessionState.disconnected;
   SessionState get state => _state;
 
@@ -206,6 +216,26 @@ class ObdSession extends ChangeNotifier {
   bool _backgrounded = false;
   bool _recording = false;
 
+  bool get backgrounded => _backgrounded;
+  bool get recording => _recording;
+
+  /// What the link runs over, while there is one: the trip recorder asks,
+  /// because a Wi-Fi socket does not outlive the background on iOS.
+  TransportKind? get transportKind => _transport?.kind;
+
+  /// SPEC §5.3 / §9.3 — the slowest a backgrounded recording is asked:
+  /// one cycle per interval, 2 s (0.5 Hz) on iOS. Null asks at the
+  /// adaptive rate, as in the foreground.
+  ///
+  /// A floor on the wait between cycles, never a rate: `maxHz` is an int
+  /// clamped to 1–10, `recordP95Rtt` rewrites the rate every cycle, and a
+  /// rate at 2 Hz or below is what raises "Weak link".
+  Duration? backgroundInterval;
+
+  /// PIDs polled only for a recording, with no tile to show them. Their
+  /// drop does not make the link degraded — see [setQuiet].
+  Set<String> _quiet = const {};
+
   int _bufferOverflows = 0;
 
   /// How many times the adapter's own buffer overflowed this session. A
@@ -227,6 +257,16 @@ class ObdSession extends ChangeNotifier {
   /// Opens [transport], handshakes, discovers supported PIDs, and starts
   /// polling. Returns true once polling has started.
   Future<bool> connect(ObdTransport transport) async {
+    // Only the user connects while a ladder is parked — the ladder itself
+    // is not running. Their link replaces the lost one, and the park goes
+    // with it: left set, `_reconnecting` would make the next drop of this
+    // link start no ladder at all, and a return to the foreground would
+    // resume the old ladder over the user's connection.
+    if (_parked != null) {
+      _parked = null;
+      _reconnecting = false;
+      _reconnectToken++;
+    }
     await _teardown();
     final gen = ++_generation;
 
@@ -307,10 +347,16 @@ class ObdSession extends ChangeNotifier {
   }
 
   /// Stops polling and closes the transport. Safe to call at any point.
-  Future<void> disconnect() async {
+  ///
+  /// [reason] is why, for the banner — null for the user's own disconnect.
+  /// Listeners hear the end once, carrying it. Heard as two — first with no
+  /// error, then the reason — the first read as the user's stop, and a
+  /// trip lost with the link was filed as one ended cleanly.
+  Future<void> disconnect({String? reason}) async {
     _generation++;
     _reconnectToken++;
     _reconnecting = false;
+    _parked = null;
     await _teardown();
     _protocol = null;
     _adapterIdentity = null;
@@ -323,7 +369,7 @@ class ObdSession extends ChangeNotifier {
     _bufferOverflows = 0;
     _backedOff = false;
     bus.clear();
-    _set(SessionState.disconnected, error: null);
+    _set(SessionState.disconnected, error: reason);
   }
 
   Future<void> _teardown() async {
@@ -492,16 +538,30 @@ class ObdSession extends ChangeNotifier {
     );
   }
 
+  /// Recording PIDs that no tile shows — set by the layout controller, the
+  /// one caller. A car can declare a PID in its bitmask and answer NO DATA
+  /// to it; dropped, a tile's PID is a thing on screen gone missing and
+  /// "Weak link" says so, but a quiet one is nothing the user can see, and
+  /// the banner would blame a link that is fine.
+  void setQuiet(Set<String> pids) => _quiet = pids;
+
   /// Hard rule 9: no polling while backgrounded unless a trip is recording.
+  /// Coming back also resumes a ladder parked in the background.
+  ///
+  /// After [dispose] both this and [setRecording] do nothing: a lifecycle
+  /// event that lands late would otherwise start a loop, or a ladder, on a
+  /// session whose link is already torn down.
   void setBackgrounded(bool value) {
-    if (_backgrounded == value) return;
+    if (_disposed || _backgrounded == value) return;
     _backgrounded = value;
+    if (!_backgrounded) _resumeParked();
     if (!_backgrounded && _canPoll) unawaited(_pollLoop(_generation));
   }
 
   void setRecording(bool value) {
-    if (_recording == value) return;
+    if (_disposed || _recording == value) return;
     _recording = value;
+    if (_recording) _resumeParked();
     if (_canPoll) unawaited(_pollLoop(_generation));
   }
 
@@ -536,6 +596,10 @@ class ObdSession extends ChangeNotifier {
         // While the ECU is asleep, probe one PID slowly rather than
         // hammering a bus that is not listening.
         final probing = _state == SessionState.ignitionOff;
+        // §9.3: a background recording at the foreground's 10 Hz is what
+        // gets the app killed. Read each cycle — the app can come back
+        // mid-drive.
+        final slow = _backgrounded && _recording ? backgroundInterval : null;
         final cycle = probing
             ? _scheduler.nextCycle(maxPids: 1)
             : _scheduler.nextCycle();
@@ -544,7 +608,7 @@ class ObdSession extends ChangeNotifier {
         if (cycle.isEmpty) {
           // Nothing visible: idle politely rather than spinning.
           await Future<void>.delayed(
-            _scaled(const Duration(milliseconds: 200)),
+            _scaled(slow ?? const Duration(milliseconds: 200)),
           );
           continue;
         }
@@ -647,9 +711,12 @@ class ObdSession extends ChangeNotifier {
         }
         _refreshDegraded();
 
+        // A floor on the cycle, not a rate: the scheduler's own rate, and
+        // the degraded rule read from it, never learn the app is away.
+        final cycleBudget = _scheduler.cycleBudget;
         final budget = probing
             ? _scaled(const Duration(seconds: 2))
-            : _scaled(_scheduler.cycleBudget);
+            : _scaled(slow != null && slow > cycleBudget ? slow : cycleBudget);
         final remaining = budget - DateTime.now().difference(started);
         if (remaining > Duration.zero) await Future<void>.delayed(remaining);
       }
@@ -667,7 +734,9 @@ class ObdSession extends ChangeNotifier {
   }
 
   void _refreshDegraded() {
-    final degraded = _scheduler.isDegraded || _scheduler.droppedPids.isNotEmpty;
+    final degraded =
+        _scheduler.isDegraded ||
+        _scheduler.droppedPids.difference(_quiet).isNotEmpty;
     final next = degraded ? SessionState.degraded : SessionState.connected;
     if (_state == SessionState.connected || _state == SessionState.degraded) {
       if (_state != next) _set(next);
@@ -721,15 +790,25 @@ class ObdSession extends ChangeNotifier {
     }
     _reconnecting = true;
     _set(SessionState.lost, error: 'Connection lost');
-    unawaited(_reconnect(++_reconnectToken));
+    // In the background with nothing recording, this parks at its first
+    // rung without a word to the adapter.
+    unawaited(_reconnect(++_reconnectToken, _transport));
   }
 
   /// A drop with auto-reconnect off: tear down like a deliberate
   /// disconnect — the tiles decay, the loop stops — but keep the reason,
-  /// so the banner says "lost", not "not connected".
-  Future<void> _dropLink() async {
-    await disconnect();
-    _set(SessionState.disconnected, error: 'Connection lost');
+  /// so the banner says "lost", not "not connected". One notification:
+  /// see [disconnect].
+  Future<void> _dropLink() => disconnect(reason: 'Connection lost');
+
+  /// Picks up a parked ladder at the rung it stopped on, once the app is
+  /// back or a recording needs the link. `_reconnecting` stayed true all
+  /// the while, so no second ladder can have started.
+  void _resumeParked() {
+    final p = _parked;
+    if (p == null || (_backgrounded && !_recording)) return;
+    _parked = null;
+    unawaited(_reconnect(++_reconnectToken, p.transport, from: p.rung));
   }
 
   /// SPEC §9.2 — 0.5 / 1 / 2 / 4 / 8 s, then stop and let the user decide.
@@ -741,15 +820,21 @@ class ObdSession extends ChangeNotifier {
     Duration(seconds: 8),
   ];
 
-  Future<void> _reconnect(int token) async {
-    final transport = _transport;
+  /// [transport] is passed in, not read from [_transport]: a failed rung's
+  /// `connect` nulls that field, and a ladder resumed from a park would
+  /// find nothing there to retry.
+  Future<void> _reconnect(
+    int token,
+    ObdTransport? transport, {
+    int from = 0,
+  }) async {
     if (transport == null) {
       _reconnecting = false;
       return;
     }
 
     try {
-      for (var i = 0; i < reconnectDelays.length; i++) {
+      for (var i = from; i < reconnectDelays.length; i++) {
         if (token != _reconnectToken) return;
         // Checked at both ends of the wait: the user can turn this off
         // while the banner is showing "reconnecting" and the ladder must
@@ -757,6 +842,14 @@ class ObdSession extends ChangeNotifier {
         // of the 0.5/1/2/4/8 s sequence.
         if (!autoReconnect) {
           await _dropLink();
+          return;
+        }
+        // Hard rule 9 / AC-11: in the background with nothing recording,
+        // not even a handshake goes out. Checked at every rung, not only
+        // where the link was lost — a ladder already running when the app
+        // left kept dialling the adapter from the background.
+        if (_backgrounded && !_recording) {
+          _parked = (transport: transport, rung: i);
           return;
         }
         _reconnectAttempt = i + 1;
@@ -775,9 +868,14 @@ class ObdSession extends ChangeNotifier {
         if (token != _reconnectToken) return;
         if (ok) return;
       }
+      // Cleared before the word goes out: a listener that hears "Could
+      // not reconnect" and still reads `reconnecting` would wait for a
+      // ladder that has ended, and hold a trip for a link not coming back.
+      _reconnecting = false;
       _set(SessionState.disconnected, error: 'Could not reconnect');
     } finally {
-      if (token == _reconnectToken) _reconnecting = false;
+      // A parked ladder still owns the link.
+      if (token == _reconnectToken && _parked == null) _reconnecting = false;
     }
   }
 

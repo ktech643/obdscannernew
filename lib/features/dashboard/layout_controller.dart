@@ -14,10 +14,12 @@ import 'speed_gate.dart';
 /// what the plan lets through, and every edit.
 ///
 /// It is the one writer of layout rows and the one caller of
-/// `ObdSession.setVisible` (through [publish]): the plan's cap, the §8.4
-/// Speed reading while editing and Demo Mode's exemption live here, where
-/// a test can drive them without a widget. It notifies on layout, edit,
-/// plan, owner and moving changes — never per sample (hard rule 3).
+/// `ObdSession.setVisible` (through [publish]) and `setQuiet` (through
+/// `publishQuiet`): the plan's cap, the §8.4 Speed reading while editing,
+/// Demo Mode's exemption, and what a trip recording needs polled in the
+/// foreground and the background live here, where a test can drive them
+/// without a widget. It notifies on layout, edit, plan, owner and moving
+/// changes — never per sample (hard rule 3).
 ///
 /// Every edit is saved as it is made — one full row, queued behind the
 /// last — so there is no draft to lose and no Cancel. There is no stream
@@ -26,11 +28,13 @@ class DashboardLayoutController extends ChangeNotifier {
   DashboardLayoutController({
     LayoutRepository? repository,
     required void Function(Set<String> pids) publish,
+    void Function(Set<String> pids)? publishQuiet,
     this.moving,
     List<LayoutTile>? defaults,
     DateTime Function()? now,
   }) : _repo = repository,
        _publishTo = publish,
+       _publishQuietTo = publishQuiet,
        defaults =
            defaults ??
            [for (final p in GaugeCatalog.defaultLayout) LayoutTile(p)],
@@ -40,6 +44,7 @@ class DashboardLayoutController extends ChangeNotifier {
 
   final LayoutRepository? _repo;
   final void Function(Set<String>) _publishTo;
+  final void Function(Set<String>)? _publishQuietTo;
 
   /// §8.4's gate: the phone's own car is moving.
   final ValueListenable<bool>? moving;
@@ -70,6 +75,11 @@ class DashboardLayoutController extends ChangeNotifier {
   LayoutEvent? _lastEvent;
   int _eventSerial = 0;
   Set<String>? _published;
+
+  /// The session starts with nothing quiet, and hears only from here.
+  Set<String> _publishedQuiet = const {};
+  Set<String> _recordingPids = const {};
+  bool _foreground = true;
   Future<void> _writes = Future.value();
   int _pending = 0;
 
@@ -117,6 +127,27 @@ class DashboardLayoutController extends ChangeNotifier {
     _isPro = v;
     _publish();
     _notify();
+  }
+
+  /// What a trip recording needs asked of the car whatever the tiles
+  /// show — Speed and Fuel rate — set by the recorder, which never calls
+  /// `setVisible` itself: a second publisher is overwritten by the next
+  /// edit here, and Speed silently leaves the recording. It changes what
+  /// is polled, not what is shown, so nothing is notified.
+  Set<String> get recordingPids => _recordingPids;
+  set recordingPids(Set<String> pids) {
+    if (setEquals(pids, _recordingPids)) return;
+    _recordingPids = Set.unmodifiable(pids);
+    _publish();
+  }
+
+  /// Whether Torque is on screen. §4.5: in the background only what a
+  /// recording needs is polled.
+  bool get foreground => _foreground;
+  set foreground(bool v) {
+    if (v == _foreground) return;
+    _foreground = v;
+    _publish();
   }
 
   void _onMoving() {
@@ -169,14 +200,28 @@ class DashboardLayoutController extends ChangeNotifier {
 
   LayoutRef get ref => LayoutRef(_epoch, active?.id ?? '');
 
-  /// What is asked of the car: the tiles the plan shows, and Speed while
-  /// the phone's own car is edited — or known to be moving, so the gate
-  /// hears it stop. Dropped when it closed edit mode, Speed went stale in
-  /// five seconds and Edit was offered again at speed, round and round.
-  Set<String> get visiblePids => {
-    for (final t in shown) t.pid,
-    if ((_editing || gated) && _target is VehicleTarget) SpeedGate.pid,
-  };
+  /// What is asked of the car (§4.5): the tiles the plan shows, and Speed
+  /// while the phone's own car is edited — or known to be moving, so the
+  /// gate hears it stop. Dropped when it closed edit mode, Speed went
+  /// stale in five seconds and Edit was offered again at speed, round and
+  /// round. Plus what a recording needs; in the background, only that.
+  ///
+  /// In the background with nothing recording the loop is stopped, and the
+  /// tiles' set stands. Never empty: an empty set brings back the
+  /// session's default six on the next connect.
+  Set<String> get visiblePids => !_foreground && _recordingPids.isNotEmpty
+      ? {..._recordingPids}
+      : {
+          for (final t in shown) t.pid,
+          if ((_editing || gated) && _target is VehicleTarget) SpeedGate.pid,
+          ..._recordingPids,
+        };
+
+  /// A recording's PIDs that no tile shows: a car that declares Fuel rate
+  /// and answers NO DATA must not raise "Weak link" for a reading nothing
+  /// on screen shows.
+  Set<String> get quietPids =>
+      _recordingPids.difference({for (final t in shown) t.pid});
 
   /// The queued writes, done. With none queued, a future of the caller's
   /// own zone — the chain's last one may belong to another (a test's fake
@@ -602,6 +647,11 @@ class DashboardLayoutController extends ChangeNotifier {
 
   void _publish() {
     if (!_loaded || _disposed) return;
+    final quiet = quietPids;
+    if (!setEquals(quiet, _publishedQuiet)) {
+      _publishedQuiet = quiet;
+      _publishQuietTo?.call(quiet);
+    }
     final pids = visiblePids;
     if (_published != null && setEquals(pids, _published)) return;
     _published = pids;
