@@ -135,6 +135,13 @@ class ObdSession extends ChangeNotifier {
   /// stale renders as live (hard rule 4).
   final DashboardClock clock;
 
+  /// SPEC §5.3 — how long each polled reading waits between answers, as
+  /// this session is asking right now: its tier, the turns a tight budget
+  /// makes it take, and this adapter's pace. What a tile's staleness is
+  /// measured against. Published after every cycle and cleared when the
+  /// loop stops asking.
+  final cadence = PollCadence();
+
   /// Where the §9.5 before/after-clear snapshots go. Null in tests that
   /// don't exercise clearing.
   final DtcRepository? dtcs;
@@ -404,6 +411,7 @@ class ObdSession extends ChangeNotifier {
     unawaited(_teardown());
     bus.dispose();
     clock.dispose();
+    cadence.dispose();
     super.dispose();
   }
 
@@ -717,11 +725,22 @@ class ObdSession extends ChangeNotifier {
         final budget = probing
             ? _scaled(const Duration(seconds: 2))
             : _scaled(slow != null && slow > cycleBudget ? slow : cycleBudget);
+        cadence.set(
+          _scheduler.expectedIntervals(
+            floor: budget,
+            rttMs: _elm?.p95Rtt,
+            maxPids: probing ? 1 : null,
+          ),
+        );
         final remaining = budget - DateTime.now().difference(started);
         if (remaining > Duration.zero) await Future<void>.delayed(remaining);
       }
     } finally {
       _looping = false;
+      // Nothing is being asked for. A cadence left behind would be the last
+      // link's: a slow adapter's two seconds judging the next link's first
+      // samples, whose tiles would then stay "live" through a hang.
+      cadence.clear();
     }
   }
 

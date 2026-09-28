@@ -906,6 +906,36 @@ void main() {
   });
 
   group('★ what the car is asked — §B.12, §8.4', () {
+    testWidgets('★ every tile, live and in edit mode, is stale only against '
+        'how often the session asks for its reading', (tester) async {
+      // SPEC §5.3: judged against its tier's 10 Hz pace instead, a tile
+      // on a tight budget dimmed while it updated normally.
+      final session = newSession();
+      await pumpScreen(tester, session);
+      unawaited(
+        session.connect(MockTransport(traces['clean_can']!, speed: 100)),
+      );
+      await pumpUntil(tester, () => session.cadence.of('0105').value != null);
+      await tester.pump();
+
+      void expectWired(String mode) {
+        final tiles = tester.widgetList<GaugeTile>(find.byType(GaugeTile));
+        expect(tiles, hasLength(six.length), reason: mode);
+        for (final t in tiles) {
+          expect(
+            t.expectedInterval,
+            same(session.cadence.of(t.spec.pid)),
+            reason: '${t.spec.pid}, $mode',
+          );
+        }
+      }
+
+      expectWired('live');
+      await enterEdit(tester);
+      expectWired('edit mode');
+      await quiesce(tester, session);
+    });
+
     testWidgets('★ a removed tile stops costing a round trip; Speed is asked '
         'while editing', (tester) async {
       final session = newSession();

@@ -21,12 +21,14 @@ void main() {
     bool primary = false,
     double width = 180,
     VoidCallback? onTap,
+    ValueListenable<Duration?>? expectedInterval,
   }) => SizedBox(
     width: width,
     child: GaugeTile(
       spec: spec,
       sample: live,
       clock: clock,
+      expectedInterval: expectedInterval,
       variant: variant,
       history: history,
       primary: primary,
@@ -299,69 +301,6 @@ void main() {
     });
   });
 
-  group('★ stale means late for the reading\'s own pace', () {
-    // Seen on the simulator: beside a trip recording's extra PIDs, and on
-    // any slow adapter, a reading arrives every half second or so. Judged
-    // against the spec's 125 ms it dimmed and undimmed — a clock and
-    // "0 s ago" — on every sample, and the Dashboard jerked.
-    Future<void> at(WidgetTester tester, int ms, {bool sample = false}) async {
-      final when = t0.add(Duration(milliseconds: ms));
-      if (sample) live.value = PidSample(pid: '05', value: 89, at: when);
-      clock.tick(when);
-      await tester.pump();
-    }
-
-    bool staleNow() => find.byIcon(Icons.schedule).evaluate().isNotEmpty;
-
-    testWidgets('★ a steady reading every 600 ms never reads as stale', (
-      tester,
-    ) async {
-      await pumpDs(tester, tile(), reducedMotion: true);
-      var stale = 0;
-      for (var ms = 0; ms <= 6000; ms += 100) {
-        await at(tester, ms, sample: ms % 600 == 0);
-        // Once two readings have shown the pace.
-        if (ms >= 1200 && staleNow()) stale++;
-      }
-      expect(stale, 0, reason: 'dimmed between on-time readings');
-    });
-
-    testWidgets('★ a reading that stops is stale at twice its pace, then '
-        'No data', (tester) async {
-      await pumpDs(tester, tile(), reducedMotion: true);
-      for (var ms = 0; ms <= 1800; ms += 600) {
-        await at(tester, ms, sample: true);
-      }
-      await at(tester, 1800 + 1100);
-      expect(staleNow(), isFalse, reason: 'not yet late');
-      await at(tester, 1800 + 1300);
-      expect(staleNow(), isTrue);
-      await at(tester, 1800 + 5100);
-      expect(find.text('No data'), findsOneWidget);
-    });
-
-    testWidgets('★ an outage is not the pace', (tester) async {
-      await pumpDs(tester, tile(), reducedMotion: true);
-      for (final ms in [0, 600, 1200, 8200, 8800]) {
-        await at(tester, ms, sample: true);
-      }
-      // Folded into the pace, the 7 s outage let a stopped reading look
-      // live for three and a half seconds.
-      await at(tester, 8800 + 1300);
-      expect(staleNow(), isTrue);
-    });
-
-    testWidgets('★ a late reading is never "0 s ago"', (tester) async {
-      final handle = tester.ensureSemantics();
-      live.value = sample(89, age: const Duration(milliseconds: 400));
-      await pumpDs(tester, tile(), reducedMotion: true);
-      expect(find.text('0 s ago'), findsNothing);
-      expect(find.text('1 s ago'), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('1 second ago')), findsOneWidget);
-      handle.dispose();
-    });
-  });
-
   group('★ hard rule 4 — staleness is a state', () {
     testWidgets('decays through the shared clock with no new sample', (
       tester,
@@ -413,6 +352,151 @@ void main() {
         expect(find.byType(ColorFiltered), findsNothing);
       },
     );
+  });
+
+  group('★ stale against how often the session asks — SPEC §5.3', () {
+    // Load on a 45 ms adapter, recording a trip: asked every 940 ms and
+    // measured against its tier's 200 ms, it read "0 s ago" at 40 % for
+    // most of every second while it updated normally.
+    // Seen on the simulator: beside a trip recording's extra PIDs, and on
+    // any slow adapter, a reading is asked every half second or more.
+    // Judged against its spec's 125 ms it dimmed and undimmed — a clock and
+    // "0 s ago" — between answers, and the Dashboard jerked.
+    Future<void> at(WidgetTester tester, int ms, {bool sample = false}) async {
+      final when = t0.add(Duration(milliseconds: ms));
+      if (sample) live.value = PidSample(pid: '05', value: 89, at: when);
+      clock.tick(when);
+      await tester.pump();
+    }
+
+    bool staleNow() => find.byIcon(Icons.schedule).evaluate().isNotEmpty;
+
+    ValueNotifier<Duration?> askedEvery(int ms) {
+      final n = ValueNotifier<Duration?>(Duration(milliseconds: ms));
+      addTearDown(n.dispose);
+      return n;
+    }
+
+    testWidgets('★ a reading asked every 600 ms, answered on time, never '
+        'reads as stale', (tester) async {
+      await pumpDs(
+        tester,
+        tile(expectedInterval: askedEvery(600)),
+        reducedMotion: true,
+      );
+      var stale = 0;
+      for (var ms = 0; ms <= 6000; ms += 100) {
+        await at(tester, ms, sample: ms % 600 == 0);
+        if (staleNow()) stale++;
+      }
+      expect(stale, 0, reason: 'dimmed between on-time readings');
+    });
+
+    testWidgets('a reading that stops is stale at twice the cadence, then '
+        'No data', (tester) async {
+      await pumpDs(
+        tester,
+        tile(expectedInterval: askedEvery(600)),
+        reducedMotion: true,
+      );
+      for (var ms = 0; ms <= 1800; ms += 600) {
+        await at(tester, ms, sample: true);
+      }
+      await at(tester, 1800 + 1100);
+      expect(staleNow(), isFalse, reason: 'not yet late');
+      await at(tester, 1800 + 1300);
+      expect(staleNow(), isTrue);
+      expect(
+        tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+        GaugeTile.dimmedOpacity,
+      );
+      await at(tester, 1800 + 5100);
+      expect(find.text('No data'), findsOneWidget);
+    });
+
+    testWidgets('what the answers do never moves the line', (tester) async {
+      // Hard rule 4: the tile learns nothing from arrivals. An outage, or a
+      // run of slow answers, cannot stretch what it counts as on time.
+      await pumpDs(
+        tester,
+        tile(expectedInterval: askedEvery(600)),
+        reducedMotion: true,
+      );
+      for (final ms in [0, 600, 3600, 6600, 7200]) {
+        await at(tester, ms, sample: true);
+      }
+      await at(tester, 7200 + 1300);
+      expect(staleNow(), isTrue);
+    });
+
+    testWidgets('★ a cadence that shortens re-judges the tile at once', (
+      tester,
+    ) async {
+      final cadence = ValueNotifier<Duration?>(const Duration(seconds: 1));
+      addTearDown(cadence.dispose);
+      live.value = sample(89, age: const Duration(milliseconds: 400));
+      await pumpDs(
+        tester,
+        tile(expectedInterval: cadence),
+        reducedMotion: true,
+      );
+      expect(find.byIcon(Icons.schedule), findsNothing);
+
+      // The session stopped asking: no new sample, and no clock tick.
+      cadence.value = null;
+      await tester.pump();
+      expect(
+        find.byIcon(Icons.schedule),
+        findsOneWidget,
+        reason: "back on the spec's 125 ms",
+      );
+    });
+
+    testWidgets('★ under a second it says so — never "0 s ago"', (
+      tester,
+    ) async {
+      live.value = sample(89, age: const Duration(milliseconds: 400));
+      await pumpDs(tester, tile(), reducedMotion: true);
+      expect(find.text('<1 s ago'), findsOneWidget);
+      expect(find.text('0 s ago'), findsNothing);
+    });
+
+    testWidgets('★ and in words: less than a second, then one second', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      live.value = sample(89, age: const Duration(milliseconds: 400));
+      await pumpDs(tester, tile(), reducedMotion: true);
+      expect(
+        find.bySemanticsLabel(
+          'Coolant, 89 °C, less than a second ago. This reading is not live',
+        ),
+        findsOneWidget,
+      );
+
+      live.value = sample(89, age: const Duration(milliseconds: 1500));
+      await tester.pump();
+      expect(
+        find.bySemanticsLabel(
+          'Coolant, 89 °C, 1 second ago. This reading is not live',
+        ),
+        findsOneWidget,
+      );
+      handle.dispose();
+    });
+
+    test('the age in the header and in words', () {
+      expect(GaugeTile.ageNote(Duration.zero), '<1 s ago');
+      expect(GaugeTile.ageNote(const Duration(milliseconds: 999)), '<1 s ago');
+      expect(GaugeTile.ageNote(const Duration(seconds: 1)), '1 s ago');
+      expect(GaugeTile.ageNote(const Duration(milliseconds: 4200)), '4 s ago');
+      expect(
+        GaugeTile.ageSpoken(const Duration(milliseconds: 999)),
+        'less than a second ago',
+      );
+      expect(GaugeTile.ageSpoken(const Duration(seconds: 1)), '1 second ago');
+      expect(GaugeTile.ageSpoken(const Duration(seconds: 3)), '3 seconds ago');
+    });
   });
 
   group('★ B.8 — one Semantics node, words for every colour', () {

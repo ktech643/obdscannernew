@@ -404,11 +404,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final history = tile.variant == GaugeVariant.sparkline
         ? _histories[tile.pid]
         : null;
+    // Stale against how often the session really asks for this reading,
+    // not against the tier's 10 Hz pace (SPEC §5.3).
+    final expected = widget.session.cadence.of(tile.pid);
     if (lifted) {
       return GaugeTile(
         spec: spec,
         sample: widget.session.bus.of(tile.pid),
         clock: widget.session.clock,
+        expectedInterval: expected,
         variant: tile.variant,
         history: history,
       );
@@ -420,6 +424,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         spec: spec,
         sample: widget.session.bus.of(tile.pid),
         clock: widget.session.clock,
+        expectedInterval: expected,
         variant: tile.variant,
         history: history,
         onLongPress: canEdit ? _enterEdit : null,
@@ -436,6 +441,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       spec: spec,
       sample: widget.session.bus.of(pid),
       clock: widget.session.clock,
+      expectedInterval: expected,
       variant: tile.variant,
       history: history,
       onTap: () =>

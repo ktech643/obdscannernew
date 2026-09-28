@@ -45,6 +45,7 @@ class GaugeTile extends StatefulWidget {
     required this.spec,
     required this.sample,
     required this.clock,
+    this.expectedInterval,
     this.variant = GaugeVariant.numeric,
     this.history,
     this.onTap,
@@ -65,6 +66,12 @@ class GaugeTile extends StatefulWidget {
   /// dashboard and tick it from a periodic timer independent of the command
   /// loop (a hung link must not also stop the clock).
   final ValueListenable<DateTime> clock;
+
+  /// How long this reading waits between answers, as the session is asking
+  /// for it right now (`ObdSession.cadence`). Stale is past twice this: a
+  /// reading asked every second on a slow adapter is not stale at 400 ms.
+  /// Null, or a null value, falls back to [GaugeSpec.expectedInterval].
+  final ValueListenable<Duration?>? expectedInterval;
   final GaugeVariant variant;
 
   /// Recent values for the sparkline variant, oldest first.
@@ -95,38 +102,36 @@ class GaugeTile extends StatefulWidget {
   /// Default stale opacity; the high-contrast tokens raise it.
   static const dimmedOpacity = 0.4;
 
-  /// [usual] is how often this reading has really been arriving: the pace
-  /// the scheduler achieves for it, which on a slow adapter — or beside a
-  /// trip recording's extra PIDs — is often slower than the spec's
-  /// [GaugeSpec.expectedInterval]. Stale means late for that pace (§5.3
-  /// "past 2× the expected interval"): judged against the spec alone, a
-  /// steady reading every 600 ms dimmed and undimmed on every sample, and
-  /// the Dashboard jerked. A reading that stops still goes stale, then
-  /// "No data" at [unavailableAfter].
+  /// [expectedInterval] is the session's word on how often it asks for
+  /// this reading, and wins over the spec's whenever there is one.
   static GaugeState stateFor(
     GaugeSpec spec,
     PidSample? sample,
     DateTime now, {
-    Duration? usual,
+    Duration? expectedInterval,
   }) {
     if (!spec.supported) return GaugeState.unsupported;
     final s = sample;
     if (s == null || s.value == null) return GaugeState.unavailable;
     final age = now.difference(s.at);
     if (age > unavailableAfter) return GaugeState.unavailable;
-    final expected = usual != null && usual > spec.expectedInterval
-        ? usual
-        : spec.expectedInterval;
+    final expected = expectedInterval ?? spec.expectedInterval;
     if (age > expected * staleAfterFactor) return GaugeState.stale;
     if (!spec.inRange(s.value!)) return GaugeState.outOfRange;
     return GaugeState.live;
   }
 
-  /// A stale reading's age as said: whole seconds, rounded up — it is at
-  /// least this old — and never "0 s ago" for one that is late at all.
-  static int ageSeconds(Duration age) {
-    final ms = age.inMilliseconds;
-    return ms <= 1000 ? 1 : (ms + 999) ~/ 1000;
+  /// The header's age: "3 s ago". A tile can be stale well inside its first
+  /// second — twice a 135 ms cycle — and "0 s ago" beside a dimmed reading
+  /// read as a contradiction, so under a second it says so.
+  static String ageNote(Duration age) =>
+      age < const Duration(seconds: 1) ? '<1 s ago' : '${age.inSeconds} s ago';
+
+  /// The same age, in words for a screen reader.
+  static String ageSpoken(Duration age) {
+    if (age < const Duration(seconds: 1)) return 'less than a second ago';
+    final s = age.inSeconds;
+    return s == 1 ? '1 second ago' : '$s seconds ago';
   }
 
   @override
@@ -142,36 +147,13 @@ class _GaugeTileState extends State<GaugeTile> {
   bool _announce = false;
   bool _pressed = false;
 
-  /// When the last reading was taken, and the usual gap between readings.
-  DateTime? _lastAt;
-  Duration? _usual;
-
-  /// A new reading: the gap since the last one feeds the usual pace. A gap
-  /// past the "No data" limit is an outage, not the pace, and is left out.
-  void _onSample() {
-    final at = widget.sample.value?.at;
-    final last = _lastAt;
-    if (at != null && last != null && at.isAfter(last)) {
-      final gap = at.difference(last);
-      if (gap < GaugeTile.unavailableAfter) {
-        final u = _usual;
-        _usual = u == null
-            ? gap
-            : Duration(
-                microseconds: (u.inMicroseconds * 3 + gap.inMicroseconds) ~/ 4,
-              );
-      }
-    }
-    if (at != null) _lastAt = at;
-    _recompute();
-  }
-
   @override
   void initState() {
     super.initState();
-    widget.sample.addListener(_onSample);
+    widget.sample.addListener(_recompute);
     widget.clock.addListener(_recompute);
-    _onSample();
+    widget.expectedInterval?.addListener(_recompute);
+    _recompute();
     // A tile built already at Caution has crossed nothing: it is the same
     // reading on a new tile (edit mode, a reorder), not a new fault, and a
     // live region here re-announced every Caution tile each time.
@@ -182,23 +164,29 @@ class _GaugeTileState extends State<GaugeTile> {
   void didUpdateWidget(GaugeTile old) {
     super.didUpdateWidget(old);
     if (old.sample != widget.sample) {
-      old.sample.removeListener(_onSample);
-      widget.sample.addListener(_onSample);
-      // Another reading: its pace is its own.
-      _lastAt = null;
-      _usual = null;
+      old.sample.removeListener(_recompute);
+      widget.sample.addListener(_recompute);
     }
     if (old.clock != widget.clock) {
       old.clock.removeListener(_recompute);
       widget.clock.addListener(_recompute);
     }
-    if (old.spec != widget.spec || old.sample != widget.sample) _recompute();
+    if (old.expectedInterval != widget.expectedInterval) {
+      old.expectedInterval?.removeListener(_recompute);
+      widget.expectedInterval?.addListener(_recompute);
+    }
+    if (old.spec != widget.spec ||
+        old.sample != widget.sample ||
+        old.expectedInterval != widget.expectedInterval) {
+      _recompute();
+    }
   }
 
   @override
   void dispose() {
-    widget.sample.removeListener(_onSample);
+    widget.sample.removeListener(_recompute);
     widget.clock.removeListener(_recompute);
+    widget.expectedInterval?.removeListener(_recompute);
     _state.dispose();
     _position.dispose();
     super.dispose();
@@ -210,7 +198,7 @@ class _GaugeTileState extends State<GaugeTile> {
       widget.spec,
       s,
       widget.clock.value,
-      usual: _usual,
+      expectedInterval: widget.expectedInterval?.value,
     );
     final prev = _state.value;
     if (next != prev) {
@@ -389,7 +377,8 @@ class _TileSemantics {
   final Map<CustomSemanticsAction, VoidCallback>? actions;
 }
 
-/// The top-right word: "Caution", "4 s ago", "No data", "Not supported".
+/// The top-right word: "Caution", "4 s ago", "<1 s ago", "No data",
+/// "Not supported".
 /// Rebuilds on state change, and on the clock while stale (for the age).
 /// Always at full strength — it is the word that explains the readout.
 class _StateNote extends StatelessWidget {
@@ -427,15 +416,13 @@ class _StateNote extends StatelessWidget {
           valueListenable: clock,
           builder: (context, now, _) {
             final at = sample.value?.at;
-            final secs = GaugeTile.ageSeconds(
-              at == null ? Duration.zero : now.difference(at),
-            );
+            final age = at == null ? Duration.zero : now.difference(at);
             return Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.schedule, size: 12, color: t.inkSecondary),
                 const SizedBox(width: Space.x4),
-                Text('$secs s ago', style: style),
+                Text(GaugeTile.ageNote(age), style: style),
               ],
             );
           },
@@ -646,11 +633,9 @@ class _Readout extends StatelessWidget {
       case GaugeState.unavailable:
         return '${spec.label}, no data';
       case GaugeState.stale:
-        final age = GaugeTile.ageSeconds(
-          s == null ? Duration.zero : clock.value.difference(s.at),
-        );
-        final ago = age == 1 ? '1 second ago' : '$age seconds ago';
-        return '${spec.label}, $v$unit, $ago. This reading is not live';
+        final age = s == null ? Duration.zero : clock.value.difference(s.at);
+        return '${spec.label}, $v$unit, ${GaugeTile.ageSpoken(age)}. '
+            'This reading is not live';
       case GaugeState.outOfRange:
         return '${spec.label}, $v$unit, caution, outside its normal range';
       case GaugeState.live:

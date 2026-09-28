@@ -98,7 +98,9 @@ class GaugeSpec {
   final double? normalHigh;
   final int decimals;
 
-  /// Staleness is measured against 2× this, not a fixed wall-clock delay.
+  /// Staleness is measured against 2× this, not a fixed wall-clock delay —
+  /// until the session says how often it is really asking ([PollCadence]),
+  /// which the tile prefers whenever there is one.
   final Duration expectedInterval;
 
   /// False when the vehicle's support bitmask says this PID doesn't exist.
@@ -229,6 +231,52 @@ class PidBus {
   }
 
   void dispose() {
+    for (final n in _notifiers.values) {
+      n.dispose();
+    }
+    _notifiers.clear();
+  }
+}
+
+/// SPEC §5.3 — how long each reading waits between answers, as the session
+/// is asking for it right now: one notifier per PID, beside [PidBus]'s.
+///
+/// A tile is stale past twice this. Its [GaugeSpec.expectedInterval] is the
+/// tier's pace at 10 Hz, and the session asks slower than that whenever the
+/// budget is tight or the adapter slow — Load on a 45 ms adapter was asked
+/// every 940 ms and dimmed at 400. The session publishes here after every
+/// cycle, from `PidScheduler.expectedIntervals`.
+///
+/// Null for a PID the session is not asking for; the tile then falls back
+/// to its spec.
+class PollCadence {
+  final Map<String, ValueNotifier<Duration?>> _notifiers = {};
+  bool _disposed = false;
+
+  ValueNotifier<Duration?> _of(String pid) =>
+      _notifiers.putIfAbsent(pid, () => ValueNotifier<Duration?>(null));
+
+  /// The notifier for [pid], created on first use so a tile can listen
+  /// before the session has asked for anything.
+  ValueListenable<Duration?> of(String pid) => _of(pid);
+
+  /// [intervals] for the PIDs they name, null for every other.
+  void set(Map<String, Duration> intervals) {
+    // The poll loop can end after its session is disposed.
+    if (_disposed) return;
+    for (final e in intervals.entries) {
+      _of(e.key).value = e.value;
+    }
+    for (final e in _notifiers.entries) {
+      if (!intervals.containsKey(e.key)) e.value.value = null;
+    }
+  }
+
+  /// Nothing is being asked for.
+  void clear() => set(const {});
+
+  void dispose() {
+    _disposed = true;
     for (final n in _notifiers.values) {
       n.dispose();
     }

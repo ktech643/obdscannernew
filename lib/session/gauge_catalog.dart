@@ -173,9 +173,12 @@ class GaugeCatalog {
     };
   }
 
-  /// What the scheduler will actually manage for this priority at 10 Hz —
-  /// the tile measures staleness against 2× this, so it must match the
-  /// scheduler's own cadence or tiles fade while perfectly healthy.
+  /// The tier's pace at 10 Hz with the whole budget free — only a fallback.
+  /// A tile is measured against how often the session really asks
+  /// (`ObdSession.cadence`) whenever it says; this covers the moments it
+  /// does not, before the first cycle ends or for a reading not polled.
+  /// On a tight budget or a slow adapter the session asks slower than
+  /// this, and tiles measured against it alone faded while healthy.
   static Duration _intervalFor(PidPriority p) => switch (p) {
     PidPriority.critical => const Duration(milliseconds: 100),
     PidPriority.high => const Duration(milliseconds: 200),

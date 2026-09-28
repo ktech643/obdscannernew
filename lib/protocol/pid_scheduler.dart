@@ -72,17 +72,38 @@ class PidScheduler {
   /// The PIDs to request this cycle, ordered so criticals go first if the
   /// budget runs out mid-cycle.
   List<String> nextCycle({int? maxPids}) {
-    final candidates = _visible
-        .where((p) => _supported.isEmpty || _supported.contains(p))
-        .where((p) => !_dropped.contains(p))
-        .toList();
+    final pids = _plan(
+      _candidates(),
+      _cycle,
+      _lastServed,
+      maxPids ?? _maxPidsPerCycle,
+    );
+    _cycle++;
+    return pids;
+  }
 
-    final due = <String>[];
-    for (final pid in candidates) {
-      final def = PidRegistry.lookup(pid);
-      if (def == null) continue;
-      if (_cycle % _interval(def.priority) == 0) due.add(pid);
-    }
+  /// Visible, supported, not dropped, and known to the registry.
+  List<String> _candidates() => [
+    for (final p in _visible)
+      if ((_supported.isEmpty || _supported.contains(p)) &&
+          !_dropped.contains(p) &&
+          PidRegistry.lookup(p) != null)
+        p,
+  ];
+
+  /// One cycle of the policy, on the state it is handed: what [nextCycle]
+  /// asks for, with [lastServed] moved on. Static, so [expectedIntervals]
+  /// can run the same schedule ahead on a copy without moving the real one.
+  static List<String> _plan(
+    List<String> candidates,
+    int cycle,
+    Map<String, int> lastServed,
+    int limit,
+  ) {
+    final due = <String>[
+      for (final pid in candidates)
+        if (cycle % _interval(PidRegistry.lookup(pid)!.priority) == 0) pid,
+    ];
 
     due.sort((a, b) {
       final pa = PidRegistry.lookup(a)!.priority.index;
@@ -90,11 +111,11 @@ class PidScheduler {
       return pa.compareTo(pb);
     });
 
-    _cycle++;
-    final limit = maxPids ?? _maxPidsPerCycle;
+    // Served marks count cycles from one; never served (-1) waits longest.
+    final mark = cycle + 1;
     if (due.length <= limit) {
       for (final pid in due) {
-        _lastServed[pid] = _cycle;
+        lastServed[pid] = mark;
       }
       return due;
     }
@@ -125,7 +146,7 @@ class PidScheduler {
     // between two due cycles: a low tile, due every 20th cycle, was never
     // asked at all.
     rest.sort((a, b) {
-      final wait = (_lastServed[a] ?? -1).compareTo(_lastServed[b] ?? -1);
+      final wait = (lastServed[a] ?? -1).compareTo(lastServed[b] ?? -1);
       if (wait != 0) return wait;
       final pa = PidRegistry.lookup(a)!.priority.index;
       final pb = PidRegistry.lookup(b)!.priority.index;
@@ -133,10 +154,73 @@ class PidScheduler {
     });
     final picked = rest.take(slots).toList();
     for (final pid in picked) {
-      _lastServed[pid] = _cycle;
+      lastServed[pid] = mark;
     }
     return [...criticals, ...picked];
   }
+
+  /// SPEC §5.3 — for each PID this schedule asks for, the longest it waits
+  /// between two answers: what a tile's staleness is measured against.
+  ///
+  /// Not the tier alone. A tier says how often a PID is *due*; a tight
+  /// budget then makes the non-critical ones take turns, longest-waiting
+  /// first, and a slow adapter stretches every cycle. On a 45 ms adapter
+  /// with RPM and Speed critical the budget is two, so the high tier shares
+  /// one slot every other cycle — Load was asked every 940 ms, not every
+  /// 200 ms, and its tile was dim for most of that time.
+  ///
+  /// A dry run of [horizon] cycles through [_plan], the same policy
+  /// [nextCycle] runs, so the two cannot disagree; from the top of the
+  /// schedule, on its own record of who was served when, so the answer
+  /// depends on nothing but its inputs. A cycle takes [floor] — the poll
+  /// loop's wait — or its commands at [rttMs] each, whichever is longer,
+  /// and each answer lands [rttMs] after the one before. A PID asked once
+  /// in the horizon is given the horizon's length; one never asked is
+  /// absent.
+  ///
+  /// Nothing measured from the answers goes in: a link that hangs or a car
+  /// that stops answering does not make its PIDs "expected" any later, so
+  /// their tiles still go stale on time (hard rule 4).
+  Map<String, Duration> expectedIntervals({
+    required Duration floor,
+    int? rttMs,
+    int? maxPids,
+    int horizon = 200,
+  }) {
+    final candidates = _candidates();
+    final limit = maxPids ?? _maxPidsPerCycle;
+    final key =
+        '${candidates.join(' ')}/$limit/${floor.inMicroseconds}/$rttMs/'
+        '$horizon';
+    if (key == _expectedKey) return _expected;
+
+    final rtt = Duration(milliseconds: rttMs ?? 0);
+    final served = <String, int>{};
+    final last = <String, Duration>{};
+    final longest = <String, Duration>{};
+    var start = Duration.zero;
+    for (var cycle = 0; cycle < horizon; cycle++) {
+      final asked = _plan(candidates, cycle, served, limit);
+      for (var k = 0; k < asked.length; k++) {
+        final pid = asked[k];
+        final at = start + rtt * (k + 1);
+        final before = last[pid];
+        if (before != null && at - before > (longest[pid] ?? Duration.zero)) {
+          longest[pid] = at - before;
+        }
+        last[pid] = at;
+      }
+      final spent = rtt * asked.length;
+      start += spent > floor ? spent : floor;
+    }
+    _expectedKey = key;
+    return _expected = Map.unmodifiable({
+      for (final pid in last.keys) pid: longest[pid] ?? start,
+    });
+  }
+
+  String? _expectedKey;
+  Map<String, Duration> _expected = const {};
 
   static int _interval(PidPriority p) => switch (p) {
     PidPriority.critical => 1,

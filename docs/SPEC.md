@@ -2523,6 +2523,120 @@ row maps its end to the resume moment — a narrow race with no user-visible har
 1,070 tests, analyzer clean; the recording, the cap, the list and the relaunch
 checked again on the simulator against the trace server.
 
+## B.33 Stale against the schedule, not the tier or the arrivals (2026-09-28)
+
+Found on the iOS simulator against `tool/trace_server.dart` replaying
+`trip_drive_can`: start a trip recording, which puts Fuel rate beside the six
+default tiles, and Load, Throttle and Battery sat at 40 % with the clock glyph
+and "0 s ago" while their numbers changed on every answer. Any adapter slow
+enough to run the poll loop under about 8 Hz did it.
+
+§B.31 (2eb223d) fixed the same report in parallel by having each tile learn
+its reading's pace from the gaps between arriving samples, averaged a quarter
+at a time, leaving out gaps of 5 s and more. This replaces that, for three
+reasons:
+- A pace learned from answers moves with the answers. Missed answers, a
+  busy bus's 500 ms backoffs or a NO DATA stretch it, and a hang then reads
+  live for longer. A reading asked every 600 ms whose last three answers
+  came 3 s apart reads live for 4 s after it stops, and stale for only
+  one second before "No data".
+- It trails every change in the schedule. When a BUFFER FULL halves the
+  rate on a 15–25 ms adapter, the high-tier tiles dim for one to four
+  answers each, although every answer arrives on the new schedule. This
+  was replayed over the scheduler's own gaps. The cadence is recomputed at
+  the end of that cycle and dims none.
+- A tile built anew — a reading changed, the copy lifted in a drag — started
+  from its spec's interval again.
+
+And §B.31's age rounded up, so a reading 400 ms old read "1 s ago". (On the
+rotation §B.32 has since replaced, the learned pace also dimmed Load in 3 of
+47 on-time gaps beside Fuel rate; on the longest-waiting-first schedule the
+steady-state gaps are even, and it no longer does.)
+
+**Why.** A tile is stale past twice `GaugeSpec.expectedInterval`, and
+`GaugeCatalog.specFor` set that from the tier alone, at 10 Hz: critical
+100 ms, high 200, medium 500, low 2 s. On a tight budget the scheduler asks
+far less often. A 45 ms adapter's budget is two commands; RPM and Speed fill
+it, and the rest share the one extra turn (116602d) on the cycles the high
+tier is due — every other one. Four high tiles in that slot are each asked
+once in eight cycles: every 940 ms, against a stale line at 400. With Fuel
+rate beside them, 940–975 ms, and Fuel rate every 1.21 s. And "0 s ago" was
+`inSeconds` of an age under a second.
+
+**The interval is the schedule's.** `PidScheduler.expectedIntervals(floor:,
+rttMs:, maxPids:)` runs 200 cycles dry through `_plan` — the pure step that
+`nextCycle` itself now takes, so the two cannot disagree — from the top of the
+schedule on its own record of who was served when (§B.32's longest-waiting
+first), and gives each PID the longest time between two of its answers. A
+cycle takes the poll loop's floor or its commands at the p95 round trip each,
+whichever is longer, and each answer lands one round trip after the last. A
+PID asked once in the horizon gets the horizon's length; one never asked
+(dropped, not visible) gets nothing. The answer is kept until its inputs
+change — the polled list, the budget, the floor, the p95 — so the loop asks
+every cycle for free.
+
+**Published per PID, beside the bus.** `PollCadence`
+(`lib/domain/pid_sample.dart`) is one `ValueNotifier<Duration?>` per PID, like
+`PidBus`. `ObdSession.cadence` is set after every cycle, once the p95 has moved
+the budget and with that cycle's own floor (the 2 s ignition-off probe, the
+background interval). It is cleared in the loop's `finally`, so a session
+that stops asking — backgrounded, lost, disconnected — leaves nothing behind
+to judge the next link's first samples. `DashboardScreen` hands each tile
+`session.cadence.of(pid)` in every mode; `GaugeTile.expectedInterval` listens
+to it, and `stateFor(…, expectedInterval:)` prefers it to the spec's, which
+is now only the fallback before a first cycle ends.
+
+**The longest gap, not the mean.** A tile should never dim in a gap the
+schedule itself leaves, and its gaps are uneven — 100 or 135 ms for RPM,
+940 or 975 for Load beside Fuel rate; a mean would dim the long ones. The 2× stays what §5.3 meant it for: headroom for a slow
+reply.
+
+**Hard rule 4 is kept.** Nothing measured from the answers goes in: the
+cadence is how often the session asks, not how often answers arrive. A link
+that hangs, a timeout (timeouts never enter the p95), a busy bus or a car that
+stops answering leaves the cadence where it was, so the tile still dims at
+twice it; when the loop ends, the cadence clears to the shorter fallback. The
+5 s rule is unchanged.
+
+**Copy.** Under a second the header says "<1 s ago" (`GaugeTile.ageNote`) and
+a screen reader hears "less than a second ago"; one second is "1 second ago",
+not "1 seconds" (`ageSpoken`). A critical tile can be stale at 270 ms — twice
+a 135 ms cycle — so the sub-second case is real.
+
+**Not changed.** `GaugeReading` in `lib/models/models.dart` has the same
+125 ms default and "0 s ago", but only the Industry screens under
+`lib/screens/` read it, and nothing reaches them. The dry run showed two
+things that need their own change:
+- Some schedules outlast §5.3's 5 s, and the tile says "No data" for part
+  of every wait while it is being polled. §B.32's longest-waiting first
+  asks every reading now, but with twelve tiles on a 45 ms adapter the low
+  tier comes round every 7.3 s, and a 300 ms adapter asks the high tier
+  every 6.3 s beside Fuel rate.
+- The spoken age is frozen when a tile goes stale: the readout's Semantics node
+  rebuilds on the sample and the state, not on the clock.
+
+**Tests.** `test/protocol/pid_scheduler_cadence_test.dart`: 940 ms and
+135 ms exactly for the simulator's case; every gap the real `nextCycle`
+leaves inside its interval, across three layouts and five adapter speeds;
+dropped and invisible PIDs absent; the kept answer follows its inputs.
+`test/session/poll_cadence_session_test.dart`: the simulator's case in real
+time (`trip_drive_can` at 2× is a 45 ms adapter, polling Fuel rate), where no
+tile that is being answered reads stale for 4 s, and every one reads stale
+before "No data" once the adapter falls silent; a cadence for each polled
+reading and none for others; none left once the loop stops.
+`gauge_tile_test.dart`: §B.31's pace tests kept, given a cadence rather than a
+learned pace — a steady reading never dims, one that stops dims at twice the
+cadence and then says "No data", and an outage or slow answers never move
+that line — plus a cadence that shortens re-judging the tile at once, and
+"<1 s ago" in the header and in words. `dashboard_edit_test.dart`: every
+tile, live and in edit mode, holds its reading's cadence. Every ★ test was
+seen failing with its fix removed (11 reverts with `tool/prove.py`).
+Without the session's cadence the real-time test caught Load stale at 441 ms
+and Throttle at 1058 ms. On the simulator, recording a trip
+over the trace server kept every tile live throughout. With the server frozen
+(`kill -STOP`), a hang the socket does not report, RPM read stale at 1 s and
+every tile by 3 s. 1,081 tests, analyzer clean.
+
 ## HARD RULES
 
 1. `lib/protocol/` imports nothing from `package:flutter`. Ever.
