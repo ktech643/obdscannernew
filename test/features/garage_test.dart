@@ -29,6 +29,16 @@ import 'package:torque_obd2/session/adapter_discovery.dart';
 import 'package:torque_obd2/session/obd_session.dart';
 import 'package:torque_obd2/transport/mock_transport.dart';
 import 'package:torque_obd2/transport/obd_trace.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:torque_obd2/features/dashboard/layout_controller.dart';
+import 'package:torque_obd2/features/garage/trip_recordings_screen.dart';
+import 'package:torque_obd2/features/trips/trip_recorder.dart';
+import 'package:torque_obd2/features/trips/trip_store.dart';
+import 'package:torque_obd2/providers/app_providers.dart';
+import 'package:torque_obd2/providers/persistence.dart';
+
+import 'trips/support.dart';
 
 /// SPEC §5.5 (the vehicles) and §9.6 (which one is on the wire), driven by
 /// a real session replaying recorded cars. The VIN every fixture reports
@@ -1250,6 +1260,276 @@ void main() {
       expect((await vehicles.byId(golf.id))!.isPrimary, isFalse);
     });
   });
+
+  // ------------------------------------- slice 17: trips and the garage
+
+  group('★ slice 17 — a car and its trips', () {
+    test('★ deleting the car being recorded leaves nothing', () async {
+      // Without the recorder letting go first, the delete took the row and
+      // the CSV from under a recording that kept going: the garage's next
+      // notify ended it against a row that no longer existed, and the strip
+      // said "The trip is saved under The Golf" — for a car just deleted.
+      final dir = Directory.systemTemp.createTempSync('torque_garage_trip_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final db = newDb();
+      final trips = TripRepository(db, TripFiles(dir));
+      final g = newGarage(db, trips: trips);
+      await g.ready;
+      final car = await addCar(g, 'The Golf');
+
+      final link = FakeTripLink();
+      addTearDown(link.dispose);
+      final background = FakeBackgroundService();
+      final dashboard = DashboardLayoutController(publish: (_) {});
+      addTearDown(dashboard.dispose);
+      final clock = ManualTripClock();
+      final recorder = TripRecorder(
+        link: link,
+        store: DbTripStore(trips),
+        dashboard: dashboard,
+        background: background,
+        platform: const FakePlatform(isAndroid: true),
+        clock: clock,
+        tickEvery: null,
+      );
+      addTearDown(recorder.dispose);
+      // What LiveSession wires: the owner follows the garage (the fake link
+      // stands in for a live car whose identity is settled), and a delete
+      // asks the recorder first.
+      void follow() {
+        final p = g.primary;
+        recorder.follow(
+          p == null ? const OwnerNone() : OwnerVehicle(p.id, p.nickname),
+        );
+      }
+
+      g.addListener(follow);
+      addTearDown(() => g.removeListener(follow));
+      follow();
+      g.beforeDelete = recorder.releaseVehicle;
+      for (var i = 0; i < 50 && g.primary == null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(recorder.refusal, isNull, reason: 'the Golf, live and settled');
+
+      await recorder.start();
+      expect(recorder.view.phase, RecorderPhase.recording);
+      expect(background.running, isTrue, reason: 'the Android service');
+      final file = trips.fileOf((await trips.openTrip())!);
+      for (var s = 0; s < 6; s++) {
+        link.publish('010D', 36);
+        clock.advance(const Duration(seconds: 1));
+        recorder.debugTick();
+      }
+      for (var i = 0; i < 100; i++) {
+        if (file.readAsStringSync().contains(',010D,36.0')) break;
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(
+        file.readAsStringSync(),
+        contains(',010D,36.0'),
+        reason: 'on disk',
+      );
+      final serial = recorder.eventSerial;
+
+      await g.delete(car.id);
+      // A sample and a tick after it write nothing, and the garage's notify
+      // (the car gone) is heard.
+      link.publish('010D', 36);
+      clock.advance(const Duration(seconds: 1));
+      recorder.debugTick();
+      for (var i = 0; i < 50 && g.hasVehicle; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(g.hasVehicle, isFalse);
+      expect(recorder.view.phase, RecorderPhase.idle);
+      expect(recorder.view.result, isNull, reason: 'no result line');
+      expect(recorder.eventSerial, serial, reason: 'nothing announced');
+      expect(await db.select(db.tripSessions).get(), isEmpty, reason: 'row');
+      expect(await trips.files.listAll(), isEmpty, reason: 'no CSV');
+      expect(file.existsSync(), isFalse, reason: 'never re-created');
+      expect((await trips.reconcileFiles()).orphanFiles, 0);
+      // Hard rule 9: nothing keeps the car polled or the service up.
+      expect(link.recordingCalls.last, isFalse);
+      expect(dashboard.recordingPids, isEmpty);
+      expect(background.calls, contains('stopRecording'));
+      expect(background.running, isFalse);
+    });
+
+    test('★ a saved trip\'s result line goes with its car', () async {
+      // The strip keeps the last result in memory; after the car is
+      // deleted it must not say "Trip saved" about it.
+      final dir = Directory.systemTemp.createTempSync('torque_garage_trip_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final db = newDb();
+      final trips = TripRepository(db, TripFiles(dir));
+      final g = newGarage(db, trips: trips);
+      await g.ready;
+      final car = await addCar(g, 'The Golf');
+      final link = FakeTripLink();
+      addTearDown(link.dispose);
+      final dashboard = DashboardLayoutController(publish: (_) {});
+      addTearDown(dashboard.dispose);
+      final recorder = TripRecorder(
+        link: link,
+        store: DbTripStore(trips),
+        dashboard: dashboard,
+        background: FakeBackgroundService(),
+        platform: const FakePlatform(isAndroid: false),
+        clock: ManualTripClock(),
+        tickEvery: null,
+      )..follow(OwnerVehicle(car.id, car.nickname));
+      addTearDown(recorder.dispose);
+      g.beforeDelete = recorder.releaseVehicle;
+
+      await recorder.start();
+      link.publish('010D', 36);
+      await recorder.stop();
+      expect(recorder.view.result?.end, TripEnd.stopped, reason: 'shown');
+
+      await g.delete(car.id);
+      expect(recorder.view.result, isNull);
+      expect(await trips.recent(car.id), isEmpty);
+    });
+
+    test('identitySettled is false while the VIN is read, true once the '
+        'verdict is in', () async {
+      // pendingIdentity is null in that window too — nothing is being asked
+      // yet — which is why a recording keys on identitySettled instead.
+      final db = newDb();
+      final g = newGarage(db);
+      await addCar(g, 'The Civic', vin: civicVin);
+      expect(g.identitySettled, isFalse, reason: 'no car on the wire');
+
+      final s = newSession();
+      bool? settledAsked, noQuestionAsked;
+      var judging = false;
+      final t = _Watched(
+        traces['headers_can']!,
+        onWrite: (command) {
+          if (!judging || command != '0902' || settledAsked != null) return;
+          settledAsked = g.identitySettled;
+          noQuestionAsked = g.pendingIdentity == null;
+        },
+      );
+      expect(await s.connect(t), isTrue);
+      addTearDown(s.disconnect);
+
+      judging = true;
+      final verdict = await g.onConnected(s);
+      expect(settledAsked, isFalse, reason: 'while the VIN was read');
+      expect(noQuestionAsked, isTrue, reason: 'and yet nothing was asked');
+      expect(verdict.kind, IdentityKind.primary);
+      expect(g.identitySettled, isTrue);
+
+      g.onDisconnected();
+      expect(g.identitySettled, isFalse, reason: 'the next link is judged');
+    });
+
+    test('an open §9.6 question is not settled until it is answered', () async {
+      final db = newDb();
+      final g = newGarage(db);
+      await addCar(g, 'The Golf', vin: 'WVWZZZ1KZAW000001');
+      final civic = await addCar(g, 'The Civic', vin: civicVin);
+      final s = newSession();
+      expect(await s.connect(transportFor('headers_can')), isTrue);
+      addTearDown(s.disconnect);
+
+      expect((await g.onConnected(s)).kind, IdentityKind.other);
+      expect(g.identitySettled, isFalse);
+      await g.answerIdentity(civic.id, session: s);
+      expect(g.identitySettled, isTrue);
+    });
+
+    testWidgets('the Garage offers Trip recordings once the trips are wired', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final store = await Persistence.open();
+      final settings = SettingsProvider(store);
+      final ent = EntitlementProvider(store);
+      addTearDown(ent.dispose);
+      final db = AppDatabase(NativeDatabase.memory());
+      addTearDown(
+        () => db.close().timeout(const Duration(seconds: 5), onTimeout: () {}),
+      );
+      final vehicles = VehicleRepository(db);
+      await vehicles.create(nickname: 'The Golf', fuel: VehicleFuel.petrol);
+      tester.view.physicalSize = const Size(390, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      Future<LiveSession> pumpTab({required bool withTrips}) async {
+        final live = LiveSession(
+          session: ObdSession(timeScale: 0.05),
+          vehicles: vehicles,
+          services: ServiceRepository(db),
+          dtcs: DtcRepository(db),
+          // No file is touched: the list only reads rows.
+          trips: withTrips
+              ? TripRepository(db, TripFiles(Directory('no-io-here')))
+              : null,
+          platform: const FakePlatform(isAndroid: false),
+          background: FakeBackgroundService(),
+        );
+        addTearDown(live.dispose);
+        await tester.pumpWidget(
+          AdaptiveScope(
+            platform: const FakePlatform(isAndroid: false),
+            child: MultiProvider(
+              providers: [
+                ChangeNotifierProvider<LiveSession>.value(value: live),
+                ChangeNotifierProvider.value(value: settings),
+                ChangeNotifierProvider.value(value: ent),
+              ],
+              child: MaterialApp(
+                theme: torqueTheme(),
+                home: const Scaffold(body: LiveGarageTab()),
+              ),
+            ),
+          ),
+        );
+        await pumpUntil(tester, () => live.garage!.primary != null);
+        await settle(tester);
+        return live;
+      }
+
+      await pumpTab(withTrips: false);
+      expect(find.text('Maintenance log'), findsOneWidget, reason: 'drawn');
+      expect(find.text('Trip recordings'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await settle(tester);
+
+      await pumpTab(withTrips: true);
+      await tester.scrollUntilVisible(find.text('Trip recordings'), 200);
+      await tester.tap(find.text('Trip recordings'));
+      await settle(tester);
+      final screen = tester.widget<TripRecordingsScreen>(
+        find.byType(TripRecordingsScreen),
+      );
+      expect(screen.vehicle.nickname, 'The Golf');
+      expect(find.text('No trips yet'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+    });
+  });
+}
+
+/// headers_can, with a look at each command as it goes out — so a test can
+/// see what the garage says at the moment the VIN is asked for.
+class _Watched extends MockTransport {
+  _Watched(super.trace, {required this.onWrite}) : super(speed: 100);
+  final void Function(String command) onWrite;
+
+  @override
+  Future<void> write(List<int> bytes) {
+    onWrite(String.fromCharCodes(bytes).trim());
+    return super.write(bytes);
+  }
 }
 
 const findsOne = findsOneWidget;

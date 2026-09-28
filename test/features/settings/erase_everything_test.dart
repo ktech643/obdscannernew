@@ -29,6 +29,9 @@ import 'package:torque_obd2/features/settings/privacy_screen.dart';
 import 'package:torque_obd2/session/obd_session.dart';
 import 'package:torque_obd2/transport/mock_transport.dart';
 import 'package:torque_obd2/transport/obd_trace.dart';
+import 'package:torque_obd2/features/trips/trip_recorder.dart';
+
+import '../trips/support.dart';
 
 /// SPEC §5.6 "Delete all data" and "Export JSON", and the privacy screen's
 /// claims about what leaves the phone.
@@ -388,6 +391,138 @@ void main() {
       expect(find.textContaining('iPhone'), findsNothing, reason: 'Android');
     });
   });
+
+  group('★ Delete all data meets a recording', () {
+    tearDown(() => db.close());
+
+    test('★ Delete all data during a start leaves no CSV', () async {
+      // Record's file was still being made when the erase ran. Nothing let
+      // the start finish first, so its header write landed after
+      // deleteAllFiles: an orphan CSV on a phone that had said "erased",
+      // for a car that no longer existed.
+      final wdb = _WipeWatch();
+      addTearDown(wdb.close);
+      final files = _GatedTripFiles(docs);
+      final gated = TripRepository(wdb, files);
+      final vehicles = VehicleRepository(wdb);
+      await vehicles.create(
+        nickname: 'My Real Astra',
+        fuel: VehicleFuel.petrol,
+        vin: vin,
+      );
+      final background = FakeBackgroundService();
+      final live = LiveSession(
+        session: ObdSession(timeScale: 0.05),
+        vehicles: vehicles,
+        services: ServiceRepository(wdb),
+        dtcs: DtcRepository(wdb),
+        trips: gated,
+        platform: const FakePlatform(isAndroid: true),
+        background: background,
+        tripClock: ManualTripClock(),
+      );
+      addTearDown(live.dispose);
+      final recorder = live.recorder!;
+      await live.garage!.ready;
+      final source = File('assets/traces/headers_can.obdtrace')
+          .readAsStringSync();
+      expect(
+        await live.session.connect(
+          MockTransport(ObdTrace.parse(source), speed: 100),
+        ),
+        isTrue,
+      );
+      // The live edge reads the VIN; it is the Astra's own, so Record is
+      // offered.
+      for (var i = 0; i < 100 && recorder.refusal != null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(recorder.refusal, isNull, reason: 'the Astra, live and settled');
+
+      final starting = recorder.start(); // Record, tapped
+      await files.reached.future; // the row is in, the file being made
+      expect(recorder.view.phase, RecorderPhase.starting);
+      expect(await wdb.select(wdb.tripSessions).get(), hasLength(1));
+      final serial = recorder.eventSerial;
+      ({int csvs, int rows})? atWipe;
+      wdb.beforeWipe = () async => atWipe = (
+        csvs: (await gated.files.listAll()).length,
+        rows: (await wdb.select(wdb.tripSessions).get()).length,
+      );
+
+      var released = false;
+      void release() {
+        if (released) return;
+        released = true;
+        files.gate.complete();
+      }
+
+      final erasing = EraseEverything(
+        db: wdb,
+        trips: gated,
+        store: store,
+        live: live,
+        tempDir: temp,
+        onErased: release,
+      )();
+      // The disk answers once the erase has gone as far as it will without
+      // it — all the way, if nothing waits for the start.
+      await Future.any([
+        erasing.catchError((Object _) {}),
+        Future<void>.delayed(const Duration(milliseconds: 300)),
+      ]);
+      release();
+      await erasing;
+      await starting;
+
+      expect(await gated.files.listAll(), isEmpty, reason: 'no CSV');
+      expect(await wdb.select(wdb.tripSessions).get(), isEmpty, reason: 'row');
+      expect(recorder.view.latched, isTrue, reason: 'no Record after it');
+      expect(recorder.refusal, RecordRefusal.latched);
+      expect(recorder.view.phase, RecorderPhase.idle);
+      expect(live.session.recording, isFalse);
+      // A start overtaken by the erase never begins: no 'Recording trip'
+      // notification flashes up during Delete all data, none is left.
+      expect(background.calls, isNot(contains('startRecording')));
+      expect(background.running, isFalse, reason: 'no service left');
+      expect(recorder.eventSerial, serial, reason: 'nothing announced');
+      // And it was let go of before the wipe, not left for the wipe to find:
+      // its file closed and deleted — a handle still open on a deleted file
+      // keeps its storage — and its row gone.
+      expect(atWipe, (csvs: 0, rows: 0), reason: 'discarded before the wipe');
+    });
+  });
+}
+
+/// The trips directory on a slow disk: the first `create` says it got
+/// there ([reached]) and then waits for [gate] — Record, halfway through
+/// making its file.
+class _GatedTripFiles extends TripFiles {
+  _GatedTripFiles(super.root);
+
+  final reached = Completer<void>();
+  final gate = Completer<void>();
+
+  @override
+  Future<File> create(String sessionId) async {
+    if (!reached.isCompleted) reached.complete();
+    await gate.future;
+    return super.create(sessionId);
+  }
+}
+
+/// A database that lets a test look at what is on disk at the moment it is
+/// wiped.
+class _WipeWatch extends AppDatabase {
+  _WipeWatch() : super(NativeDatabase.memory());
+
+  Future<void> Function()? beforeWipe;
+
+  @override
+  Future<void> wipe() async {
+    await beforeWipe?.call();
+    return super.wipe();
+  }
 }
 
 /// An erase that never returns — the sheet must stay up over it.
